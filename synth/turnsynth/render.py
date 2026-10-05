@@ -205,7 +205,7 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
     for item in script.items:
         other = "B" if item.speaker == "A" else "A"
         ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
-                      emotion=item.emotion)
+                      emotion=item.emotion, words_per_s=ctype.words_per_min / 60)
         speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx)
         history[item.speaker].append(speeches[item.id])
 

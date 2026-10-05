@@ -82,6 +82,25 @@ VibeVoice) model both speakers jointly and would be the next step if that is
 still the weak spot; they would need per-speaker stems and word timings to
 fit this pipeline.
 
+On the casual example (IndexTTS-2.5 on CPU, GLOBE voices, whisper `base.en`),
+context vs the MultiTalk-style ablation (`--no-dialogue-context`: chunk by
+chunk from the fixed bank clip):
+
+| | with context | without |
+|---|---|---|
+| pitch at the end of a scripted hold pause (re speaker median / slope over the last 0.5 s) | +2.1 st / rising +0.8 | -1.8 st / falling -1.0 |
+| pitch at a turn end (statements) | -1.5 st / falling -0.9 | -2.9 st / falling -1.6 |
+| speaking rate, median over turns | 3.3 words/s | 3.2 words/s |
+| ASR WER | 9.0% | 9.1% |
+
+Without context a hold pause falls like a turn end; with it the voice stays
+up and the turn end still falls, which is the cue an EOT model should learn.
+Only 7 hold pauses and 16 turn ends, so read it as direction, not size.
+The first version fed the speaker's own pauses back into the prompt and
+slowed every speaker turn by turn (3.6 down to about 2 words/s); prompts now
+have silences squeezed to 0.15 s, and IndexTTS-2.5's `duration_factor`
+nudges each speaker toward the conversation type's TurnBench rate.
+
 Voice prompts come from GLOBE_V2 (CC0 Common Voice speakers with gender and
 accent labels): `turnsynth voices` joins a few utterances per speaker into
 a 6-10 s clip. Nothing from TurnBench is used as a voice.
