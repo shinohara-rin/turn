@@ -49,6 +49,7 @@ class Context:
 
     history: list[Speech] = field(default_factory=list)  # this speaker's earlier utterances, oldest first
     partner: Speech | None = None  # the other speaker's latest utterance
+    words_per_s: float | None = None  # the conversation's typical speaking rate
     emotion: dict[str, float] | None = None  # script-level emotion for this item (IndexTTS2's 8 axes)
 
 
@@ -186,6 +187,7 @@ class IndexTTS:
         self._tmp = Path(tempfile.mkdtemp(prefix="turnsynth-itts-"))
         self._n = itertools.count()
         self._anchors: dict[str, np.ndarray] = {}
+        self._pace: dict[str, float] = {}
 
     def voices(self, gender: str) -> list[str]:
         names = [k for k, v in self.bank.items() if v.get("gender") == gender]
@@ -195,7 +197,9 @@ class IndexTTS:
         context = context if (context is not None and self.whole_turn) else Context()
         kwargs = dict(max_text_tokens_per_segment=600, interval_silence=0, verbose=False)
         if self.version == "2.5":
-            kwargs.update(lang="en", duration_factor=1.0 / speed)
+            if not context.history:
+                self._pace[voice] = 1.0  # a new dialogue
+            kwargs.update(lang="en", duration_factor=self._pace.get(voice, 1.0) / speed)
         if context.emotion:
             kwargs.update(emo_vector=[float(context.emotion.get(k, 0.0)) for k in self.EMOTIONS],
                           emo_alpha=self.emo_alpha)
@@ -211,7 +215,14 @@ class IndexTTS:
             return Speech(np.zeros(int(0.1 * self.sample_rate), np.float32), self.sample_rate, [])
         sr, wav = result
         audio = np.asarray(wav, dtype=np.float32).reshape(len(wav), -1).mean(axis=1) / 32768.0
-        return Speech(audio, sr, self.aligner(audio, sr, text.split()))
+        words = self.aligner(audio, sr, text.split())
+        if self.version == "2.5" and self.whole_turn and context.words_per_s and len(words) >= 4:
+            # Hearing its own slower turns in the prompt, the model drifts slower
+            # turn by turn; nudge the next duration toward the conversation's pace.
+            rate = len(words) / max(words[-1].end - words[0].start, 0.1)
+            df = kwargs["duration_factor"] * speed
+            self._pace[voice] = float(np.clip(df * (rate / context.words_per_s) ** 0.5, 0.75, 1.25))
+        return Speech(audio, sr, words)
 
     def _anchor(self, voice: str) -> np.ndarray:
         if voice not in self._anchors:
@@ -231,14 +242,14 @@ class IndexTTS:
         IndexTTS keeps the first 15 s of a prompt, so the budget is enforced here.
         """
         sr = self.sample_rate
-        gap = np.zeros(int(0.3 * sr), np.float32)
+        gap = np.zeros(int(0.15 * sr), np.float32)
         anchor = self._anchor(voice)
         budget = int(self.prompt_s * sr) - len(anchor)
         recent: list[np.ndarray] = []
         for sp in reversed(history):
             if budget <= len(gap) + int(0.3 * sr):
                 break
-            clip = sp.audio[-(budget - len(gap)):]
+            clip = squeeze_silence(sp.audio, sr)[-(budget - len(gap)):]
             recent.insert(0, clip)
             budget -= len(clip) + len(gap)
         parts = [anchor]
@@ -252,6 +263,20 @@ class IndexTTS:
         return str(path)
 
 
+def squeeze_silence(audio: np.ndarray, sr: int, max_gap: float = 0.15) -> np.ndarray:
+    """Shorten every silence to max_gap, so a prompt carries voice and pace but not long pauses."""
+    from turnsynth.vad import segments
+
+    segs = segments(audio, sr, merge_gap_s=max_gap, pad_s=0.0)
+    if not segs:
+        return audio
+    gap = np.zeros(int(max_gap * sr), np.float32)
+    parts = []
+    for s, e in segs:
+        parts += [audio[int(s * sr): int(e * sr)], gap]
+    return np.concatenate(parts[:-1])
+
+
 def energy_bounds(audio: np.ndarray, sr: int, rel_db: float = 35.0) -> tuple[float, float]:
     """First and last 10 ms frame within rel_db of the loudest frame."""
     hop = int(0.01 * sr)
@@ -260,7 +285,7 @@ def energy_bounds(audio: np.ndarray, sr: int, rel_db: float = 35.0) -> tuple[flo
         return 0.0, len(audio) / sr
     db = 10 * np.log10(np.mean(audio[: n * hop].reshape(n, hop) ** 2, axis=1) + 1e-12)
     idx = np.flatnonzero(db > db.max() - rel_db)
-    return idx[0] * 0.01, (idx[-1] + 1) * 0.01
+    return idx[0] * hop / sr, (idx[-1] + 1) * hop / sr
 
 
 def _attach_punct(words: list[Word], text: str) -> list[Word]:

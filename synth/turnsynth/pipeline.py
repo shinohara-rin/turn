@@ -36,6 +36,12 @@ def process(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
             transcriber: Transcriber | None = None, judge: LLMJudge | None = None,
             bleed_db: float | None = None, min_agreement: float = 0.6, max_wer: float = 0.35) -> Result:
     rendered = render(script, tts, conversation_id=conversation_id, seed=seed, bleed_db=bleed_db)
+    return annotate_rendered(rendered, transcriber=transcriber, judge=judge, min_agreement=min_agreement,
+                             max_wer=max_wer)
+
+
+def annotate_rendered(rendered: Rendered, *, transcriber: Transcriber | None = None, judge: LLMJudge | None = None,
+                      min_agreement: float = 0.6, max_wer: float = 0.35) -> Result:
     segs = annotate.segment(rendered)
     script_text = {s: [" ".join(w for w, _ in annotate.segment_words(rendered, seg)) for seg in segs[s]] for s in (1, 2)}
     if transcriber is not None:

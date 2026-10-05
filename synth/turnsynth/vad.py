@@ -26,7 +26,7 @@ def segments(audio: np.ndarray, sr: int, *, rel_db: float = 28.0, floor_db: floa
         j = i
         while j < n and active[j]:
             j += 1
-        start, end = i * FRAME_S, j * FRAME_S
+        start, end = i * hop / sr, j * hop / sr  # hop is not exactly FRAME_S at 22.05 kHz
         if spans and start - spans[-1][1] < merge_gap_s:
             spans[-1][1] = end
         else:

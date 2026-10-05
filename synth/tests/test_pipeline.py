@@ -191,3 +191,13 @@ def test_emotion_field_validated():
     obj["turns"][0]["emotion"] = {"giddy": 0.4}
     with pytest.raises(ScriptError):
         parse(obj)
+
+
+def test_vad_times_at_22050():
+    from turnsynth import vad
+
+    sr = 22050
+    audio = np.zeros(200 * sr, np.float32)
+    audio[int(150.0 * sr): int(151.0 * sr)] = 0.5
+    (s, e), = vad.segments(audio, sr)
+    assert abs(s - 149.98) < 0.015 and abs(e - 151.02) < 0.015
