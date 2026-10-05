@@ -1,0 +1,32 @@
+{
+ "conversation_type": "Argumentative",
+ "scenario": "Priya, a team lead, and Daniel, an engineer on another team, argue over lunch about whether their company should end its remote-work policy. Priya thinks the team has drifted apart; Daniel thinks the office is a productivity sink. Neither fully convinces the other, but they find some common ground on meeting-free days.",
+ "speakers": {
+  "A": {"name": "Priya", "gender": "female", "summary": "Direct, organised, argues from her team's experience.", "speaking_style": "measured, uses pauses for emphasis, cuts in when she disagrees"},
+  "B": {"name": "Daniel", "gender": "male", "summary": "Sceptical, cites numbers, a little combative.", "speaking_style": "long turns, holds the floor hard, few backchannels"}
+ },
+ "turns": [
+  {"id": 1, "speaker": "A", "type": "turn", "style": "normal", "text": "I'll just say it. I think the return to office thing is the right call."},
+  {"id": 2, "speaker": "B", "type": "turn", "style": "normal", "text": "Really? Because every single study I've seen says people get more done at home. Fewer interruptions, no commute, and honestly <pause 0.7> fewer pointless meetings."},
+  {"id": 3, "speaker": "A", "type": "interruption", "floor_taking": true, "stance": "competitive", "text": "Fewer meetings? We have more meetings now than we ever did.", "host": 2, "after_word": 17},
+  {"id": 4, "speaker": "B", "type": "turn", "style": "normal", "text": "That's a management problem, though, not a location problem."},
+  {"id": 5, "speaker": "A", "type": "turn", "style": "normal", "text": "Is it? Because <pause 0.9> when we were in the office, half of those meetings were just a two minute chat at someone's desk."},
+  {"id": 6, "speaker": "B", "type": "backchannel", "kind": "acknowledgement", "text": "Sure.", "host": 5, "after_word": 9},
+  {"id": 7, "speaker": "B", "type": "turn", "style": "normal", "text": "Okay, but those two minute chats are exactly what kills my focus. I'm in the middle of something hard, somebody wanders over, and that's my whole morning gone. I measured it once, it takes me like twenty minutes to get back into it."},
+  {"id": 8, "speaker": "A", "type": "interruption", "floor_taking": false, "stance": "competitive", "text": "Sure, but that's not", "host": 7, "after_word": 22},
+  {"id": 9, "speaker": "B", "type": "turn", "style": "strong_floor_hold", "text": "Let me finish. Twenty minutes, every time. Multiply that by five interruptions a day."},
+  {"id": 10, "speaker": "A", "type": "turn", "style": "normal", "text": "Okay. <pause 0.6> But you're thinking about your work. I'm thinking about the team. The new people on my team have never met each other properly. They don't know who to ask for help, so they just <pause 0.8> they sit there stuck for a day."},
+  {"id": 11, "speaker": "B", "type": "backchannel", "kind": "continuer", "text": "mm", "host": 10, "after_word": 12},
+  {"id": 12, "speaker": "B", "type": "turn", "style": "normal", "text": "That's fair. That's a real problem. But the fix for that is onboarding, not making forty people drive in five days a week."},
+  {"id": 13, "speaker": "A", "type": "turn", "style": "normal", "text": "Nobody's saying five days. The proposal is three."},
+  {"id": 14, "speaker": "B", "type": "turn", "style": "normal", "text": "Three this year. Then it's four, and then before you know it we're all back full time and nobody even asked us."},
+  {"id": 15, "speaker": "A", "type": "interruption", "floor_taking": true, "stance": "competitive", "text": "Oh, come on, that's a slippery slope argument and you know it.", "host": 14, "after_word": 7},
+  {"id": 16, "speaker": "B", "type": "turn", "style": "normal", "text": "It's not a slippery slope if it's literally what happened at my last company."},
+  {"id": 17, "speaker": "A", "type": "turn", "style": "filler", "text": "Well."},
+  {"id": 18, "speaker": "A", "type": "turn", "style": "normal", "text": "Okay, what if, um <pause 0.7> what if the office days were actually protected for collaboration, and the home days were meeting-free? No calls at all."},
+  {"id": 19, "speaker": "B", "type": "backchannel", "kind": "reaction", "text": "Huh.", "host": 18, "after_word": 13},
+  {"id": 20, "speaker": "B", "type": "turn", "style": "normal", "text": "No calls at all on home days? <pause 0.8> I mean, I'd sign that tomorrow. I just don't believe anyone would stick to it."},
+  {"id": 21, "speaker": "A", "type": "turn", "style": "normal", "text": "I would. I'll pitch it to my director on Monday, and you can be my sceptic."},
+  {"id": 22, "speaker": "B", "type": "turn", "style": "bounded_response", "text": "Happy to be your sceptic."}
+ ]
+}
