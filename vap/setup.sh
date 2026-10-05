@@ -9,8 +9,10 @@ git clone https://github.com/ErikEkstedt/VoiceActivityProjection turnbench/basel
 git -C turnbench/baselines/vap/VoiceActivityProjection checkout f39a78b23a6dccdbedd106e00b48c410b8739f5d
 cd turnbench
 uv sync
-uv pip install torch==2.7.0 torchaudio==2.7.0 soundfile einops tqdm
-uv pip install -e baselines/vap/VoiceActivityProjection --no-deps
+# Target the project venv explicitly: `uv run` uses .venv, but hosts that set
+# UV_SYSTEM_PYTHON=true (e.g. Colab) would otherwise install into system Python.
+uv pip install --python .venv/bin/python torch==2.7.0 torchaudio==2.7.0 soundfile einops tqdm
+uv pip install --python .venv/bin/python -e baselines/vap/VoiceActivityProjection --no-deps
 # Then (with HF_TOKEN set):
 #   uv run bash baselines/vap/run.sh --dev               # oto-finetuned ckpt (official baseline)
 #   uv run bash baselines/vap/run.sh --dev --pretrained  # original Switchboard VAP ckpt

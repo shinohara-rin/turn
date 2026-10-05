@@ -33,7 +33,8 @@ Leaderboard top (EOT, at time of writing): Vox Maru v1 0.960 / 0.072 / 548 ms. V
 ## Files
 - `setup.sh`: clones TurnBench and VAP at pinned commits and installs them (CPU or GPU).
 - `modal_dev.py`: runs the oto VAP on the dev set on a Modal A10G and scores it. Results go to `results-modal/`.
-- `smoke.py`: CPU speed check with the bundled pretrained checkpoint (run from inside the `turnbench/` checkout).
+- `smoke.py`: speed check with the bundled pretrained checkpoint on 180 s of audio resampled to 16 kHz
+  (run from inside the `turnbench/` checkout; 180 s should give 9,000 frames).
 - `results/official/`: the TurnBench repo's committed VAP predictions (dev, test) and leaderboard JSON.
   Both prediction files pass `turnbench.check`.
 
@@ -58,6 +59,22 @@ VAP's dev score can be reproduced from public inputs alone:
 Rescoring those reproduces the official dev result exactly (EOT recall 0.841 at FPR 0.045, INT recall 0.957).
 So the gated data and a GPU are only needed to run VAP itself, for example on new audio or a new checkpoint.
 
+## Our dev reproduction (full inference)
+Run by Rin on Colab (Tesla T4, 2026-10-06) with `setup.sh` at `cafabe9`: all 38 dev conversations, 10m 31s of
+inference (~40x real time). Pins: TurnBench `38a6f87`, VAP `f39a78b`, dev dataset rev `8fa18a2`,
+oto checkpoint snapshot `b9aa0ba` (sha256 `8e73c375...db265c`), PyTorch 2.7.0+cu126.
+
+| predictions | task | recall | FP rate | p50 latency | TP / FN / FP / TN |
+|---|---|---:|---:|---:|---|
+| ours (sweep θ) | EOT | 0.8414 | 0.0452 | 462.5 ms | 1602 / 302 / 48 / 1015 |
+| official, rescored | EOT | 0.8409 | 0.0452 | 463.0 ms | 1601 / 303 / 48 / 1015 |
+| ours (sweep θ) | INT | 0.9568 | 0.0980 | 911.5 ms | 332 / 15 / 366 / 3367 |
+| official, rescored | INT | 0.9568 | 0.0999 | 896.0 ms | 332 / 15 / 373 / 3360 |
+
+The sweep picked EOT θ 0.91614, INT θ 0.86. With the documented thresholds (0.9161 / 0.8591) our probabilities match
+the official EOT counts and INT recall, with 374 INT FPs vs 373 (FP rate 0.1002, just over the 0.10 dev budget),
+so the outputs are near-identical but not bit-exact. The cause of the residual difference is not known.
+
 ## Status
-- Dev score reproduced from the public probabilities above (in the project's threshold analysis).
-- `modal_dev.py` (full inference on gated audio) is still untested.
+- Dev reproduced both from the public probabilities and by full inference on the gated audio (above).
+- Test scores not reproduced (labels are private). `modal_dev.py` has not been run.
