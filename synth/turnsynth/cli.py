@@ -2,6 +2,8 @@
 
     turnsynth scripts --n 12 --minutes 4 --out out/scripts          # LLM: pass 1 + pass 2 + filter
     turnsynth render out/scripts --tts kokoro --asr base.en --judge llm --out out/synth
+    turnsynth voices globe-test-*.parquet --out voices                  # prompt bank for --tts indextts
+    turnsynth render out/scripts --tts indextts --index-model-dir ckpt/IndexTTS-2.5 --voice-bank voices ...
     turnsynth stats out/synth/parquet
 """
 
@@ -40,7 +42,14 @@ def cmd_render(args) -> None:
     from turnsynth.tts import make_tts
 
     paths = sorted(Path(args.scripts).glob("*.json")) if Path(args.scripts).is_dir() else [Path(args.scripts)]
-    tts = make_tts(args.tts)
+    tts_kwargs = {}
+    if args.tts == "kokoro" and args.device != "auto":
+        tts_kwargs = {"device": args.device}
+    if args.tts == "indextts":
+        tts_kwargs = {"model_dir": args.index_model_dir, "bank": args.voice_bank, "version": args.index_version,
+                      "device": None if args.device == "auto" else args.device, "entrain": args.entrain,
+                      "context": not args.no_dialogue_context}
+    tts = make_tts(args.tts, **tts_kwargs)
     transcriber = Transcriber(args.asr, device=args.device) if args.asr else None
     judge = None
     if args.judge == "llm":
@@ -92,6 +101,15 @@ def cmd_render(args) -> None:
     (out / "render_report.jsonl").write_text("\n".join(json.dumps(r) for r in report) + "\n")
 
 
+def cmd_voices(args) -> None:
+    from turnsynth.voicebank import build_globe
+
+    bank = build_globe(args.shards, args.out, per_gender=args.per_gender,
+                       accents=args.accents.split(",") if args.accents else None, seed=args.seed)
+    genders = [v["gender"] for v in bank.values()]
+    print(f"{len(bank)} voices ({genders.count('female')} female, {genders.count('male')} male) -> {args.out}")
+
+
 def cmd_stats(args) -> None:
     from turnsynth.stats import dataset_stats
 
@@ -114,7 +132,14 @@ def main(argv=None) -> None:
 
     r = sub.add_parser("render", help="TTS + annotate + export TurnBench parquet")
     r.add_argument("scripts", help="a script JSON or a directory of them")
-    r.add_argument("--tts", default="kokoro", choices=["kokoro", "dummy"])
+    r.add_argument("--tts", default="kokoro", choices=["kokoro", "indextts", "dummy"])
+    r.add_argument("--index-model-dir", default="checkpoints/IndexTTS-2.5", help="IndexTTS weights (with config.yaml)")
+    r.add_argument("--index-version", default="2.5", choices=["2.5", "2"])
+    r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices)")
+    r.add_argument("--no-dialogue-context", action="store_true",
+                   help="IndexTTS ablation: per-chunk calls from the fixed bank clip, as in MultiTalk")
+    r.add_argument("--entrain", type=float, default=0.0,
+                   help="IndexTTS: emotion strength borrowed from the partner's last line when the script gives none")
     r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en); empty = script text")
     r.add_argument("--device", default="auto")
     r.add_argument("--judge", default="rules", choices=["rules", "llm"])
@@ -128,6 +153,14 @@ def main(argv=None) -> None:
     r.add_argument("--wav", action="store_true", help="also write stereo wavs for listening")
     r.add_argument("--out", required=True)
     r.set_defaults(fn=cmd_render)
+
+    v = sub.add_parser("voices", help="build a voice-prompt bank from GLOBE_V2 parquet shards")
+    v.add_argument("shards", nargs="+")
+    v.add_argument("--out", required=True)
+    v.add_argument("--per-gender", type=int, default=40)
+    v.add_argument("--accents", default="", help="comma-separated substrings of GLOBE accent names to keep")
+    v.add_argument("--seed", type=int, default=0)
+    v.set_defaults(fn=cmd_voices)
 
     t = sub.add_parser("stats", help="corpus stats via turnbench's gold code")
     t.add_argument("dataset")

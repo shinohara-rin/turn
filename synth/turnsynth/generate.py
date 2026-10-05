@@ -62,6 +62,8 @@ Rules:
 - interruption with floor_taking=false: the listener tries to come in (or makes a short supportive remark longer than a backchannel), but the host keeps talking; it is a listener overlay like a backchannel.
 - style: bounded_response = a short complete answer; filler = a turn that is only a filled pause; strong_floor_hold = the speaker pushes on to keep the floor.
 - Turn lengths: about 60% short (1-15 words), 30% medium (15-40), 10% long (40-90); no two long turns in a row.
+- Punctuate for the voice: the TTS reads each item in one go, so a comma or "..." before a <pause X> where the thought continues keeps the voice up, and a full stop or "?" ends it. Questions get "?".
+- Optional on any item: "emotion": {name: weight} with names from happy, angry, sad, afraid, disgusted, melancholic, surprised, calm and weights summing to at most 0.8, for how the line should sound given what was just said (a sharp "angry": 0.4 retort, a "surprised": 0.5 "oh wow"). Leave it out for neutral lines; use it where the delivery matters, and keep each speaker consistent from line to line.
 - Text is spoken English exactly as it should be pronounced: disfluencies ("uh", "um", "I mean"), contractions and self-repairs are welcome. No stage directions, brackets, parentheses, asterisks, emoji or speaker names in the text.
 - Never break character or mention being an AI."""
 

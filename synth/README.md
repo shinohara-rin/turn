@@ -11,7 +11,8 @@ event-level turn-taking labels from two independent sources.
  seeds + type ──► LLM pass 1: scenario, 2 personas
                   LLM pass 2: script with labelled turn-taking items ──► 4-layer filter (reason codes)
                                                                               │
-             Kokoro TTS per item, word timings ◄──────────────────────────────┘
+   IndexTTS-2.5 per whole item, in dialogue order ◄─────────────────────────┘
+   (rolling speaker prompt, script emotion; forced-aligned word timings)
                   │
      timeline sampled from TurnBench's own timing stats (FTO, pauses, yield)
                   │
@@ -58,6 +59,33 @@ data. Nothing in the scorer is modified.
 - **Dyadic, English, six conversation types** to match TurnBench rather than
   multi-party bilingual.
 
+## Prosody: giving the TTS the dialogue
+
+MultiTalk renders each short utterance with IndexTTS2 in isolation, from a
+fixed reference clip. The model never sees what came before or after, so a
+turn split at a pause ends like a finished sentence, and each turn starts
+from the same neutral register whatever the other speaker just did. The
+IndexTTS backend (`--tts indextts`, IndexTTS-2.5 by default, IndexTTS2 with
+`--index-version 2`) gives it the context it can take:
+
+| what | how | why it matters here |
+|---|---|---|
+| whole turns | one call per item; `<pause X>` becomes a comma, then the pause is cut back in at the forced-aligned word boundary at its sampled length; IndexTTS's 120-token segment split is turned off | a hold pause keeps continuation intonation instead of turn-final falling pitch, which is exactly the EOT hard negative TurnBench scores |
+| rolling speaker prompt | the prompt is the speaker's bank clip (timbre anchor, 5 s) followed by their most recent rendered speech, up to 14 s; items are synthesized in script order | rate, energy and register carry from turn to turn, and IndexTTS's mel stage continues from the end of the prompt, i.e. from what this speaker just said |
+| script emotion | optional per-item `"emotion": {"surprised": 0.5}` written by the script LLM, which sees the whole dialogue; mapped onto IndexTTS2's 8 emotion axes | delivery follows what was just said (a sharp retort, a surprised "oh wow") |
+| entrainment (opt-in) | `--entrain 0.3`: lines without a script emotion use the partner's last line as emotion reference at that strength | listeners match the energy of who they answer |
+
+What it cannot do: IndexTTS conditions on audio and an emotion vector, not
+on the other speaker's words, so cross-speaker coherence comes from the
+prompt and the script only. Dialogue-native TTS (MOSS-TTSD, FireRedTTS-2,
+VibeVoice) model both speakers jointly and would be the next step if that is
+still the weak spot; they would need per-speaker stems and word timings to
+fit this pipeline.
+
+Voice prompts come from GLOBE_V2 (CC0 Common Voice speakers with gender and
+accent labels): `turnsynth voices` joins a few utterances per speaker into
+a 6-10 s clip. Nothing from TurnBench is used as a voice.
+
 ## Results so far
 
 Two hand-written scripts in `examples/scripts/` (one Casual, one
@@ -93,6 +121,23 @@ python -m turnbench.score predictions.json --dataset out/kokoro/parquet
 # any TurnBench baseline: python -m baselines.vap.predict --dataset out/kokoro/parquet --threshold-eot 0.9161 --threshold-int 0.8591
 ```
 
+### IndexTTS (separate env)
+
+IndexTTS pins torch 2.8 and transformers 4.52, which clash with Kokoro and
+`turnbench`, so it gets its own environment; score from the main one.
+
+```bash
+git clone https://github.com/index-tts/index-tts && git -C index-tts checkout d9e41aac
+uv venv -p 3.11 itts && source itts/bin/activate
+uv pip install --no-sources -e ./index-tts "torch==2.8.*" "torchaudio==2.8.*" faster-whisper
+uv pip install -e "synth[llm,asr]"
+hf download IndexTeam/IndexTTS-2.5 --local-dir ckpt/IndexTTS-2.5
+hf download MushanW/GLOBE_V2 --repo-type dataset --include "data/test-*.parquet" --local-dir globe
+turnsynth voices globe/data/test-*.parquet --out voices
+turnsynth render synth/examples/scripts --tts indextts --index-model-dir ckpt/IndexTTS-2.5 --voice-bank voices \
+    --asr base.en --wav --out out/indextts
+```
+
 ## Generating at scale
 
 ```bash
@@ -102,7 +147,8 @@ modal run modal_render.py --scripts out/scripts --out out/synth --judge llm --as
 turnsynth stats out/synth/parquet
 ```
 
-`modal_render.py` fans rendering out over L4 GPUs; it needs a Modal secret
+`modal_render.py` fans rendering out over L4 GPUs with IndexTTS-2.5
+(`TURNSYNTH_TTS=kokoro` for the Kokoro image); it needs a Modal secret
 named `anthropic` (with `ANTHROPIC_API_KEY`, used by the LLM judge). Run it
 from a machine where the Modal CLI can connect.
 
@@ -118,7 +164,9 @@ landed, word by word, for dense training targets) and `render_report.jsonl`
 | `turnsynth/generate.py` | two-pass LLM script synthesis, prompts, topic seeds |
 | `turnsynth/script.py` | script schema, parser, four-layer filter with reason codes |
 | `turnsynth/config.py` | TurnBench conversation types and the timing model |
-| `turnsynth/tts.py` | Kokoro and dummy backends with word timings |
+| `turnsynth/tts.py` | IndexTTS (contextual), Kokoro and dummy backends with word timings |
+| `turnsynth/align.py` | MMS_FA forced alignment of script words (IndexTTS reports no timings) |
+| `turnsynth/voicebank.py` | voice-prompt bank from GLOBE_V2 |
 | `turnsynth/render.py` | timeline placement, interruption cuts, mixing |
 | `turnsynth/vad.py`, `annotate.py` | VAD segments, annotators a and c |
 | `turnsynth/judge.py` | ASR + LLM judge (annotator b), lexical fallback |
@@ -136,10 +184,9 @@ landed, word by word, for dense training targets) and `render_report.jsonl`
   and the token here gets 403. With access, run `turnsynth stats` on both and
   score baselines on dev vs synthetic to see how well synthetic scores
   predict real ones.
-- **Prosody.** Kokoro has no emotion or emphasis control, and each item is
-  synthesized in isolation, so turn-final intonation (a main EOT cue) is
-  whatever the TTS does at a sentence end. IndexTTS2 (MultiTalk's choice)
-  or a dialogue-aware TTS would fit behind the same `TTS` interface.
+- **Prosody with Kokoro.** Kokoro has no emotion control and is still
+  called chunk by chunk, so with `--tts kokoro` a turn split at a pause ends
+  each chunk like a sentence. Use `--tts indextts` for anything you listen to.
 - **No laughter, breaths, noise or channel bleed labels.** `--bleed-db` mixes
   bleed in but nothing labels it as `Channel Bleed`.
 

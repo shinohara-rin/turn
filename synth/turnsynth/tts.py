@@ -7,16 +7,22 @@ boundary, so they are part of the interface rather than an extra.
 Backends:
   kokoro  Kokoro-82M (Apache-2.0). Runs on CPU at a few x real time, 50+ voices,
           returns word timestamps. The default.
+  indextts IndexTTS2 / IndexTTS-2.5 (MultiTalk's choice). Zero-shot from a
+          voice-prompt bank, emotion vectors, GPU. Synthesizes whole turns
+          with dialogue context (see IndexTTS and render.synthesize_item).
   dummy   Shaped noise bursts per word. No model; for tests.
-IndexTTS2 (MultiTalk's choice, emotion control, GPU) slots in behind the same
-interface; see README.
 """
 
+import itertools
+import tempfile
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
+
+from turnsynth.script import EMOTIONS
 
 
 @dataclass
@@ -37,12 +43,25 @@ class Speech:
         return len(self.audio) / self.sample_rate
 
 
+@dataclass
+class Context:
+    """What the dialogue so far tells a contextual backend about the next utterance."""
+
+    history: list[Speech] = field(default_factory=list)  # this speaker's earlier utterances, oldest first
+    partner: Speech | None = None  # the other speaker's latest utterance
+    emotion: dict[str, float] | None = None  # script-level emotion for this item (IndexTTS2's 8 axes)
+
+
 class TTS(Protocol):
     sample_rate: int
 
     def voices(self, gender: str) -> list[str]: ...
 
     def synthesize(self, text: str, voice: str, speed: float = 1.0) -> Speech: ...
+
+
+# A backend with `whole_turn = True` gets each item as one text, with pauses
+# written as punctuation, plus a Context; render re-times the pauses itself.
 
 
 class DummyTTS:
@@ -111,6 +130,128 @@ class KokoroTTS:
         return Speech(np.concatenate(audio), self.sample_rate, _attach_punct(words, text))
 
 
+class IndexTTS:
+    """IndexTTS-2.5 (default) or IndexTTS2, zero-shot from a voice bank.
+
+    Where MultiTalk calls IndexTTS2 once per short utterance with a fixed
+    reference clip, this backend gives the model the dialogue context it can
+    take:
+
+    - whole turns: one call per item with the full text (pauses become
+      punctuation, so the model knows the sentence goes on and keeps
+      continuation intonation); max_text_tokens_per_segment is raised so
+      IndexTTS does not split the turn into independently generated pieces.
+    - rolling speaker prompt: the speaker prompt is the bank clip (timbre
+      anchor) followed by that speaker's most recent rendered speech, so
+      speaking rate, energy and register carry from turn to turn, and the
+      s2mel stage continues acoustically from the end of the prompt.
+    - emotion: an item's `emotion` vector (written by the script LLM, which
+      sees the whole dialogue) drives IndexTTS2's emotion control; without
+      one, `entrain` > 0 uses the partner's last utterance as the emotion
+      reference at that strength, otherwise the rolling prompt sets it.
+    Word timings come from forced alignment (align.py). context=False turns
+    all of this off (chunk-by-chunk calls from the bank clip), for comparison.
+    """
+
+    sample_rate = 22050
+    whole_turn = True
+    EMOTIONS = EMOTIONS  # IndexTTS2's emotion-vector order
+
+    def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
+                 half: bool = True, anchor_s: float = 5.0, prompt_s: float = 14.0, entrain: float = 0.0,
+                 emo_alpha: float = 0.8, context: bool = True):
+        import soundfile as sf
+
+        from turnsynth.align import Aligner
+        from turnsynth.voicebank import load_bank
+
+        model_dir = str(model_dir)
+        if version == "2.5":
+            from indextts.infer_v2_5 import IndexTTS2
+            self.model = IndexTTS2(cfg_path=f"{model_dir}/config.yaml", model_dir=model_dir, device=device,
+                                   use_bf16=half)
+            self.model.low_vram = False  # it would split turns at 40 characters
+        else:
+            from indextts.infer_v2 import IndexTTS2
+            self.model = IndexTTS2(cfg_path=f"{model_dir}/config.yaml", model_dir=model_dir, device=device,
+                                   use_fp16=half)
+        self.version = version
+        # context=False is the MultiTalk-style ablation: chunk by chunk, fixed bank prompt, no emotion.
+        self.whole_turn = context
+        self.bank = load_bank(bank)
+        self.anchor_s, self.prompt_s = anchor_s, prompt_s
+        self.entrain, self.emo_alpha = entrain, emo_alpha
+        self.aligner = Aligner(device="cpu" if device in (None, "cpu") else device)
+        self._sf = sf
+        self._tmp = Path(tempfile.mkdtemp(prefix="turnsynth-itts-"))
+        self._n = itertools.count()
+        self._anchors: dict[str, np.ndarray] = {}
+
+    def voices(self, gender: str) -> list[str]:
+        names = [k for k, v in self.bank.items() if v.get("gender") == gender]
+        return names or list(self.bank)
+
+    def synthesize(self, text: str, voice: str, speed: float = 1.0, context: Context | None = None) -> Speech:
+        context = context if (context is not None and self.whole_turn) else Context()
+        kwargs = dict(max_text_tokens_per_segment=600, interval_silence=0, verbose=False)
+        if self.version == "2.5":
+            kwargs.update(lang="en", duration_factor=1.0 / speed)
+        if context.emotion:
+            kwargs.update(emo_vector=[float(context.emotion.get(k, 0.0)) for k in self.EMOTIONS],
+                          emo_alpha=self.emo_alpha)
+        elif self.entrain > 0 and context.partner is not None and context.partner.duration > 1.0:
+            kwargs.update(emo_audio_prompt=self._write(context.partner.audio), emo_alpha=self.entrain)
+        prompt = self._write(self._prompt(voice, context.history))
+        try:
+            result = self.model.infer(spk_audio_prompt=prompt, text=text, output_path=None, **kwargs)
+        finally:
+            for f in self._tmp.glob("*.wav"):
+                f.unlink()
+        if result is None:
+            return Speech(np.zeros(int(0.1 * self.sample_rate), np.float32), self.sample_rate, [])
+        sr, wav = result
+        audio = np.asarray(wav, dtype=np.float32).reshape(len(wav), -1).mean(axis=1) / 32768.0
+        return Speech(audio, sr, self.aligner(audio, sr, text.split()))
+
+    def _anchor(self, voice: str) -> np.ndarray:
+        if voice not in self._anchors:
+            import torch
+            import torchaudio.functional as F
+
+            audio, sr = self._sf.read(self.bank[voice]["path"], dtype="float32", always_2d=True)
+            audio = audio.mean(axis=1)
+            if sr != self.sample_rate:
+                audio = F.resample(torch.from_numpy(audio), sr, self.sample_rate).numpy()
+            self._anchors[voice] = audio[: int(self.anchor_s * self.sample_rate)]
+        return self._anchors[voice]
+
+    def _prompt(self, voice: str, history: list[Speech]) -> np.ndarray:
+        """Bank clip, then as much of the speaker's latest speech as fits, ending on the latest.
+
+        IndexTTS keeps the first 15 s of a prompt, so the budget is enforced here.
+        """
+        sr = self.sample_rate
+        gap = np.zeros(int(0.3 * sr), np.float32)
+        anchor = self._anchor(voice)
+        budget = int(self.prompt_s * sr) - len(anchor)
+        recent: list[np.ndarray] = []
+        for sp in reversed(history):
+            if budget <= len(gap) + int(0.3 * sr):
+                break
+            clip = sp.audio[-(budget - len(gap)):]
+            recent.insert(0, clip)
+            budget -= len(clip) + len(gap)
+        parts = [anchor]
+        for clip in recent:
+            parts += [gap, clip]
+        return np.concatenate(parts)
+
+    def _write(self, audio: np.ndarray) -> str:
+        path = self._tmp / f"{next(self._n)}.wav"
+        self._sf.write(path, audio, self.sample_rate)
+        return str(path)
+
+
 def energy_bounds(audio: np.ndarray, sr: int, rel_db: float = 35.0) -> tuple[float, float]:
     """First and last 10 ms frame within rel_db of the loudest frame."""
     hop = int(0.01 * sr)
@@ -147,4 +288,6 @@ def make_tts(name: str, **kwargs) -> TTS:
         return DummyTTS()
     if name == "kokoro":
         return KokoroTTS(**kwargs)
+    if name == "indextts":
+        return IndexTTS(**kwargs)
     raise ValueError(f"unknown TTS backend {name!r}")

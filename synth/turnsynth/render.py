@@ -23,7 +23,7 @@ import numpy as np
 
 from turnsynth.config import TYPES, Timing
 from turnsynth.script import Item, Script
-from turnsynth.tts import TTS, Speech, Word
+from turnsynth.tts import TTS, Context, Speech, Word
 
 FADE_S = 0.03
 
@@ -69,8 +69,23 @@ class Rendered:
         return len(self.audio[1]) / self.sample_rate
 
 
-def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.random.Generator) -> Speech:
-    """Synthesize chunk by chunk, inserting the scripted within-turn pauses."""
+def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.random.Generator,
+                    context: Context | None = None) -> Speech:
+    """Synthesize one item with its scripted within-turn pauses.
+
+    A whole-turn backend (IndexTTS) gets the full text in one call, with the
+    pauses written as punctuation so prosody runs across them, and the pauses
+    are then re-timed on the aligned word boundaries. Other backends are
+    called chunk by chunk with silence inserted between chunks.
+    """
+    if getattr(tts, "whole_turn", False):
+        text, cuts = spoken_text(item)
+        sp = tts.synthesize(text, voice, context=context)
+        words = item.words
+        if len(sp.words) == len(words):
+            sp = Speech(sp.audio, sp.sample_rate, [Word(w, x.start, x.end) for w, x in zip(words, sp.words)])
+            sp = _retime(sp, [(k, timing.pause(rng, pause)) for k, pause in cuts if k < len(words)])
+        return _trim(sp)
     sr = tts.sample_rate
     audio, words, offset = [], [], 0.0
     for text, pause in item.chunks:
@@ -85,6 +100,57 @@ def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.ra
     # Trim leading/trailing TTS silence so placement times are speech times.
     speech = Speech(np.concatenate(audio), sr, words)
     return _trim(speech)
+
+
+def spoken_text(item: Item) -> tuple[str, list[tuple[int, float]]]:
+    """Text for a whole-turn backend, and the scripted pauses as (after word k, seconds).
+
+    A pause becomes a comma unless the chunk already ends in punctuation: a
+    hold pause keeps continuation intonation that way, where synthesizing the
+    chunk alone ends it like a finished sentence.
+    """
+    parts, cuts, n = [], [], 0
+    for text, pause in item.chunks:
+        n += len(text.split())
+        if pause is not None:
+            if text[-1] not in ",.?!;:-\u2026":
+                text += ","
+            cuts.append((n, pause))
+        parts.append(text)
+    return " ".join(parts), cuts
+
+
+def _retime(speech: Speech, cuts: list[tuple[int, float]], pad: float = 0.03) -> Speech:
+    """Set the silence after word k to `gap` seconds for each (k, gap)."""
+    if not cuts:
+        return speech
+    sr, ws = speech.sample_rate, speech.words
+    fade = int(0.01 * sr)
+    pieces, shifts, pos, shift = [], [], 0, 0.0
+    for k, gap in cuts:
+        a, b = ws[k - 1].end, ws[k].start
+        if b < a:
+            a = b = (a + b) / 2
+        p = min(pad, (b - a) / 2)
+        i0, i1 = int((a + p) * sr), int((b - p) * sr)
+        seg = speech.audio[pos:i0].copy()
+        if len(seg) > fade:
+            seg[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
+        pieces += [seg, np.zeros(int(max(gap - 2 * p, 0.0) * sr), np.float32)]
+        shift += max(gap, 2 * p) - (b - a)
+        shifts.append((k, shift))
+        pos = i1
+    tail = speech.audio[pos:].copy()
+    if len(tail) > fade:
+        tail[:fade] *= np.linspace(0.0, 1.0, fade, dtype=np.float32)
+    pieces.append(tail)
+    words, j, cur = [], 0, 0.0
+    for i, w in enumerate(ws):
+        while j < len(shifts) and i >= shifts[j][0]:
+            cur = shifts[j][1]
+            j += 1
+        words.append(Word(w.text, w.start + cur, w.end + cur))
+    return Speech(np.concatenate(pieces), sr, words)
 
 
 def _trim(speech: Speech, pad: float = 0.02) -> Speech:
@@ -133,12 +199,22 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
         g = timing.min_same_channel_gap
         return all(end + g <= s or start >= e + g for s, e in busy[spk])
 
+    # Synthesize in script order, so a contextual backend hears the dialogue as it unfolds.
+    speeches: dict[int, Speech] = {}
+    history: dict[str, list[Speech]] = {"A": [], "B": []}
+    for item in script.items:
+        other = "B" if item.speaker == "A" else "A"
+        ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
+                      emotion=item.emotion)
+        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx)
+        history[item.speaker].append(speeches[item.id])
+
     # Pass 1: the floor sequence.
     prev: Placed | None = None
     for item in script.items:
         if not item.is_floor:
             continue
-        speech = synthesize_item(tts, item, voices[item.speaker], timing, rng)
+        speech = speeches[item.id]
         channel_end = max((e for _, e in busy[item.speaker]), default=0.0)
         if prev is None:
             start = 0.5
@@ -167,7 +243,7 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
         if item.is_floor:
             continue
         host = placed.get(item.host)
-        speech = synthesize_item(tts, item, voices[item.speaker], timing, rng)
+        speech = speeches[item.id]
         p = Placed(item, speech, 0.0)
         placed[item.id] = p
         if host is None or host.dropped:

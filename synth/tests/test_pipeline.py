@@ -145,3 +145,49 @@ def test_llm_judge_uses_model_labels_and_falls_back():
     assert flat[2][2] == labels.BC_CONTINUER
     assert flat[0][2] != "Not A Label"
     assert len(tracks[1]) == len(segs[1]) and len(tracks[2]) == len(segs[2])
+
+
+class WholeTurnTTS(DummyTTS):
+    """DummyTTS behind the whole-turn interface; records the context it was given."""
+
+    whole_turn = True
+
+    def __init__(self):
+        self.calls = []
+
+    def synthesize(self, text, voice, speed=1.0, context=None):
+        self.calls.append((text, context))
+        return super().synthesize(text, voice, speed)
+
+
+def test_whole_turn_backend_gets_context_and_retimed_pauses():
+    from turnsynth.config import Timing
+    from turnsynth.render import spoken_text, synthesize_item
+    from turnsynth.script import Item
+
+    item = Item(1, "A", "turn", "I think we should <pause 0.9> probably leave early. <pause 1.2> Unless it rains")
+    text, cuts = spoken_text(item)
+    assert text == "I think we should, probably leave early. Unless it rains" and cuts == [(4, 0.9), (7, 1.2)]
+
+    timing = Timing()  # a scripted pause length is used as written
+    sp = synthesize_item(WholeTurnTTS(), item, "v", timing, np.random.default_rng(0))
+    assert [w.text for w in sp.words] == item.words
+    for k, gap in cuts:
+        assert abs(sp.words[k].start - sp.words[k - 1].end - gap) < 0.01
+
+    tts = WholeTurnTTS()
+    script = load(EXAMPLES[0])
+    render(script, tts, conversation_id="1")
+    assert len(tts.calls) == len(script.items)  # one call per item, in script order
+    _, ctx = tts.calls[-1]
+    assert len(ctx.history) == sum(it.speaker == script.items[-1].speaker for it in script.items) - 1
+    assert ctx.partner is not None
+
+
+def test_emotion_field_validated():
+    obj = json.loads(EXAMPLES[0].read_text())
+    obj["turns"][0]["emotion"] = {"happy": 0.4}
+    assert parse(obj).items[0].emotion == {"happy": 0.4}
+    obj["turns"][0]["emotion"] = {"giddy": 0.4}
+    with pytest.raises(ScriptError):
+        parse(obj)

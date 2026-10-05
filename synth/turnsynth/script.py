@@ -28,6 +28,7 @@ from turnsynth import labels
 
 PAUSE_RE = re.compile(r"<pause\s+([0-9.]+)\s*>")
 SPEAKERS = ("A", "B")
+EMOTIONS = ("happy", "angry", "sad", "afraid", "disgusted", "melancholic", "surprised", "calm")
 ITEM_TYPES = ("turn", "backchannel", "interruption")
 
 
@@ -43,6 +44,7 @@ class Item:
     stance: str = "competitive"
     host: int | None = None
     after_word: int | None = None
+    emotion: dict[str, float] | None = None  # optional, for emotion-controllable TTS
 
     @property
     def chunks(self) -> list[tuple[str, float | None]]:
@@ -103,6 +105,8 @@ class Script:
             if it.type != "turn":
                 d["host"] = it.host
                 d["after_word"] = it.after_word
+            if it.emotion:
+                d["emotion"] = it.emotion
             return d
 
         return {
@@ -137,6 +141,7 @@ def parse(obj: dict) -> Script:
                 stance=str(raw.get("stance", "competitive")),
                 host=None if raw.get("host") is None else int(raw["host"]),
                 after_word=None if raw.get("after_word") is None else int(raw["after_word"]),
+                emotion=None if not raw.get("emotion") else {str(k): float(v) for k, v in raw["emotion"].items()},
             )
             items.append(item)
         script = Script(
@@ -177,6 +182,8 @@ def parse(obj: dict) -> Script:
                 raise ScriptError("anchor", f"item {it.id}: after_word out of range for host {host.id}")
             if it.type == "interruption" and it.floor_taking and host is not last_floor:
                 raise ScriptError("anchor", f"item {it.id}: a floor-taking interruption must cut the current floor holder")
+        if it.emotion and (set(it.emotion) - set(EMOTIONS) or not all(0.0 <= v <= 1.0 for v in it.emotion.values())):
+            raise ScriptError("schema", f"item {it.id}: emotion keys must be from {EMOTIONS} with weights in [0, 1]")
         for chunk, pause in it.chunks:
             if pause is not None and not 0.1 <= pause <= 5.0:
                 raise ScriptError("schema", f"item {it.id}: pause {pause} out of range")
