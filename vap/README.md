@@ -50,5 +50,14 @@ modal secret create huggingface HF_TOKEN=hf_...
 modal run modal_dev.py                    # or --ckpt pretrained|swbd|swbd_oto
 ```
 
+## Scoring on dev without gated data or a GPU
+VAP's dev score can be reproduced from public inputs alone:
+- dev gold events: https://turnbench.sesame.com/dev-gold.json
+- VAP's raw 50 Hz probabilities: HF dataset `freemanjiang/turnbench-baseline-probs` (rev `e3cd4caa`), `vap/probs-{eot,int}.json`
+
+Rescoring those reproduces the official dev result exactly (EOT recall 0.841 at FPR 0.045, INT recall 0.957).
+So the gated data and a GPU are only needed to run VAP itself, for example on new audio or a new checkpoint.
+
 ## Status
-- Not yet re-scored on dev ourselves: waiting on a working HF token and a GPU run. `modal_dev.py` is untested.
+- Dev score reproduced from the public probabilities above (in the project's threshold analysis).
+- `modal_dev.py` (full inference on gated audio) is still untested.
