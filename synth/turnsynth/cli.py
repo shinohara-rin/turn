@@ -138,7 +138,7 @@ def main(argv=None) -> None:
     r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices)")
     r.add_argument("--no-dialogue-context", action="store_true",
                    help="IndexTTS ablation: per-chunk calls from the fixed bank clip, as in MultiTalk")
-    r.add_argument("--index-pass", default="turn", choices=["turn", "speaker", "floor"],
+    r.add_argument("--index-pass", default="floor", choices=["turn", "speaker", "floor"],
                    help="IndexTTS: one call per line; each speaker's lines read in long passes and cut apart; "
                         "or the same but a pass ends when the other speaker takes the floor")
     r.add_argument("--entrain", type=float, default=0.0,

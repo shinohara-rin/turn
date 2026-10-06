@@ -160,7 +160,7 @@ class IndexTTS:
 
     def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
                  half: bool = True, anchor_s: float = 5.0, prompt_s: float = 14.0, entrain: float = 0.0,
-                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "turn", pass_words: int = 110):
+                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "floor", pass_words: int = 110):
         import soundfile as sf
 
         from turnsynth.align import Aligner
