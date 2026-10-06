@@ -48,7 +48,7 @@ def cmd_render(args) -> None:
     if args.tts == "indextts":
         tts_kwargs = {"model_dir": args.index_model_dir, "bank": args.voice_bank, "version": args.index_version,
                       "device": None if args.device == "auto" else args.device, "entrain": args.entrain,
-                      "context": not args.no_dialogue_context}
+                      "context": not args.no_dialogue_context, "pass_mode": args.index_pass}
     tts = make_tts(args.tts, **tts_kwargs)
     transcriber = Transcriber(args.asr, device=args.device) if args.asr else None
     judge = None
@@ -138,6 +138,9 @@ def main(argv=None) -> None:
     r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices)")
     r.add_argument("--no-dialogue-context", action="store_true",
                    help="IndexTTS ablation: per-chunk calls from the fixed bank clip, as in MultiTalk")
+    r.add_argument("--index-pass", default="turn", choices=["turn", "speaker", "floor"],
+                   help="IndexTTS: one call per line; each speaker's lines read in long passes and cut apart; "
+                        "or the same but a pass ends when the other speaker takes the floor")
     r.add_argument("--entrain", type=float, default=0.0,
                    help="IndexTTS: emotion strength borrowed from the partner's last line when the script gives none")
     r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en); empty = script text")

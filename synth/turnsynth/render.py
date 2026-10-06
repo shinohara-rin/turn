@@ -186,6 +186,95 @@ def assign_voices(tts: TTS, script: Script, rng: np.random.Generator) -> dict[st
     return voices
 
 
+def synthesize_by_item(tts: TTS, script: Script, voices: dict[str, str], timing: Timing,
+                       rng: np.random.Generator) -> dict[int, Speech]:
+    """One call per item in script order, so a contextual backend hears the dialogue as it unfolds."""
+    words_per_s = TYPES[script.conversation_type].words_per_min / 60
+    speeches: dict[int, Speech] = {}
+    history: dict[str, list[Speech]] = {"A": [], "B": []}
+    for item in script.items:
+        other = "B" if item.speaker == "A" else "A"
+        ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
+                      emotion=item.emotion, words_per_s=words_per_s)
+        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx)
+        history[item.speaker].append(speeches[item.id])
+    return speeches
+
+
+def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timing: Timing,
+                          rng: np.random.Generator, max_words: int | None = None) -> dict[int, Speech]:
+    """Read each speaker's lines in long passes, then cut the pass back into items.
+
+    Per-item calls give every line its own prosodic start and end, which
+    sounds disconnected from the speaker's previous line. Here all of one
+    speaker's items, in order, go into as few calls as the model's length
+    allows (`max_words` per pass; the rolling prompt carries over between
+    passes), so one line flows into the next as it does when a person talks.
+    With the backend's pass_split="floor", a pass also ends whenever the
+    other speaker takes the floor: a speaker's lines within one floor are
+    read together, but a real turn end stays the end of a reading, so it
+    keeps its final fall.
+    Items are cut apart in the aligned silence between them and their
+    within-item pauses re-timed as usual. An item whose aligned length is
+    implausible (the model skipped or slurred it) is re-synthesized alone.
+    """
+    max_words = max_words or getattr(tts, "pass_words", 110)
+    by_floor = getattr(tts, "pass_split", "speaker") == "floor"
+    words_per_s = TYPES[script.conversation_type].words_per_min / 60
+    speeches: dict[int, Speech] = {}
+    for spk in ("A", "B"):
+        blocks: list[list[Item]] = [[]]
+        handover = False  # the other speaker took the floor since this speaker's last item
+        for it in script.items:
+            if it.speaker != spk:
+                handover |= it.is_floor
+                continue
+            if blocks[-1] and (sum(len(b.words) for b in blocks[-1]) + len(it.words) > max_words
+                               or (by_floor and handover)):
+                blocks.append([])
+            blocks[-1].append(it)
+            handover = False
+        history: list[Speech] = []
+        for block in blocks:
+            texts, cuts = [], []
+            for it in block:
+                text, c = spoken_text(it)
+                if text[-1] not in ".?!\u2026":
+                    text += "..." if text[-1] not in ",;:-" else ""
+                texts.append(text)
+                cuts.append(c)
+            sp = tts.synthesize(" ".join(texts), voices[spk],
+                                context=Context(history=list(history), words_per_s=words_per_s))
+            history.append(sp)
+            n_words = [len(it.words) for it in block]
+            if len(sp.words) != sum(n_words):
+                for it in block:
+                    speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
+                                                      Context(history=list(history), words_per_s=words_per_s))
+                continue
+            # Cut points: the middle of the silence between consecutive items.
+            bounds, k = [0.0], 0
+            for n in n_words[:-1]:
+                k += n
+                bounds.append((sp.words[k - 1].end + sp.words[k].start) / 2)
+            bounds.append(sp.duration)
+            k = 0
+            for it, n, c, t0, t1 in zip(block, n_words, cuts, bounds, bounds[1:]):
+                ws = sp.words[k: k + n]
+                k += n
+                span = ws[-1].end - ws[0].start
+                if span < 0.07 * n or span > 1.2 * n + 0.5:
+                    speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
+                                                      Context(history=list(history), words_per_s=words_per_s))
+                    continue
+                sr = sp.sample_rate
+                piece = Speech(sp.audio[int(t0 * sr): int(t1 * sr)].copy(), sr,
+                               [Word(w, x.start - t0, x.end - t0) for w, x in zip(it.words, ws)])
+                piece = _retime(piece, [(j, timing.pause(rng, pause)) for j, pause in c if j < n])
+                speeches[it.id] = _trim(piece)
+    return speeches
+
+
 def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
            timing: Timing | None = None, bleed_db: float | None = None) -> Rendered:
     timing = timing or Timing()
@@ -199,15 +288,10 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
         g = timing.min_same_channel_gap
         return all(end + g <= s or start >= e + g for s, e in busy[spk])
 
-    # Synthesize in script order, so a contextual backend hears the dialogue as it unfolds.
-    speeches: dict[int, Speech] = {}
-    history: dict[str, list[Speech]] = {"A": [], "B": []}
-    for item in script.items:
-        other = "B" if item.speaker == "A" else "A"
-        ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
-                      emotion=item.emotion, words_per_s=ctype.words_per_min / 60)
-        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx)
-        history[item.speaker].append(speeches[item.id])
+    if getattr(tts, "speaker_pass", False):
+        speeches = synthesize_by_speaker(tts, script, voices, timing, rng)
+    else:
+        speeches = synthesize_by_item(tts, script, voices, timing, rng)
 
     # Pass 1: the floor sequence.
     prev: Placed | None = None
