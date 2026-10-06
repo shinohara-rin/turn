@@ -201,3 +201,20 @@ def test_vad_times_at_22050():
     audio[int(150.0 * sr): int(151.0 * sr)] = 0.5
     (s, e), = vad.segments(audio, sr)
     assert abs(s - 149.98) < 0.015 and abs(e - 151.02) < 0.015
+
+
+def test_speaker_pass_cuts_items_back_apart():
+    class PassTTS(WholeTurnTTS):
+        speaker_pass = True
+        pass_words = 60
+
+    tts = PassTTS()
+    script = load(EXAMPLES[0])
+    r = render(script, tts, conversation_id="1")
+    words = {s: sum(len(it.words) for it in script.items if it.speaker == s) for s in "AB"}
+    assert len(tts.calls) < len(script.items)
+    assert sum(len(t.split()) for t, _ in tts.calls) == words["A"] + words["B"]
+    for p in r.placed:
+        assert [w.text for w in p.speech.words][: len(p.speech.words)] == p.item.words[: len(p.speech.words)]
+        if not p.cut:
+            assert len(p.speech.words) == len(p.item.words)

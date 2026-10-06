@@ -160,7 +160,7 @@ class IndexTTS:
 
     def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
                  half: bool = True, anchor_s: float = 5.0, prompt_s: float = 14.0, entrain: float = 0.0,
-                 emo_alpha: float = 0.8, context: bool = True):
+                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "turn", pass_words: int = 110):
         import soundfile as sf
 
         from turnsynth.align import Aligner
@@ -179,6 +179,10 @@ class IndexTTS:
         self.version = version
         # context=False is the MultiTalk-style ablation: chunk by chunk, fixed bank prompt, no emotion.
         self.whole_turn = context
+        # pass_mode="speaker": render reads each speaker's lines in long passes (render.synthesize_by_speaker).
+        self.speaker_pass = context and pass_mode in ("speaker", "floor")
+        self.pass_split = pass_mode
+        self.pass_words = pass_words
         self.bank = load_bank(bank)
         self.anchor_s, self.prompt_s = anchor_s, prompt_s
         self.entrain, self.emo_alpha = entrain, emo_alpha
@@ -205,24 +209,48 @@ class IndexTTS:
                           emo_alpha=self.emo_alpha)
         elif self.entrain > 0 and context.partner is not None and context.partner.duration > 1.0:
             kwargs.update(emo_audio_prompt=self._write(context.partner.audio), emo_alpha=self.entrain)
+        try:
+            return self._synthesize(text, voice, speed, context, kwargs)
+        finally:
+            for f in self._tmp.glob("*.wav"):
+                f.unlink()
+
+    def _synthesize(self, text: str, voice: str, speed: float, context: Context, kwargs: dict) -> Speech:
+        audio, words = self._infer(text, voice, context, kwargs)
+        if self.version != "2.5" or not self.whole_turn or not context.words_per_s or len(words) < 4:
+            return Speech(audio, self.sample_rate, words)
+        df = kwargs["duration_factor"] * speed
+        ratio = self._rate(words) / context.words_per_s
+        if len(words) >= 20 and abs(np.log(ratio)) > np.log(1.2):
+            # A long pass (speaker mode) is read at one pace from start to end, so a
+            # pace off by more than 20% is corrected by generating it once more.
+            df = float(np.clip(df * ratio, 0.7, 1.5))
+            kwargs["duration_factor"] = df / speed
+            audio, words = self._infer(text, voice, context, kwargs)
+            ratio = self._rate(words) / context.words_per_s
+        # Hearing its own slower turns in the prompt, the model drifts slower turn
+        # by turn; nudge the next duration toward the conversation's pace.
+        self._pace[voice] = float(np.clip(df * ratio ** 0.5, 0.7, 1.5))
+        return Speech(audio, self.sample_rate, words)
+
+    def _infer(self, text: str, voice: str, context: Context, kwargs: dict) -> tuple[np.ndarray, list[Word]]:
         prompt = self._write(self._prompt(voice, context.history))
         try:
             result = self.model.infer(spk_audio_prompt=prompt, text=text, output_path=None, **kwargs)
         finally:
-            for f in self._tmp.glob("*.wav"):
-                f.unlink()
+            Path(prompt).unlink()
         if result is None:
-            return Speech(np.zeros(int(0.1 * self.sample_rate), np.float32), self.sample_rate, [])
+            return np.zeros(int(0.1 * self.sample_rate), np.float32), []
         sr, wav = result
         audio = np.asarray(wav, dtype=np.float32).reshape(len(wav), -1).mean(axis=1) / 32768.0
-        words = self.aligner(audio, sr, text.split())
-        if self.version == "2.5" and self.whole_turn and context.words_per_s and len(words) >= 4:
-            # Hearing its own slower turns in the prompt, the model drifts slower
-            # turn by turn; nudge the next duration toward the conversation's pace.
-            rate = len(words) / max(words[-1].end - words[0].start, 0.1)
-            df = kwargs["duration_factor"] * speed
-            self._pace[voice] = float(np.clip(df * (rate / context.words_per_s) ** 0.5, 0.75, 1.25))
-        return Speech(audio, sr, words)
+        return audio, self.aligner(audio, sr, text.split())
+
+    @staticmethod
+    def _rate(words: list[Word]) -> float:
+        """Words per second, counting each gap up to 0.3 s so silence between lines is not read as slow speech."""
+        span = sum(w.end - w.start for w in words) + sum(min(max(b.start - a.end, 0.0), 0.3)
+                                                       for a, b in zip(words, words[1:]))
+        return len(words) / max(span, 0.1)
 
     def _anchor(self, voice: str) -> np.ndarray:
         if voice not in self._anchors:
