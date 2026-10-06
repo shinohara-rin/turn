@@ -103,7 +103,7 @@ nudges each speaker toward the conversation type's TurnBench rate.
 
 ### Reading several lines in one pass
 
-Per-line calls still start every line from scratch. `--index-pass` lets
+Per-line calls still start every line from scratch. `--index-pass` (default `floor`) lets
 IndexTTS read several of a speaker's lines in one call; render aligns the
 pass and cuts it back into lines at the silences between them (a line the
 model garbled is re-synthesized alone, and a long pass more than 20% off
