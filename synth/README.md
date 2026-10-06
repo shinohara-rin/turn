@@ -101,6 +101,28 @@ slowed every speaker turn by turn (3.6 down to about 2 words/s); prompts now
 have silences squeezed to 0.15 s, and IndexTTS-2.5's `duration_factor`
 nudges each speaker toward the conversation type's TurnBench rate.
 
+### Reading several lines in one pass
+
+Per-line calls still start every line from scratch. `--index-pass` lets
+IndexTTS read several of a speaker's lines in one call; render aligns the
+pass and cuts it back into lines at the silences between them (a line the
+model garbled is re-synthesized alone, and a long pass more than 20% off
+the target pace is generated once more).
+
+| casual example | `turn` (one call per line) | `floor` | `speaker` |
+|---|---|---|---|
+| what one call reads | one line | a speaker's lines until the other takes the floor | up to 110 words of a speaker's lines |
+| turn end: pitch level / slope | -1.5 st / -0.9 | -2.3 st / -1.4 | -0.9 st / +0.2 |
+| scripted hold pause: level / slope | +2.1 st / +0.8 | +1.2 st / +0.2 | +0.8 st / +0.4 |
+| pitch jump into the speaker's next line | 1.2 st | 1.1 st | 1.6 st |
+| speaking rate (median) | 3.3 words/s | 3.3 | 3.6 |
+| ASR WER | 9.0% | 9.8% | 8.9% |
+
+`speaker` turns real turn ends into mid-reading sentence ends, so they stop
+falling, which removes the cue an EOT model needs; `floor` keeps it while
+joining a speaker's lines within one floor. Per-line emotion vectors are
+ignored inside a multi-line pass.
+
 Voice prompts come from GLOBE_V2 (CC0 Common Voice speakers with gender and
 accent labels): `turnsynth voices` joins a few utterances per speaker into
 a 6-10 s clip. Nothing from TurnBench is used as a voice.
