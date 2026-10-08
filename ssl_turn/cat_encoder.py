@@ -14,10 +14,8 @@ https://arxiv.org/abs/2602.10934
 """
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
-import struct
 import sys
 from contextlib import ExitStack
 from pathlib import Path
@@ -41,11 +39,8 @@ OUT_DIM = 768
 
 
 def _sha256(path):
-    h = hashlib.sha256()
-    with open(path, 'rb') as f:
-        for block in iter(lambda: f.read(1 << 22), b''):
-            h.update(block)
-    return h.hexdigest()
+    from hf_slice import sha256
+    return sha256(path)
 
 
 def fetch_code(directory):
@@ -80,59 +75,10 @@ def load_upstream(directory):
 
 
 def fetch_encoder_weights(directory, out_name='cat_encoder.safetensors'):
-    """Range-read only encoder.* tensors from the pinned shard (~3.5 GB fp32, not 7 GB).
-
-    Writes a standalone safetensors file plus a JSON identity record with its SHA256.
-    """
-    import httpx
-    from huggingface_hub import hf_hub_url
-    from huggingface_hub.utils import build_hf_headers
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    out = directory / out_name
-    url = hf_hub_url(CAT_REPO, ENCODER_SHARD, revision=CAT_REVISION)
-    session = httpx.Client(headers=build_hf_headers(), follow_redirects=True, timeout=600)
-
-    def get(start, end):
-        r = session.get(url, headers={'Range': f'bytes={start}-{end}'})
-        r.raise_for_status()
-        if len(r.content) != end - start + 1:
-            raise IOError('short range read')
-        return r.content
-
-    (header_len,) = struct.unpack('<Q', get(0, 7))
-    header = json.loads(get(8, 8 + header_len - 1))
-    base = 8 + header_len
-    names = sorted(k for k in header if k.startswith('encoder.'))
-    if not names:
-        raise ValueError('No encoder tensors in shard')
-    spans = sorted((header[k]['data_offsets'][0], header[k]['data_offsets'][1], k) for k in names)
-    # Encoder tensors are contiguous in practice; fetch as few large ranges as possible.
-    new_header, offset, runs = {}, 0, []
-    for start, end, name in spans:
-        if runs and runs[-1][1] == start:
-            runs[-1][1] = end
-        else:
-            runs.append([start, end])
-        new_header[name] = dict(header[name], data_offsets=[offset, offset + end - start])
-        offset += end - start
-    new_header['__metadata__'] = {'format': 'pt', 'source': f'{CAT_REPO}@{CAT_REVISION}/{ENCODER_SHARD}'}
-    blob = json.dumps(new_header, separators=(',', ':')).encode()
-    blob += b' ' * (-len(blob) % 8)
-    tmp = out.with_suffix('.partial')
-    with open(tmp, 'wb') as f:
-        f.write(struct.pack('<Q', len(blob)))
-        f.write(blob)
-        chunk = 256 << 20
-        for start, end in runs:
-            for lo in range(start, end, chunk):
-                hi = min(end, lo + chunk)
-                f.write(get(base + lo, base + hi - 1))
-    tmp.rename(out)
-    identity = dict(repo=CAT_REPO, revision=CAT_REVISION, shard=ENCODER_SHARD, tensors=len(names),
-                    bytes=offset, sha256=_sha256(out))
-    (directory / (out_name + '.json')).write_text(json.dumps(identity, indent=2))
-    return out, identity
+    """Range-read only encoder.* tensors from the pinned shard (~3.5 GB fp32, not 7 GB)."""
+    from hf_slice import fetch_tensors
+    out = Path(directory) / out_name
+    return out, fetch_tensors(CAT_REPO, CAT_REVISION, ENCODER_SHARD, 'encoder.', out)
 
 
 class CatEncoder(nn.Module):
