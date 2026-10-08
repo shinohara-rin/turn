@@ -155,7 +155,12 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             taps, final = select_inputs(regularize(xb, cfg), cfg)
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 out = net(taps, final)
-            loss, parts = m.loss({k: v.float() for k, v in out.items()}, yb, cfg.get('loss_weights'))
+            target = yb
+            if cfg.get('pause_weight', 0) > 0:  # up-weight frames where nobody is claiming the floor
+                quiet = (yb['act'] != lb.A['CLAIM']).all(-1).float()
+                boost = 1 + cfg['pause_weight'] * quiet
+                target = dict(yb, floor_w=yb['floor_w'] * boost, future_w=yb['future_w'] * boost[..., None])
+            loss, parts = m.loss({k: v.float() for k, v in out.items()}, target, cfg.get('loss_weights'))
             opts[name].zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -208,13 +213,11 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
                         with torch.autocast('cuda', dtype=torch.bfloat16):
                             o = net(taps, final)
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items() if k in ('floor', 'future')})
-                floor = torch.cat([o['floor'] for o in outs])
-                future = torch.cat([o['future'] for o in outs])
-                sc = lb.turnbench_scores(floor, future)
-                now = floor.softmax(-1)
-                other_holds = torch.stack([now[:, 1] + now[:, 3], now[:, 0] + now[:, 3]], -1)
-                for task, v in (('eot', sc['eot']), ('int', sc['int']), ('int_gated', sc['int'] * other_holds)):
-                    probs[f'{name}/{split}/{cid}/{task}'] = v.clamp(0, 1).cpu().numpy().astype(np.float32)
+                floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
+                future = torch.cat([o['future'] for o in outs]).softmax(-1)
+                # Posteriors only; score.py derives EOT/INT score variants from them.
+                post = torch.cat([floor[:, None], future], 1)  # [T, 1 + H, 4]
+                probs[f'{name}/{split}/{cid}/post'] = post.cpu().numpy().astype(np.float16)
     os.makedirs(f'/work/runs/{run}', exist_ok=True)
     np.savez_compressed(f'/work/runs/{run}/probs.npz', **probs)
     for name, net in models.items():
@@ -227,6 +230,6 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
 
 @app.local_entrypoint()
-def main(run: str, configs: str, n_train: int = 32, steps: int = 1500, batch: int = 64):
+def main(run: str, configs: str, n_train: int = 32, steps: int = 1500, batch: int = 64, gpu: str = 'A100'):
     cfgs = json.load(open(configs))
-    print(train.remote(run, cfgs, n_train, steps, batch))
+    print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch))
