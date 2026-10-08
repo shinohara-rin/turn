@@ -6,6 +6,7 @@ only official event predictions; optional probability caches are dev-only.
 --decision-phase-ms 128 requires a full phase128 training manifest and the shared
 phase128_full_arrays helper. It extracts the real complete 128+160*k ms grid
 from source-duration-floor audio, including naturally observed tail decisions.
+from workspace import hf_token
 It never shifts predictions or pads a final decision. Before a real benchmark
 run, qualify the shared helper and phase encoder (including batched extraction)
 with qualify_phase128_benchmark.py in the same immutable bundle/runtime. Supply
@@ -287,8 +288,8 @@ def main():
         raise ValueError('Freeze creation cannot resume or consume another freeze')
     if args.split == 'test' and not (args.freeze or args.freeze_out):
         raise ValueError('Test inference requires explicit freeze')
-    if Path('/content/.hf_token').is_file():
-        os.environ['HF_TOKEN'] = Path('/content/.hf_token').read_text().strip()
+    if hf_token(required=False):
+        os.environ['HF_TOKEN'] = hf_token()
     os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
     torch.set_num_threads(2)
     sys.path.insert(0, args.turnbench_path)

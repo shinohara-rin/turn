@@ -1,5 +1,6 @@
 """Remote-only otoSpeech ingestion. Never run on the host; downloads stay /content."""
 from pathlib import Path
+from workspace import hf_token
 import os,sys,json,re,hashlib,concurrent.futures,argparse
 import numpy as np
 from dataclasses import asdict
@@ -65,7 +66,7 @@ def gold_and_activity(cid,times,directory=None):
 
 def main():
     if not Path('/content').exists():raise RuntimeError('Remote Colab only')
-    os.environ['HF_TOKEN']=Path('/content/.hf_token').read_text().strip()
+    os.environ['HF_TOKEN']=hf_token()
     os.environ['HF_HOME']='/content/hf'
     ap=argparse.ArgumentParser();ap.add_argument('--train',type=int,default=16);ap.add_argument('--dev',type=int,default=6);args=ap.parse_args()
     split=json.loads((ROOT/'split.json').read_text()) if (ROOT/'split.json').exists() else make_split()

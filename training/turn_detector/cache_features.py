@@ -1,5 +1,6 @@
 """Remote feature materialization; datasets, waveforms and features stay on Colab."""
 from pathlib import Path
+from workspace import hf_token
 import argparse,json,os,sys,time
 import numpy as np
 ROOT=Path('/content/turn-recreation')
@@ -26,7 +27,7 @@ def main():
     from prepare_data import download,gold_and_activity
     ap=argparse.ArgumentParser();ap.add_argument('--method',choices=['streaming','prefix'],default='streaming');ap.add_argument('--limit',type=int);args=ap.parse_args()
     if not ROOT.exists():raise RuntimeError('Remote Colab only')
-    os.environ['HF_TOKEN']=Path('/content/.hf_token').read_text().strip()
+    os.environ['HF_TOKEN']=hf_token()
     os.environ['HF_HUB_DISABLE_PROGRESS_BARS']='1'
     torch.set_num_threads(2)
     out=ROOT/f'cache-{args.method}';out.mkdir(exist_ok=True)

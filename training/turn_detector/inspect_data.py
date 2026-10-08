@@ -1,6 +1,7 @@
 from pathlib import Path
+from workspace import hf_token
 import os,sys,json,concurrent.futures,hashlib
-os.environ['HF_TOKEN']=Path('/content/.hf_token').read_text().strip()
+os.environ['HF_TOKEN']=hf_token()
 os.environ['HF_HOME']='/content/hf'
 from huggingface_hub import HfApi,hf_hub_download
 root=Path('/content/turn-recreation'); root.mkdir(exist_ok=True)

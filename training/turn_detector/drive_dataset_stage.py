@@ -1,12 +1,13 @@
 """CPU Colab: download pinned datasets directly into Google Drive, no local host copy."""
 from pathlib import Path
+from workspace import hf_token
 import os,json,time,concurrent.futures
 ROOT=Path('/content/drive/MyDrive/turn-detector-recreation/datasets')
 REPOS=[('otoearth/otoSpeech-full-duplex-turn-104h','46f520297f434edf804389f82f9075a59d2f8268'),('mundo-ai/turn-benchmark-dev','8fa18a24be51528a45397b35cbcaecd84202062b'),('mundo-ai/turn-benchmark-test','0c12a77a0134449757e4fd4144913bfcff0c376d')]
 
 def main():
     if not Path('/content/drive/MyDrive').is_dir():raise RuntimeError('Drive not mounted')
-    os.environ['HF_TOKEN']=Path('/content/.hf_token').read_text().strip()
+    os.environ['HF_TOKEN']=hf_token()
     os.environ['HF_HUB_DISABLE_PROGRESS_BARS']='1'
     from huggingface_hub import HfApi,hf_hub_download
     from huggingface_hub.utils import disable_progress_bars

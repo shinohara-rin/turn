@@ -1,0 +1,9 @@
+nemo_toolkit[asr]
+silero-vad
+datasets
+pyarrow
+pydantic>=2
+soundfile
+scikit-learn
+srt
+huggingface_hub

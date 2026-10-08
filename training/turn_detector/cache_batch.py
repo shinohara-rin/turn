@@ -7,6 +7,7 @@ Training-manifest defaults to the original frozen cache manifest; it must match
 the checkpoint's recorded audit exactly. Never reuse a frozen output directory.
 """
 from pathlib import Path
+from workspace import hf_token
 import os,json,time,argparse,hashlib
 import numpy as np
 from cache_identity import sha256_file,validate_continuation,validate_cache_identity
@@ -19,7 +20,7 @@ def main():
     from scale_cache import (validate_selection,verified_drive_directory,cleanup_created_fallback,
                              reuse_verified_cache,VAD_PROTOCOL)
     from prepare_data import download,gold_and_activity,REPO,REV
-    os.environ['HF_TOKEN']=Path('/content/.hf_token').read_text().strip()
+    os.environ['HF_TOKEN']=hf_token()
     os.environ['HF_HUB_DISABLE_PROGRESS_BARS']='1'
     torch.set_num_threads(2)
     ap=argparse.ArgumentParser();ap.add_argument('--batch-size',type=int,default=4)

@@ -13,6 +13,27 @@ This is a research pipeline, not a claim to reproduce Ooma's unpublished weights
 - `turn_detector/webgpu_playground/`: static browser UI, audio worklet, frontend, ONNX worker and remote deployment scripts.
 - `source-snapshot.json`: original source commit and per-file hashes. Some included experiments were work in progress when first synced.
 
+## Where to run
+
+The scripts use the historical Colab layout (`/content/turn-recreation`, `/content/turnbench`,
+`/content/hf`). Any host that provides that layout works; the HF token comes from the
+`HF_TOKEN` environment variable (preferred) or `/content/.hf_token`.
+
+- **Colab / any GPU machine (SSH, cloud VM):** copy `turn_detector/` to
+  `/content/turn-recreation/` and run `python setup_remote.py --install-deps`. Off Colab,
+  `/content` may not exist: set `TD_WORKSPACE=/path/to/workspace` (symlinked to `/content`,
+  needs permission to create it) or create the directory/symlink yourself first. Export
+  `HF_TOKEN`. Dataset caches fall back to per-conversation HF downloads when no pre-staged
+  copy is mounted, so Drive is optional.
+- **Modal:** `turn_detector/modal_app.py` builds the image from `requirements.txt` and mounts persistent
+  Volumes behind the same `/content` paths. Stage datasets once with `modal_stage.py`, then run any stage command
+  unchanged, from `turn_detector/` with `HF_TOKEN` exported locally:
+  `modal run modal_app.py --cmd "python -m unittest test_heads"` (CPU) or
+  `TD_MODAL_GPU=A10G modal run --detach modal_app.py --gpu --cmd "python cache_batch.py --batch-size 4 --output-dir /content/turn-recreation/cache-streaming-v2"`.
+  `drive_backup.py` is unnecessary there (Volumes are persistent and committed every 60 s).
+  Not ported: `gate_evaluate.py` (hard-requires real `/content/drive/` paths) and
+  `single_speaker/` (restores private Drive caches); run those on Colab.
+
 ## Environment and data boundaries
 
 **Run training and all data access on remote Colab. Do not download data locally.**

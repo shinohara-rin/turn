@@ -4,6 +4,7 @@ No model inference/fitting, test/golden source access, or adaptive search. The
 predeclared sweep uses OUR serving policy, scored by the official event scorer.
 """
 from pathlib import Path
+from workspace import hf_token
 import argparse
 import json
 import inspect
@@ -199,8 +200,8 @@ def main():
         'search': {**grid_provenance, 'recommit_s': [None, 1.5],
                    'fpr_ceiling': .1, 'policy': 'heads.commit_events', 'ranking': 'heads.selection_key'}})
     # No caller-controlled source or revision, and no test ID lookup.
-    if Path('/content/.hf_token').is_file():
-        os.environ['HF_TOKEN'] = Path('/content/.hf_token').read_text().strip()
+    if hf_token(required=False):
+        os.environ['HF_TOKEN'] = hf_token()
     dataset = resolve_dataset(DEV_SOURCE, revision=DEV_REVISION, skip_audio=True)
     official_ids = conversation_ids(dataset)
     exact_coverage(official_ids, ids)

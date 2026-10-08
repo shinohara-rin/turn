@@ -1,11 +1,12 @@
 """Remote independent Drive inventory check; never decodes data or labels."""
 from pathlib import Path
+from workspace import hf_token
 import json,os,time
 from drive_dataset_stage import ROOT,REPOS
 
 def main():
     if not Path('/content/drive/MyDrive').is_dir():raise RuntimeError('Mounted remote Drive required')
-    os.environ['HF_TOKEN']=Path('/content/.hf_token').read_text().strip()
+    os.environ['HF_TOKEN']=hf_token()
     from huggingface_hub import HfApi
     report=json.loads((ROOT/'staging-report.json').read_text())
     if len(report)!=len(REPOS):raise ValueError('Staging incomplete')
