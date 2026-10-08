@@ -30,7 +30,7 @@ def fetch_cat():
     return ident
 
 
-@app.function(image=gpu_image, volumes=VOLUMES, gpu='L4', cpu=8, memory=49152, timeout=7200)
+@app.function(image=gpu_image, volumes=VOLUMES, gpu='L4', cpu=8, memory=24576, timeout=7200)
 def encode(items, batch_waves=32, chunk_frames=50, dtype='fp32'):
     import os, threading
     from concurrent.futures import ThreadPoolExecutor

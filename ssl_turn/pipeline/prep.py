@@ -154,6 +154,39 @@ def tbdev_ids():
     return conversation_ids(ds)
 
 
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=4096, timeout=1800)
+def extra_ids():
+    """Cross-partition conversations whose speakers are all train/dev actors (no gate speaker).
+    For a labeled data-scaling ablation only; they share speakers with oto dev."""
+    import os
+    import numpy as np
+    rows = []
+    for d in sorted(os.listdir(OTO)):
+        p = f'{OTO}/{d}/metadata.json'
+        if os.path.exists(p):
+            rows.append(dict(json.load(open(p)), _dir=d))
+    actors = sorted({r[f'speaker_{s}_actor_id'] for r in rows for s in (1, 2)})
+    rng = np.random.default_rng(20261007)
+    rng.shuffle(actors)
+    n = len(actors)
+    assign = {a: ('train' if i < int(n * .6) else 'dev' if i < int(n * .8) else 'gate') for i, a in enumerate(actors)}
+    excluded = json.load(open('/work/split.json'))['splits']['excluded_cross_partition']
+    by = {r['_dir']: r for r in rows}
+    keep = [c for c in excluded if 'gate' not in {assign[by[c][f'speaker_{s}_actor_id']] for s in (1, 2)}]
+    json.dump(keep, open('/work/extra_no_gate.json', 'w'))
+    work.commit()
+    return keep
+
+
+@app.local_entrypoint()
+def extra():
+    keep = extra_ids.remote()
+    print('extra (no gate speaker):', len(keep))
+    for r in oto_item.map(keep):
+        pass
+    print('done')
+
+
 @app.local_entrypoint()
 def main(train: int = 32, dev: int = 16, tbdev: bool = True):
     counts = make_split.remote()

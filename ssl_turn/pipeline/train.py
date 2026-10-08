@@ -59,6 +59,64 @@ def select_inputs(x, cfg):
     return taps, final
 
 
+def infer_all(models, configs, splits, dev):
+    """Exact chunked causal inference: each 1000-frame chunk carries enough left context to
+    cover the stacked attention windows (layers x window frames). Exports floor posteriors
+    (now + projections) and per-speaker p(SILENT) from the act head."""
+    import numpy as np
+    import torch
+    out = {}
+    for name, net in models.items():
+        net.eval()
+        cfg = configs[name]
+        ctx = cfg.get('layers', 4) * int(round(cfg.get('window_s', 20.0) / 0.08))
+        for split, Xs, offs, ids in splits:
+            for cid, a, b in zip(ids, offs[:-1], offs[1:]):
+                outs = []
+                with torch.no_grad():
+                    for s in range(a, b, 1000):
+                        lo = max(a, s - ctx)
+                        taps, final = select_inputs(Xs[lo:min(b, s + 1000)][None], cfg)
+                        with torch.autocast('cuda', dtype=torch.bfloat16):
+                            o = net(taps, final)
+                        outs.append({k: v[0, s - lo:].float() for k, v in o.items() if k in ('floor', 'future', 'act')})
+                floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
+                future = torch.cat([o['future'] for o in outs]).softmax(-1)
+                silent = torch.cat([o['act'] for o in outs]).softmax(-1)[..., 0]  # [T, 2] p(SILENT)
+                out[f'{name}/{split}/{cid}/post'] = torch.cat([floor[:, None], future], 1).cpu().numpy().astype(np.float16)
+                out[f'{name}/{split}/{cid}/silent'] = silent.cpu().numpy().astype(np.float16)
+    return out
+
+
+@app.function(image=gpu_image, volumes=VOLUMES, gpu='L4', cpu=4, memory=16384, timeout=3600)
+def infer(run, names, out_run=None):
+    """Re-run inference from saved checkpoints (no training) and write probs.npz."""
+    import os
+    import numpy as np
+    import torch
+    dev = 'cuda'
+    split = json.load(open('/work/split.json'))['splits']
+    have = {f[:-4] for f in os.listdir('/work/feats/oto')}
+    dev_ids = [c for c in split['dev'] if c in have]
+    tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
+    models, configs = {}, {}
+    for n in names:
+        ck = torch.load(f'/work/runs/{run}/{n}.pt', map_location=dev)
+        configs[n] = ck['cfg']
+        models[n] = build_model(ck['cfg']).to(dev)
+        models[n].load_state_dict(ck['state'])
+    Xd, offd, _ = load_split('oto', dev_ids, dev)
+    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev)
+    del Xd
+    Xt, offt, _ = load_split('tbdev', tb_ids, dev)
+    probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
+    out_run = out_run or run
+    os.makedirs(f'/work/runs/{out_run}', exist_ok=True)
+    np.savez_compressed(f'/work/runs/{out_run}/probs.npz', **probs)
+    work.commit()
+    return len(probs)
+
+
 def build_model(cfg):
     setup_path()
     import model as m
@@ -68,7 +126,7 @@ def build_model(cfg):
                        window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1))
 
 
-@app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=8, memory=65536, timeout=5400)
+@app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0):
     import os, threading
     import numpy as np
@@ -195,29 +253,11 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         print(f'{name}: best step {best[name][2]} (floor+future {best[name][0]:.4f})', flush=True)
     torch.cuda.empty_cache()
 
-    # Exact chunked causal inference: each chunk carries enough left context to cover the
-    # stacked attention windows (layers x window frames).
-    probs = {}
+    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev)
+    del Xd
+    torch.cuda.empty_cache()
     Xt, offt, _ = load_split('tbdev', tb_ids, dev)
-    for name, net in models.items():
-        net.eval()
-        cfg = configs[name]
-        ctx = cfg.get('layers', 4) * int(round(cfg.get('window_s', 20.0) / 0.08))
-        for split, Xs, offs, ids in (('oto', Xd, offd, dev_ids), ('tbdev', Xt, offt, tb_ids)):
-            for cid, a, b in zip(ids, offs[:-1], offs[1:]):
-                outs = []
-                with torch.no_grad():
-                    for s in range(a, b, 1000):
-                        lo = max(a, s - ctx)
-                        taps, final = select_inputs(Xs[lo:min(b, s + 1000)][None], cfg)
-                        with torch.autocast('cuda', dtype=torch.bfloat16):
-                            o = net(taps, final)
-                        outs.append({k: v[0, s - lo:].float() for k, v in o.items() if k in ('floor', 'future')})
-                floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
-                future = torch.cat([o['future'] for o in outs]).softmax(-1)
-                # Posteriors only; score.py derives EOT/INT score variants from them.
-                post = torch.cat([floor[:, None], future], 1)  # [T, 1 + H, 4]
-                probs[f'{name}/{split}/{cid}/post'] = post.cpu().numpy().astype(np.float16)
+    probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
     os.makedirs(f'/work/runs/{run}', exist_ok=True)
     np.savez_compressed(f'/work/runs/{run}/probs.npz', **probs)
     for name, net in models.items():

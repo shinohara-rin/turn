@@ -38,7 +38,7 @@ def cache_tbdev_gold():
     return len(out)
 
 
-def score_variants(post):
+def score_variants(post, silent=None):
     """post [T, 1 + H, 4]: floor now and at 0.4/0.8/1.6 s (HELD_0, HELD_1, OPEN, CONTESTED)
     -> per-speaker [T, 2] score tracks."""
     import numpy as np
@@ -67,6 +67,12 @@ def score_variants(post):
         out[f'eot_tr{frames}'] = clip(eot_now * held_recent)
         out[f'eot_f04_tr{frames}'] = clip(eot_f04 * held_recent)
     out['int_tr10'] = clip(holds(f08) * past_max(other, 10))
+    if silent is not None:  # gate EOT by the speaker's own causal p(SILENT) from the act head
+        out['eot_q'] = clip(eot_now * silent)
+        out['eot_f04_q'] = clip(eot_f04 * silent)
+        out['eot_mix_q'] = clip((eot_now + eot_f04) / 2 * silent)
+        out['eot_q_sqrt'] = clip(eot_now * np.sqrt(silent))
+        out['int_spk'] = clip(holds(f04) * (1 - silent))  # c must be vocalizing to take the floor
     return out
 
 
@@ -77,7 +83,7 @@ def load_gold(split, cids):
     return {c: json.load(open(f'/work/gold/oto/{c}.json')) for c in cids}
 
 
-def sweep_task(probs, gold, task, thetas=None, fps=12.5):
+def sweep_task(probs, gold, task, thetas=None, fps=12.5, refractory_s=2.0):
     import numpy as np
     from turnbench.gold import AnchorEvent, Interval
     from turnbench.score import TaskScore, merge, score_task
@@ -98,7 +104,7 @@ def sweep_task(probs, gold, task, thetas=None, fps=12.5):
     for theta in thetas:
         total = TaskScore()
         for cid, p in probs.items():
-            ev = {s + 1: commit_events(p[:, s], fps, float(theta)) for s in (0, 1)}
+            ev = {s + 1: commit_events(p[:, s], fps, float(theta), refractory_s=refractory_s) for s in (0, 1)}
             merge(total, score_task(*golds[cid][:2], ev, golds[cid][2]))
         lat = total.latency()
         rows.append(dict(theta=float(theta), recall=total.recall, fp=total.fp_rate, p50=lat.p50, p10=lat.p10,
@@ -116,7 +122,7 @@ def at_theta(rows, theta):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=16384, timeout=3600)
-def score_run(run, variants=None):
+def score_run(run, variants=None, refractories=(2.0,)):
     """Sweep every (model, task variant) in a run on oto dev (selection) and tbdev (report)."""
     import numpy as np
     from concurrent.futures import ProcessPoolExecutor
@@ -126,8 +132,12 @@ def score_run(run, variants=None):
     for k in z.files:
         model, split, cid, task = k.split('/')
         if task == 'post':
-            for name, v in score_variants(z[k].astype(np.float32)).items():
+            sk = k[:-len('post')] + 'silent'
+            silent = z[sk].astype(np.float32) if sk in z.files else None
+            for name, v in score_variants(z[k].astype(np.float32), silent).items():
                 by.setdefault((model, name), {}).setdefault(split, {})[cid] = v
+        elif task == 'silent':
+            continue
         else:
             by.setdefault((model, task), {}).setdefault(split, {})[cid] = z[k]
     jobs = {}
@@ -136,8 +146,10 @@ def score_run(run, variants=None):
             if variants and task not in variants:
                 continue
             for split, probs in splits.items():
-                jobs[(model, task, split)] = pool.submit(sweep_task, probs, load_gold(split, list(probs)),
-                                                         'eot' if task.startswith('eot') else 'int')
+                for r in refractories:
+                    name = task if r == 2.0 else f'{task}@r{r}'
+                    jobs[(model, name, split)] = pool.submit(sweep_task, probs, load_gold(split, list(probs)),
+                                                             'eot' if task.startswith('eot') else 'int', None, 12.5, r)
         rows = {k: f.result() for k, f in jobs.items()}
     report = []
     for (model, task, split), r in sorted(rows.items()):
@@ -163,8 +175,9 @@ def fmt(r):
 
 
 @app.local_entrypoint()
-def main(run: str):
-    for e in score_run.remote(run):
+def main(run: str, variants: str = '', refractories: str = '2.0'):
+    for e in score_run.remote(run, variants.split(',') if variants else None,
+                              tuple(float(x) for x in refractories.split(','))):
         print(f"{e['model']:>14} {e['task']:<8} oto[{fmt(e['oto'])}]  tbdev@oto-θ[{fmt(e.get('tbdev_at_oto_theta'))}]"
               f"  tbdev-swept[{fmt(e.get('tbdev_swept'))}]")
 
@@ -201,3 +214,54 @@ def analyze(run, model, task, theta, split='tbdev'):
     out['fp_pause_len_q10_50_90'] = q(fp_len)
     out['clean_pause_len_q10_50_90'] = q(neg_len)
     return out
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=16384, timeout=1800)
+def miss_anatomy(run, model, task, theta, split='tbdev'):
+    """Why EOT positives are missed at threshold theta (rising-edge rule, 2 s refractory):
+    'prefired' = score already above theta when the window opens (no fresh edge),
+    'refractory' = an edge in the window was suppressed by an earlier commit,
+    'never' = score stays below theta for the whole window, plus the peak score."""
+    import numpy as np
+    from turnbench.sweep import commit_events
+    work.reload()
+    z = np.load(f'/work/runs/{run}/probs.npz')
+    tracks = {}
+    for k in z.files:
+        m_, sp, cid, t = k.split('/')
+        if m_ == model and sp == split:
+            if t == 'post':
+                sk = k[:-len('post')] + 'silent'
+                tracks[cid] = score_variants(z[k].astype(np.float32),
+                                             z[sk].astype(np.float32) if sk in z.files else None)[task]
+            elif t == task:
+                tracks[cid] = z[k]
+    gold = load_gold(split, list(tracks))
+    cats, peaks, quiet_len = {}, [], []
+    fps = 12.5
+    for cid, p in tracks.items():
+        e = gold[cid]['events']
+        fires = {s + 1: commit_events(p[:, s], fps, float(theta)) for s in (0, 1)}
+        pos = sorted(e['eot_positive_events'], key=lambda x: (x['speaker'], x['time_s']))
+        for i, ev in enumerate(pos):
+            s, t = ev['speaker'], ev['time_s']
+            nxt = [x['time_s'] for x in pos if x['speaker'] == s and x['time_s'] > t]
+            lo, hi = t - 0.25, min(t + 3.0, nxt[0] if nxt else t + 3.0)
+            if any(lo <= f <= hi for f in fires[s]):
+                cats['hit'] = cats.get('hit', 0) + 1
+                continue
+            a, b = int(max(0, np.floor(lo * fps))), int(min(len(p), np.ceil(hi * fps)))
+            w = p[a:b, s - 1]
+            if len(w) == 0:
+                continue
+            above = w > theta
+            if above[0] and a > 0 and p[a - 1, s - 1] > theta:
+                c = 'prefired'
+            elif above.any():
+                c = 'refractory'
+            else:
+                c = 'never'
+                peaks.append(float(w.max()))
+            cats[c] = cats.get(c, 0) + 1
+    q = lambda v: [round(float(x), 3) for x in np.quantile(v, [.1, .25, .5, .75, .9])] if v else None
+    return dict(categories=cats, never_peak_quantiles=q(peaks))
