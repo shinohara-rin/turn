@@ -57,57 +57,84 @@ and event localization. See "Pseudo-labels" below.
 - Four layers of (shared per-channel causal self-attention → causal cross-attention to the
   other channel), as in VAP's stereo transformer. ALiBi recency bias with a hard 20 s window
   gives the same receptive field when training on crops and when streaming.
-- Heads (stereo):
-  - per-speaker **TurnBench label state** (`labels.py`), from `[own, other]` with shared
-    weights, so swapping speakers swaps the outputs (tested);
+- Heads (stereo), all speaker-equivariant (swapping channels swaps `HELD_0`/`HELD_1`; tested):
+  - **floor now**: one joint state, `HELD_0`, `HELD_1`, `OPEN` or `CONTESTED`;
+  - **floor projection**: the floor state 0.4, 0.8 and 1.6 s ahead;
+  - **per-speaker act**: `SILENT`, `CLAIM`, `BACKCHANNEL`, `LAUGHTER` or `NONCONTENT`;
   - joint **256-class VAP** (bins 0.24/0.40/0.56/0.80 s over a 2 s horizon), which needs only
     activity and so works on unlabeled stereo.
 - **Mono mode** for mixed-speaker audio: the same trunk without cross-attention, a mono
-  embedding, and speakers in **arrival-order slots**. Each slot gets a diarization logit
-  (overlap allowed) and its own TurnBench label state.
+  embedding, and speakers in **arrival-order slots**. It has the same floor and act heads
+  over slots, plus a diarization logit per slot (overlap allowed).
 - Decisions every 80 ms rather than attempt 1's 160 ms grid, which removes up to 80 ms of
   quantization latency.
 
-### Targets: TurnBench label states, not a bare p(EOT)
+### Targets: floor ownership, not end-of-turn flags
 
-`turnbench/gold.py` builds every EOT/INT event from annotated segments.
-`labels.frame_states` projects that gold onto the 12.5 Hz grid as one state per speaker
-per frame:
-- **Speaking:** `TURN`, `INT_FLOOR` (floor-taking interruption), `INT_ATTEMPT`
-  (non-floor-taking), `BACKCHANNEL`, `LAUGHTER`, `NONCONTENT`.
-- **Quiet:** `HOLD` (an EOT-negative pause), `YIELD` (from an EOT anchor until the speaker
-  next claims the floor, at most 3 s), `LISTEN`.
+The primary target is **who holds the floor** (`labels.floor_targets`):
 
-Scores for the official sweep are read off the posterior: **EOT = p(YIELD),
-INT = p(INT_FLOOR)**. Excluded (no-majority) spans get zero weight for their task.
+| Floor | Meaning |
+|---|---|
+| `HELD_c` | c holds the floor: talking, or pausing without yielding (a hold) |
+| `OPEN` | the holder yielded and nobody has claimed it yet |
+| `CONTESTED` | both claim it at once |
 
-Why this beats a binary p(EOT):
-- Every frame of every segment is supervised, not only pause frames.
-- Backchannels and noise are explicit competitors to floor-taking onsets, which is exactly
-  what INT negatives are.
-- One target serves both tasks.
+**Overlap is a state of the floor** (contested), not a coincidence of two independent
+p(speaking) values. **Vocal acts are separate from the floor:**
+- a backchannel is speech that leaves the floor where it was;
+- a claim is speech that bids for it; turns and interruptions are claims whether or not
+  they succeed.
 
-`test_labels` builds a conversation through the pinned `build_conversation_events` and checks
-the states against its anchors and spans.
+How contests and pauses resolve is learned through **floor projection**, the floor state at
+t + 0.4/0.8/1.6 s: a floor-level VAP. TurnBench events are transitions of the floor:
+
+| Event | Floor transition |
+|---|---|
+| EOT for c | `HELD_c` → `OPEN` / `HELD_other`, while c is quiet |
+| Floor-taking INT for c | `HELD_other` → `CONTESTED` → `HELD_c` |
+| Failed attempt | `CONTESTED` → back to `HELD_other` |
+| Backchannel | never leaves `HELD_other` |
+
+Scores for the official sweep (`labels.turnbench_scores`):
+- **EOT_c** = p(`OPEN`) + p(`HELD_other`) now, committed while c is quiet;
+- **INT_c** = p(`HELD_c` at +0.8 s).
+
+How labels are derived from TurnBench gold:
+- Claims and acts come from the annotated segments.
+- Whether a holder's silence is a hold or a yield comes from the gold's own EOT anchors,
+  the same floor-passing rule `gold.py` uses.
+- No-majority spans get zero weight: turn-view disputes zero the floor target, label-view
+  disputes zero the acts. Agreed failed attempts stay supervised, because they define a
+  lost contest, even though the scorer excludes them.
+
+`test_labels` checks all of this against the pinned `build_conversation_events`:
+- every EOT anchor releases the floor;
+- every hold pause keeps it;
+- the floor-taking interruption shows as `CONTESTED`, and the projection gives it to the
+  interrupter;
+- the failed attempt also shows as `CONTESTED`, but the projection returns it to the holder;
+- a backchannel never contests.
+
+Beyond TurnBench, the floor is the quantity a dialogue system acts on: whether it may
+speak, whether it is being talked over, whether to yield.
 
 ### Diarization objective (mono)
 
-Mono targets put speakers in slots by order of first speech (`labels.slot_targets`),
+Mono targets put speakers in slots by order of first speech (`labels.to_slots`),
 following Sortformer's arrival-time ordering ([Streaming Sortformer](https://arxiv.org/abs/2507.18446)):
 - Order of first speech is decided causally, so no permutation search is needed.
 - Each slot is supervised with:
   - **activity**: multi-label, so overlap is a first-class target;
-  - **TurnBench label states**: as in stereo.
+  - the **floor and acts**: as in stereo, with `HELD_c` meaning slot c.
 
 Why an explicit diarization head:
 - **For the representation:** telling speakers apart and detecting overlap forces
   speaker-discriminative, overlap-aware features. These are the cues that separate a
   floor-taking interruption from a backchannel. Mono and stereo share the trunk, so stereo
   benefits too.
-- **For users:** mono output answers *who* yielded or barged in, not only that something
-  happened.
+- **For users:** mono output says *who* holds the floor, who yielded and who barged in.
 - **For data:** diarization is the cheapest podcast label. pyannote output gives slot
-  activity for every podcast hour (`slot_activity_from_segments`), while label states need
+  activity for every podcast hour (`slot_activity_from_segments`), while floor labels need
   the ASR+LLM pass. Stereo mixed down to mono gives exact slot labels.
 
 Open issue: **speaker memory beyond the attention window.** A speaker silent for longer
@@ -120,6 +147,45 @@ Evaluation:
 - diarization error on otoSpeech dev mixed down, both causal and arrival-ordered;
 - [`nvidia/diar_streaming_sortformer_4spk-v2`](https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2)
   as an external streaming baseline.
+
+## Multilingual and code-switching
+
+TurnBench is English-only, but nothing in the floor objective is. The parts that are
+language-dependent:
+- **Encoder coverage is unknown:** Cat's language mix is undisclosed (3M h "diverse
+  audio"), and its card reports only English and Chinese. Before relying on it, run a
+  per-language probe: train frozen-feature VAP and diarization on a few hours per language,
+  then compare loss and slot-swap rate across languages against English.
+- **Turn-taking norms differ across languages:** DuplexChat English has 3.1 backchannels/min
+  and 10% simultaneous speech; Japanese has 5.6/min and 21%. So the model must not hard-code
+  English floor dynamics.
+  - It gets **no language-ID input**: language ID is ill-defined under code-switching.
+  - An auxiliary per-frame language-ID head (soft, multi-label) is an option: it is useful
+    to users and makes switches explicit, but it is not a floor input.
+- **Data:**
+  - DuplexChat-Ja: 132k h, same pipeline.
+  - DuplexChat-Pipe filters PodcastIndex feeds by language tag, so it can be run for other
+    locales; the tag is unreliable, so confirm with audio language ID.
+  - Code-switching: mine bilingual-community feeds (e.g. Hinglish, Taglish, Singapore or
+    Malaysian zh/en, Spanglish) by detecting switches within clips with frame-level
+    language ID, rather than trusting tags.
+- **Labels:**
+  - Diarization and VAP are language-independent.
+  - The ASR+LLM floor labeler needs multilingual, verbatim-style ASR. Code-switched ASR is
+    the weak link, so prefer an ASR that tolerates switching and an LLM prompt that sees
+    both languages.
+  - Calibrate on a small human-labeled set per language before trusting it.
+- **Evaluation:** there is no multilingual TurnBench, so build small evaluation sets
+  annotated with the TurnBench protocol, 1–2 h per target language plus a code-switching
+  set. LLM labels cannot be the yardstick. Existing two-speaker multilingual corpora can
+  seed this and serve as fine-tuning data; channel layout and license must be checked
+  first. For example, [MLC-SLM](https://arxiv.org/abs/2509.13785) has ~1.6k h of
+  two-speaker, ~20-minute conversations in 11 languages with speaker labels, and its 2026
+  edition adds Tagalog, Urdu and Turkish.
+
+Order of work: get English and TurnBench right first, while keeping every target and
+pipeline language-agnostic. Then add Japanese via DuplexChat-Ja, which needs no new pipeline,
+as the first transfer test.
 
 ## Training stages
 
@@ -318,7 +384,8 @@ Pseudo-labeled corpora must also exclude every TurnBench dev/test file by constr
 - `model.py`: VAP labels, `TurnModel` and the losses.
 - `podcast_subset.py`: feed-disjoint, nested DuplexChat subsets in the upstream schema.
 - `pseudo_stereo.py`: `gated_stereo` and calibration metrics against real stereo.
-- `labels.py`: TurnBench gold → per-frame label states (stereo and mono), plus score readout.
+- `labels.py`: TurnBench gold → floor, floor projection and acts; arrival-order slots for mono;
+  score readout.
 - `test_cat_encoder.py`, `test_model.py`, `test_podcast.py`, `test_labels.py`: contracts.
   `CAT_DIR=<dir>` enables the real-weight tests; `test_labels` needs the pinned `turnbench`
   importable. Install TurnBench in its own environment: its `huggingface-hub==1.17.0` pin

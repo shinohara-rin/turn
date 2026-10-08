@@ -1,14 +1,15 @@
-"""Causal turn model over frozen (or adapted) Cat encoder features at 12.5 Hz.
+"""Causal floor-ownership model over frozen (or adapted) Cat encoder features at 12.5 Hz.
 
-Two input modes share one trunk:
+Two input modes share one trunk (see labels.py for the target definitions):
   stereo [.., T, 2, ..] (one channel per speaker; the TurnBench condition):
-    - state: per speaker, the TurnBench label state (labels.STATES), from which
-      EOT = p(YIELD) and INT = p(INT_FLOOR) are read for the official sweep
-    - vap:   256-way Voice Activity Projection over the next 2 s, which needs only
-             per-channel activity, so it scales to unlabeled stereo
-  mono [.., T, 1, ..] (mixed-speaker audio), with speakers in arrival-order slots:
-    - slot_activity: per-slot speech logits, i.e. streaming diarization with overlap
-    - slot_state:    per-slot TurnBench label states, as in stereo
+    - floor:  joint floor state now (HELD_0, HELD_1, OPEN, CONTESTED)
+    - future: floor state at each projection horizon (how contests and pauses resolve)
+    - act:    per-speaker vocal act (SILENT, CLAIM, BACKCHANNEL, LAUGHTER, NONCONTENT)
+    - vap:    256-way Voice Activity Projection; activity only, so it scales to unlabeled stereo
+  mono [.., T, 1, ..] (mixed-speaker audio), speakers in arrival-order slots:
+    - floor/future/act over slots, plus slot_activity: streaming diarization with overlap
+Floor heads are speaker-equivariant: HELD_c comes from a shared [own, other] head and
+OPEN/CONTESTED from a symmetric pooled head, so swapping speakers swaps HELD_0/HELD_1.
 Frame t is available at (t+1)*80 ms.
 """
 from __future__ import annotations
@@ -18,7 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from labels import STATES
+from labels import ACTS, HORIZONS_S
 
 FRAME_S = 0.08
 # VAP projection bins (frames). Ekstedt & Skantze use 0.2/0.4/0.6/0.8 s; the 80 ms
@@ -118,11 +119,16 @@ class TurnModel(nn.Module):
         self.cross_blocks = nn.ModuleList(CausalBlock(dim, heads, window, cross=True, dropout=dropout)
                                           for _ in range(layers))
         self.norm = nn.LayerNorm(dim)
+        steps = 1 + len(HORIZONS_S)  # now + projection horizons
+        self.steps = steps
         self.vap = nn.Linear(2 * dim, VAP_CLASSES)
-        self.state = nn.Linear(2 * dim, len(STATES))  # per speaker, from [own, other]
+        self.held = nn.Linear(2 * dim, steps)        # HELD_c logit per step, from [own, other]
+        self.shared = nn.Linear(dim, 2 * steps)      # OPEN, CONTESTED per step, from own + other
+        self.act = nn.Linear(2 * dim, len(ACTS))
         self.slots = slots
+        self.slot_floor = nn.Linear(dim, steps * (slots + 2))
+        self.slot_act = nn.Linear(dim, slots * len(ACTS))
         self.slot_activity = nn.Linear(dim, slots)
-        self.slot_state = nn.Linear(dim, slots * len(STATES))
 
     def embed(self, taps=None, final=None, source=None):
         x = 0
@@ -149,10 +155,16 @@ class TurnModel(nn.Module):
         x = self.norm(x).view(B, C, T, D).permute(0, 2, 1, 3)  # [B, T, C, D]
         if C == 1:
             h = x[:, :, 0]
-            return dict(slot_activity=self.slot_activity(h),
-                        slot_state=self.slot_state(h).view(B, T, self.slots, len(STATES)))
-        return dict(vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)),
-                    state=self.state(torch.cat([x, x.flip(2)], -1)))
+            floor = self.slot_floor(h).view(B, T, self.steps, self.slots + 2)
+            return dict(floor=floor[:, :, 0], future=floor[:, :, 1:],
+                        act=self.slot_act(h).view(B, T, self.slots, len(ACTS)),
+                        slot_activity=self.slot_activity(h))
+        pair = torch.cat([x, x.flip(2)], -1)                       # [B, T, 2, 2D]: own, other
+        held = self.held(pair).permute(0, 1, 3, 2)                 # [B, T, steps, 2]
+        shared = self.shared(x.sum(2)).view(B, T, self.steps, 2)   # [B, T, steps, 2]
+        floor = torch.cat([held, shared], -1)                      # HELD_0, HELD_1, OPEN, CONTESTED
+        return dict(floor=floor[:, :, 0], future=floor[:, :, 1:], act=self.act(pair),
+                    vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)))
 
 
 def vap_speaker_probabilities(vap_logits, near_bins=2):
@@ -173,22 +185,21 @@ def _weighted_ce(logits, target, weight):
 
 
 def loss(outputs, batch, weights=None):
-    """Stereo batch: vap [B,T] long, vap_valid [B,T] bool, state [B,T,2] long, state_w [B,T,2].
-    Mono batch: slot_activity [B,T,K] float, slot_activity_w [B,T,K], and optionally
-    slot_state [B,T,K] long, slot_state_w [B,T,K]; all in arrival order (labels.slot_targets).
+    """Targets (labels.floor_targets / floor_projection / to_slots), each with a *_w weight:
+      floor [B,T] long, future [B,T,H] long, act [B,T,2] long, slot_activity [B,T,2] float (mono),
+      plus vap [B,T] long with vap_valid [B,T] bool (stereo).
 
-    Partial labels: a source lacking a target omits it or sets its weight to 0, e.g.
-    VAD-only podcast stereo has VAP but no state. Per-source trust (human vs pseudo)
-    and class balancing are folded into the weights by the loader. Each term is
-    normalized by its own weight mass, so the sampler's mixing ratio, not raw volume,
-    decides how much each source counts.
+    Partial labels: a source lacking a target omits it or zeroes its weight, e.g. podcast
+    mono with only pyannote output has slot_activity alone. Per-source trust (human vs
+    pseudo) is folded into the weights by the loader. Each term is normalized by its own
+    weight mass, so the sampler's mixing ratio, not raw volume, sets each source's share.
     """
-    weights = dict(vap=1.0, state=1.0, slot_activity=1.0, slot_state=1.0, **(weights or {}))
+    weights = dict(vap=1.0, floor=1.0, future=1.0, act=0.5, slot_activity=1.0, **(weights or {}))
     terms = {}
     if 'vap' in outputs and 'vap' in batch:
         terms['vap'] = _weighted_ce(outputs['vap'], batch['vap'], batch['vap_valid'].float())
-    for name in ('state', 'slot_state'):
-        if name in outputs and name in batch:
+    for name in ('floor', 'future', 'act'):
+        if name in batch:
             terms[name] = _weighted_ce(outputs[name], batch[name], batch[name + '_w'])
     if 'slot_activity' in outputs and 'slot_activity' in batch:
         w = batch['slot_activity_w']

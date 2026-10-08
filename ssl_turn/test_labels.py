@@ -1,7 +1,7 @@
-"""Frame states must agree with the pinned TurnBench gold builder.
+"""Floor targets must agree with the pinned TurnBench gold builder.
 
-The integration test needs the pinned evaluator importable (`pip install -e
-turnbench@38a6f87`); the builder is the source of truth for EOT/INT gold.
+The integration tests need the pinned evaluator importable (turnbench@38a6f87, in its
+own environment); the builder is the source of truth for EOT/INT gold.
 """
 import unittest
 from dataclasses import asdict
@@ -18,85 +18,102 @@ except ImportError:  # pragma: no cover
 # speaker, start, end, canonical label
 SEGMENTS = [
     (1, 0.0, 2.0, 'Turn'),
-    (2, 1.0, 1.3, 'Backchannel'),
-    (1, 2.6, 4.0, 'Turn'),          # pause 2.0-2.6 is a hold; 4.0 hands the floor over
+    (2, 1.0, 1.3, 'Backchannel'),                   # floor stays with speaker 1
+    (1, 2.6, 4.0, 'Turn'),                          # 2.0-2.6 is a hold; 4.0 is a yield
+    (2, 3.0, 3.4, 'NonFloorTakingInterruption'),    # contest that speaker 1 wins
     (2, 4.5, 6.0, 'Turn'),
-    (1, 5.5, 7.0, 'Interruption'),  # floor-taking barge-in; speaker 2 yields at 6.0
+    (1, 5.5, 7.0, 'Interruption'),                  # contest that speaker 1 takes
     (2, 7.5, 7.8, 'NonContent'),
     (2, 8.5, 10.0, 'Turn'),
 ]
+TURN_VIEW = ('Turn', 'Interruption')
 
 
 @unittest.skipUnless(build_conversation_events, 'pinned turnbench not importable')
 class AgreesWithGold(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        turn = [ConsensusEvent(s, a, b, 'Turn') for s, a, b, l in SEGMENTS if l in ('Turn', 'Interruption')]
+        turn = [ConsensusEvent(s, a, b, 'Turn') for s, a, b, l in SEGMENTS if l in TURN_VIEW]
         fine = [ConsensusEvent(s, a, b, l) for s, a, b, l in SEGMENTS]
         cls.events = asdict(build_conversation_events(ConsensusViews(turn, [], fine, [])))
         cls.times = (np.arange(150) + 1) * 0.08
-        cls.state, cls.weight = lb.frame_states(cls.times, SEGMENTS, cls.events)
+        cls.y = lb.floor_targets(cls.times, SEGMENTS, cls.events)
+        cls.future, _ = lb.floor_projection(cls.y['floor'], cls.y['floor_w'])
 
-    def at(self, time_s, speaker):
-        return lb.STATES[self.state[np.searchsorted(self.times, time_s), speaker - 1]]
+    def floor_at(self, time_s):
+        return lb.FLOOR[self.y['floor'][np.searchsorted(self.times, time_s)]]
 
     def test_gold_itself(self):
-        eot = sorted((e['speaker'], e['time_s']) for e in self.events['eot_positive_events'])
-        self.assertIn((1, 4.0), eot)
-        self.assertIn((2, 6.0), eot)
+        eot = {(e['speaker'], e['time_s']) for e in self.events['eot_positive_events']}
+        self.assertTrue({(1, 4.0), (2, 6.0), (1, 7.0)} <= eot)
         self.assertEqual([(e['speaker'], e['time_s']) for e in self.events['int_positive_events']], [(1, 5.5)])
 
-    def test_states_follow_gold(self):
+    def test_eot_positives_release_the_floor_and_negatives_hold_it(self):
         for e in self.events['eot_positive_events']:
             if e['time_s'] + 0.1 < self.times[-1]:
-                self.assertEqual(self.at(e['time_s'] + 0.05, e['speaker']), 'YIELD', e)
+                other = 'HELD_%d' % (2 - e['speaker'])
+                self.assertIn(self.floor_at(e['time_s'] + 0.05), ('OPEN', other), e)
         for span in self.events['eot_negative_spans']:
-            self.assertEqual(self.at((span['start'] + span['end']) / 2, span['speaker']), 'HOLD', span)
-        for e in self.events['int_positive_events']:
-            self.assertEqual(self.at(e['time_s'] + 0.05, e['speaker']), 'INT_FLOOR', e)
-        for span in self.events['int_negative_spans']:
-            self.assertIn(self.at((span['start'] + span['end']) / 2, span['speaker']), ('BACKCHANNEL', 'NONCONTENT'))
+            self.assertEqual(self.floor_at((span['start'] + span['end']) / 2), 'HELD_%d' % (span['speaker'] - 1))
 
-    def test_listen_and_yield_end_on_resume(self):
-        self.assertEqual(self.at(3.0, 2), 'LISTEN')
-        self.assertEqual(self.at(8.3, 2), 'YIELD')   # speaker 2 yielded at 6.0, within 3 s
-        self.assertEqual(self.at(9.0, 2), 'TURN')
-        np.testing.assert_array_equal(lb.activity(self.state)[:, 0] > 0,
-                                      np.isin(self.state[:, 0], lb.SPEAKING))
+    def test_interruptions_are_contests_with_outcomes(self):
+        i = np.searchsorted(self.times, 5.6)
+        self.assertEqual(lb.FLOOR[self.y['floor'][i]], 'CONTESTED')
+        self.assertEqual(lb.FLOOR[self.future[i, 1]], 'HELD_0')   # speaker 1 takes the floor
+        j = np.searchsorted(self.times, 3.1)
+        self.assertEqual(lb.FLOOR[self.y['floor'][j]], 'CONTESTED')
+        self.assertEqual(lb.FLOOR[self.future[j, 1]], 'HELD_0')   # failed attempt: speaker 1 keeps it
+        self.assertEqual(self.floor_at(1.1), 'HELD_0')            # backchannel: no contest
+        for span in self.events['int_negative_spans']:
+            mid = np.searchsorted(self.times, (span['start'] + span['end']) / 2)
+            self.assertIn(lb.ACTS[self.y['act'][mid, span['speaker'] - 1]], ('BACKCHANNEL', 'NONCONTENT'))
+
+    def test_open_floor_and_weights(self):
+        self.assertEqual(self.floor_at(4.2), 'OPEN')
+        self.assertEqual(self.floor_at(7.6), 'OPEN')   # noise does not claim the floor
+        self.assertEqual(self.floor_at(9.0), 'HELD_1')
+        # The failed attempt is in int_excluded for scoring, but stays supervised here.
+        self.assertTrue((self.y['act_w'] == 1).all())
+
+    def test_scores_read_off_floor(self):
+        import torch
+        logits = torch.full((1, 4), -10.0)
+        logits[0, lb.F['OPEN']] = 10
+        future = torch.full((1, 3, 4), -10.0)
+        future[0, :, lb.F['HELD_1']] = 10
+        s = lb.turnbench_scores(logits, future)
+        self.assertGreater(s['eot'][0, 0].item(), 0.99)
+        self.assertGreater(s['int'][0, 1].item(), 0.99)
+        self.assertLess(s['int'][0, 0].item(), 0.01)
 
 
 class Slots(unittest.TestCase):
-    def test_arrival_order_puts_first_speaker_in_slot_0(self):
-        S = lb.S
-        state = np.full((6, 2), S['LISTEN'])
-        state[2:4, 1] = S['TURN']        # channel 2 speaks first
-        state[3:6, 0] = S['INT_FLOOR']   # channel 1 barges in
-        weight = np.ones((6, 2), np.float32)
-        weight[5, 1] = 0
-        slot_state, slot_weight, slot_act = lb.slot_targets(state, weight)
-        np.testing.assert_array_equal(slot_state[:, 0], state[:, 1])
-        np.testing.assert_array_equal(slot_state[:, 1], state[:, 0])
-        np.testing.assert_array_equal(slot_weight[5], [0, 1])
-        np.testing.assert_array_equal(slot_act[3], [1, 1])  # overlap kept
+    def test_arrival_order_relabels_floor_and_acts(self):
+        y = dict(floor=np.array([2, 1, 1, 3, 0]), floor_w=np.ones(5, np.float32),
+                 act=np.array([[0, 0], [0, 1], [0, 1], [1, 1], [1, 0]]), act_w=np.ones((5, 2), np.float32))
+        s = lb.to_slots(y)  # channel 1 speaks first -> slot 0
+        self.assertEqual([lb.FLOOR[i] for i in s['floor']], ['OPEN', 'HELD_0', 'HELD_0', 'CONTESTED', 'HELD_1'])
+        np.testing.assert_array_equal(s['slot_activity'][3], [1, 1])
+        np.testing.assert_array_equal(s['act'][:, 0], y['act'][:, 1])
 
     def test_diarization_segments_in_arrival_order(self):
         segs = [(1.0, 2.0, 'SPEAKER_04'), (0.2, 0.8, 'SPEAKER_02'), (1.5, 1.9, 'SPEAKER_02')]
         a = lb.slot_activity_from_segments(segs, 30)
-        self.assertEqual(a[5].tolist(), [1, 0])     # 0.44 s: SPEAKER_02, first to speak
-        self.assertEqual(a[20].tolist(), [1, 1])    # 1.64 s: overlap
+        self.assertEqual(a[5].tolist(), [1, 0])
+        self.assertEqual(a[20].tolist(), [1, 1])
         with self.assertRaises(ValueError):
             lb.slot_activity_from_segments(segs + [(3, 4, 'SPEAKER_09')], 60)
 
 
 class Exclusions(unittest.TestCase):
-    def test_excluded_spans_zero_weight_for_their_task(self):
+    def test_disputes_zero_their_target(self):
         t = (np.arange(50) + 1) * 0.08
         events = dict(eot_excluded=[dict(speaker=1, start=2.0, end=3.0)],
-                      int_excluded=[dict(speaker=1, start=0.0, end=1.0)])
-        state, weight = lb.frame_states(t, [(1, 0.0, 1.0, 'NonFloorTakingInterruption')], events)
-        self.assertTrue((weight[(t >= 2.0) & (t < 3.0), 0] == 0).all())
-        self.assertTrue((weight[t < 1.0, 0] == 0).all())
-        self.assertTrue((weight[:, 1] == 1).all())
+                      int_excluded=[dict(speaker=2, start=0.0, end=1.0)])
+        y = lb.floor_targets(t, [(1, 0.0, 1.0, 'Turn')], events)
+        self.assertTrue((y['floor_w'][(t >= 2.0) & (t < 3.0)] == 0).all())
+        self.assertTrue((y['act_w'][t < 1.0, 1] == 0).all())
+        self.assertTrue((y['act_w'][:, 0] == 1).all())
 
 
 if __name__ == '__main__':

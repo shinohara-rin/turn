@@ -1,100 +1,147 @@
-"""Per-frame TurnBench label states, the training target in place of a bare p(EOT).
+"""Floor ownership targets: a joint floor state plus per-speaker vocal acts.
 
-TurnBench gold is computed from annotated segments (turnbench/gold.py at 38a6f87).
-This module projects the same gold onto the 12.5 Hz grid as one categorical state
-per speaker per frame:
+Turn-taking is modeled as *who holds the floor*, not as per-speaker end-of-turn flags:
 
-  speaking: TURN, INT_FLOOR (floor-taking interruption), INT_ATTEMPT (non-floor-taking),
-            BACKCHANNEL, LAUGHTER, NONCONTENT (noise, bleed, non-linguistic)
-  quiet:    HOLD (mid-turn pause; an EOT negative span), YIELD (from an EOT anchor until
-            the speaker resumes or the 3 s deadline), LISTEN (everything else)
+  floor (joint, one per frame): HELD_0, HELD_1, OPEN, CONTESTED
+    HELD_c     speaker c holds the floor: talking, or pausing without yielding (a hold)
+    OPEN       nobody holds it: the last holder yielded and nobody has claimed it yet
+    CONTESTED  both speakers are claiming the floor at once. Overlap is a state of the
+               floor, not two independent p(speaking) values
+  act (per speaker): SILENT, CLAIM, BACKCHANNEL, LAUGHTER, NONCONTENT
+    CLAIM is floor-claiming speech: turns, and interruptions whether or not they succeed
 
-States are targets, never inputs. Labels that only resolve later, such as whether
-an onset takes the floor, are learned as calibrated beliefs from causal inputs.
-Scores for the official sweep are read straight off the state posterior:
-EOT = p(YIELD), INT = p(INT_FLOOR).
+How a contest resolves is learned from floor *projection*: the floor state at
+t + 0.4/0.8/1.6 s, a floor-level analogue of VAP. Events are transitions:
+  EOT for c:  HELD_c -> OPEN or HELD_other while c is quiet
+  INT for c:  HELD_other -> CONTESTED -> HELD_c (floor-taking); resolving back to HELD_other
+              is a failed attempt, and a backchannel never leaves HELD_other
+
+Gold comes from the pinned TurnBench builder (turnbench/gold.py at 38a6f87): annotated
+segments give claims and acts; EOT anchors decide whether a holder's silence is a hold
+or a yield, exactly as the gold's floor construction does. Targets only, never inputs.
 """
 from __future__ import annotations
 
 import numpy as np
 
-STATES = ('LISTEN', 'HOLD', 'YIELD', 'TURN', 'INT_FLOOR', 'INT_ATTEMPT', 'BACKCHANNEL', 'LAUGHTER',
-          'NONCONTENT')
-S = {name: i for i, name in enumerate(STATES)}
-QUIET = (S['LISTEN'], S['HOLD'], S['YIELD'])
-SPEAKING = tuple(i for i in range(len(STATES)) if i not in QUIET)
-# Canonical TurnBench labels (gold.LABEL_MAP keys) -> speaking state. When segments
-# overlap on one channel, the earlier entry in this order wins.
-CANONICAL_TO_STATE = {
-    'Interruption': 'INT_FLOOR',
-    'NonFloorTakingInterruption': 'INT_ATTEMPT',
-    'Turn': 'TURN',
+FLOOR = ('HELD_0', 'HELD_1', 'OPEN', 'CONTESTED')
+F = {name: i for i, name in enumerate(FLOOR)}
+ACTS = ('SILENT', 'CLAIM', 'BACKCHANNEL', 'LAUGHTER', 'NONCONTENT')
+A = {name: i for i, name in enumerate(ACTS)}
+# Canonical TurnBench labels (gold.LABEL_MAP keys) -> act; earlier wins on overlap.
+CANONICAL_TO_ACT = {
+    'Turn': 'CLAIM',
+    'Interruption': 'CLAIM',
+    'NonFloorTakingInterruption': 'CLAIM',
     'Backchannel': 'BACKCHANNEL',
     'Laughter': 'LAUGHTER',
     'NonContent': 'NONCONTENT',
 }
-TAU_MAX_S = 3.0  # gold.TAU_MAX_S: the scorer's latency deadline
+HORIZONS_S = (0.4, 0.8, 1.6)
+FRAME_S = 0.08
+ANCHOR_TOL_S = 0.05
 
 
-def frame_states(times, segments, events, yield_s=TAU_MAX_S):
-    """times [T] frame availability times (s); segments: iterable of
-    (speaker in {1,2}, start, end, canonical_label); events: asdict(ConversationEvents).
+def _in(t, start, end):
+    return (t >= start) & (t < end)
 
-    Returns (state [T, 2] int64, weight [T, 2] float32). A weight of 0 marks frames
-    inside the gold's excluded (no-majority) spans, which the scorer also ignores.
+
+def floor_targets(times, segments, events):
+    """times [T] frame times (s); segments: iterable of (speaker in {1,2}, start, end,
+    canonical_label); events: asdict(ConversationEvents) from the pinned gold builder.
+
+    Returns dict(floor [T], floor_w [T], act [T, 2], act_w [T, 2]). Weights are 0 in the
+    gold's no-majority spans: turn-view disputes for the floor, label-view disputes for
+    acts. Agreed failed interruptions stay supervised: they define a lost contest.
     """
     t = np.asarray(times, np.float64)
-    state = np.full((len(t), 2), S['LISTEN'], np.int64)
-    weight = np.ones((len(t), 2), np.float32)
-    speaking = np.zeros((len(t), 2), bool)
-    priority = {name: i for i, name in enumerate(CANONICAL_TO_STATE)}
-    rank = np.full((len(t), 2), len(priority))
-    onsets = {1: [], 2: []}
+    T = len(t)
+    act = np.full((T, 2), A['SILENT'], np.int64)
+    rank = np.full((T, 2), len(CANONICAL_TO_ACT))
+    priority = {k: i for i, k in enumerate(CANONICAL_TO_ACT)}
+    claim_end = np.full((T, 2), np.nan)  # end time of the claim segment covering each frame
+    attempts = set()
     for speaker, start, end, label in segments:
-        if label not in CANONICAL_TO_STATE:
-            continue  # e.g. AwkwardSilence: quiet, not a vocalisation
-        m = (t >= start) & (t < end)
-        c = speaker - 1
+        if label not in CANONICAL_TO_ACT:
+            continue  # e.g. AwkwardSilence
+        c, m = speaker - 1, _in(t, start, end)
         better = m & (priority[label] < rank[:, c])
-        state[better, c] = S[CANONICAL_TO_STATE[label]]
+        act[better, c] = A[CANONICAL_TO_ACT[label]]
         rank[better, c] = priority[label]
-        speaking[m, c] = True
-        if label in ('Turn', 'Interruption'):  # gold's "resumes": next floor-claiming start
-            onsets[speaker].append(start)
-    for span in events.get('eot_negative_spans', []):
-        c = span['speaker'] - 1
-        m = (t >= span['start']) & (t < span['end']) & ~speaking[:, c]
-        state[m, c] = S['HOLD']
-    for anchor in events.get('eot_positive_events', []):
-        c, a = anchor['speaker'] - 1, anchor['time_s']
-        resume = min([o for o in onsets[anchor['speaker']] if o > a], default=np.inf)
-        m = (t >= a) & (t < min(a + yield_s, resume)) & ~speaking[:, c]
-        state[m, c] = S['YIELD']
-    for key, kinds in (('eot_excluded', QUIET), ('int_excluded', SPEAKING)):
-        for span in events.get(key, []):
-            for c in ((span['speaker'] - 1,) if 'speaker' in span else (0, 1)):
-                m = (t >= span['start']) & (t < span['end']) & np.isin(state[:, c], kinds)
-                weight[m, c] = 0
-    return state, weight
+        if CANONICAL_TO_ACT[label] == 'CLAIM':
+            claim_end[m, c] = np.fmax(claim_end[m, c], end)
+        if label == 'NonFloorTakingInterruption':
+            attempts.add((speaker, start, end))
+    anchors = {1: [], 2: []}
+    for e in events.get('eot_positive_events', []):
+        anchors[e['speaker']].append(e['time_s'])
+
+    claiming = act == A['CLAIM']
+    floor = np.empty(T, np.int64)
+    holder, last_end = None, {0: None, 1: None}
+    for i in range(T):
+        for c in (0, 1):
+            if claiming[i, c]:
+                last_end[c] = claim_end[i, c]
+        n = claiming[i].sum()
+        if n == 2:
+            floor[i] = F['CONTESTED']
+        elif n == 1:
+            holder = int(np.argmax(claiming[i]))
+            floor[i] = holder
+        elif holder is None:
+            floor[i] = F['OPEN']
+        else:
+            # Silent floor: still held unless the holder's last claim ended at an EOT anchor.
+            yielded = any(abs(a - last_end[holder]) <= ANCHOR_TOL_S for a in anchors[holder + 1])
+            floor[i] = F['OPEN'] if yielded else holder
+
+    floor_w = np.ones(T, np.float32)
+    for span in events.get('eot_excluded', []):
+        floor_w[_in(t, span['start'], span['end'])] = 0
+    act_w = np.ones((T, 2), np.float32)
+    for span in events.get('int_excluded', []):
+        if (span['speaker'], span['start'], span['end']) in attempts:
+            continue
+        act_w[_in(t, span['start'], span['end']), span['speaker'] - 1] = 0
+    return dict(floor=floor, floor_w=floor_w, act=act, act_w=act_w)
 
 
-def activity(state):
-    """Binary per-speaker activity implied by states (VAP supervision)."""
-    return np.isin(state, SPEAKING).astype(np.float32)
+def floor_projection(floor, floor_w, horizons_s=HORIZONS_S, frame_s=FRAME_S):
+    """Floor state at each horizon ahead: ([T, H] long, [T, H] weight; 0 past the end)."""
+    T = len(floor)
+    steps = [int(round(h / frame_s)) for h in horizons_s]
+    target = np.zeros((T, len(steps)), np.int64)
+    weight = np.zeros((T, len(steps)), np.float32)
+    for j, k in enumerate(steps):
+        target[:T - k, j] = floor[k:]
+        weight[:T - k, j] = floor_w[k:]
+    return target, weight
 
 
-def turnbench_scores(state_logits):
-    """[..., 2, len(STATES)] logits -> dict of [..., 2] scores for EOT and INT."""
+def activity(act):
+    """Per-speaker vocal activity implied by acts (VAP supervision)."""
+    return (np.asarray(act) != A['SILENT']).astype(np.float32)
+
+
+def turnbench_scores(floor_logits, future_logits, int_horizon=1):
+    """floor_logits [..., 4], future_logits [..., H, 4] -> per-speaker scores [..., 2].
+
+    EOT for c: p(floor is OPEN or held by the other), read while c is quiet.
+    INT for c: p(c holds the floor at the INT horizon), i.e. c wins the contest.
+    """
     import torch
-    p = torch.softmax(state_logits, -1)
-    return dict(eot=p[..., S['YIELD']], int=p[..., S['INT_FLOOR']])
+    now = floor_logits.softmax(-1)
+    ahead = future_logits[..., int_horizon, :].softmax(-1)
+    eot = torch.stack([now[..., F['OPEN']] + now[..., F['HELD_1']],
+                       now[..., F['OPEN']] + now[..., F['HELD_0']]], -1)
+    return dict(eot=eot, int=ahead[..., :2])
 
 
-# Mixed-speaker (mono) audio has no channel per speaker. Speakers are instead
-# assigned to slots in order of first speech (Sortformer's arrival-time ordering),
-# which is causal and needs no permutation search. Each slot gets activity (an explicit
-# diarization target, overlap allowed) and the same TurnBench label states as stereo.
-# Stereo audio mixed down to mono therefore gives exact per-slot labels.
+# Mixed-speaker (mono) audio has no channel per speaker. Speakers go into slots in
+# order of first speech (Sortformer's arrival-time ordering), which is causal and needs
+# no permutation search. HELD_c then refers to slot c. Stereo audio mixed down to mono
+# gives exact slot targets.
 
 
 def arrival_order(activity):
@@ -104,17 +151,24 @@ def arrival_order(activity):
     return np.argsort(first, kind='stable')
 
 
-def slot_targets(state, weight):
-    """Stereo states [T, 2] -> arrival-ordered (slot_state [T, 2], slot_weight [T, 2],
-    slot_activity [T, 2])."""
-    order = arrival_order(activity(state))
-    return state[:, order], weight[:, order], activity(state)[:, order]
+def to_slots(targets):
+    """Channel-indexed targets (floor_targets output, plus optional 'future') -> slot-indexed,
+    adding 'slot_activity' for the diarization head."""
+    order = arrival_order(activity(targets['act']))
+    remap = np.arange(len(FLOOR))
+    remap[order] = np.arange(2)  # HELD_<channel> -> HELD_<slot>
+    out = dict(targets, floor=remap[targets['floor']], act=targets['act'][:, order],
+               act_w=targets['act_w'][:, order])
+    if 'future' in targets:
+        out['future'] = remap[targets['future']]
+    out['slot_activity'] = activity(out['act'])
+    return out
 
 
-def slot_activity_from_segments(segments, frames, slots=2, frame_s=0.08):
+def slot_activity_from_segments(segments, frames, slots=2, frame_s=FRAME_S):
     """Diarization output [(start_s, end_s, speaker_label)] -> arrival-ordered [frames, slots].
 
-    For podcast mono audio where only diarization (no label states) is available.
+    For podcast mono audio where only diarization (no floor labels) is available.
     Speakers beyond `slots` raise: DuplexChat clips are selected to contain two.
     """
     labels = sorted({spk for _, _, spk in segments}, key=lambda k: min(s for s, _, l in segments if l == k))

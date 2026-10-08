@@ -31,18 +31,21 @@ class TurnModelContracts(unittest.TestCase):
                                  window_s=1.6, dropout=0.0).eval()
         self.taps = torch.randn(2, 50, 2, 2, 32)
         self.final = torch.randn(2, 50, 2, 16)
-        self.n = len(lb.STATES)
+        self.H = len(lb.HORIZONS_S)
 
     def test_shapes(self):
         out = self.model(self.taps, self.final)
         self.assertEqual(out['vap'].shape, (2, 50, m.VAP_CLASSES))
-        self.assertEqual(out['state'].shape, (2, 50, 2, self.n))
+        self.assertEqual(out['floor'].shape, (2, 50, len(lb.FLOOR)))
+        self.assertEqual(out['future'].shape, (2, 50, self.H, len(lb.FLOOR)))
+        self.assertEqual(out['act'].shape, (2, 50, 2, len(lb.ACTS)))
         mono = self.model(self.taps[:, :, :1], self.final[:, :, :1])
-        self.assertEqual(set(mono), {'slot_activity', 'slot_state'})
+        self.assertEqual(set(mono), {'floor', 'future', 'act', 'slot_activity'})
+        self.assertEqual(mono['floor'].shape, (2, 50, len(lb.FLOOR)))
         self.assertEqual(mono['slot_activity'].shape, (2, 50, 2))
-        self.assertEqual(mono['slot_state'].shape, (2, 50, 2, self.n))
-        scores = lb.turnbench_scores(out['state'])
+        scores = lb.turnbench_scores(out['floor'], out['future'])
         self.assertEqual(scores['eot'].shape, (2, 50, 2))
+        self.assertEqual(scores['int'].shape, (2, 50, 2))
 
     def test_causal_in_time_stereo_and_mono(self):
         cut = 30
@@ -56,45 +59,45 @@ class TurnModelContracts(unittest.TestCase):
                 torch.testing.assert_close(a[k][:, :cut], b[k][:, :cut], rtol=0, atol=1e-6)
                 self.assertGreater((a[k][:, cut:] - b[k][:, cut:]).abs().max().item(), 1e-4)
 
-    def test_speaker_swap_equivariance(self):
-        # Swapping channels must swap per-speaker outputs (channel embedding aside).
+    def test_speaker_swap_swaps_floor_holder(self):
         with torch.no_grad():
             self.model.channel.zero_()
         a = self.model(self.taps, self.final)
         b = self.model(self.taps.flip(2), self.final.flip(2))
-        torch.testing.assert_close(a['state'], b['state'].flip(2), rtol=1e-5, atol=1e-5)
+        swap = [lb.F['HELD_1'], lb.F['HELD_0'], lb.F['OPEN'], lb.F['CONTESTED']]
+        torch.testing.assert_close(a['floor'], b['floor'][..., swap], rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(a['future'], b['future'][..., swap], rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(a['act'], b['act'].flip(2), rtol=1e-5, atol=1e-5)
 
     def test_source_conditioning(self):
         default = self.model(self.taps, self.final)
         real = self.model(self.taps, self.final, torch.tensor([m.REAL_STEREO] * 2))
-        torch.testing.assert_close(default['state'], real['state'])
+        torch.testing.assert_close(default['floor'], real['floor'])
         with torch.no_grad():
             self.model.source.weight.normal_()
         podcast = self.model(self.taps, self.final, torch.tensor([m.GATED_PODCAST] * 2))
         real = self.model(self.taps, self.final, torch.tensor([m.REAL_STEREO] * 2))
-        self.assertGreater((podcast['state'] - real['state']).abs().max().item(), 1e-4)
+        self.assertGreater((podcast['floor'] - real['floor']).abs().max().item(), 1e-4)
 
     def test_partial_label_losses(self):
         out = self.model(self.taps, self.final)
         labels, valid = m.vap_labels(np.random.default_rng(0).random((50, 2)) > .5)
         vap_only = dict(vap=torch.from_numpy(labels).repeat(2, 1), vap_valid=torch.from_numpy(valid).repeat(2, 1))
-        total, parts = m.loss(out, vap_only)
+        _, parts = m.loss(out, vap_only)
         self.assertEqual(set(parts), {'vap'})
-        full = dict(vap_only, state=torch.randint(0, self.n, (2, 50, 2)), state_w=torch.rand(2, 50, 2))
-        total, parts = m.loss(out, full)
+        floor = dict(floor=torch.randint(0, 4, (2, 50)), floor_w=torch.ones(2, 50),
+                     future=torch.randint(0, 4, (2, 50, self.H)), future_w=torch.ones(2, 50, self.H),
+                     act=torch.randint(0, len(lb.ACTS), (2, 50, 2)), act_w=torch.ones(2, 50, 2))
+        total, parts = m.loss(out, dict(vap_only, **floor))
         total.backward()
-        self.assertEqual(set(parts), {'vap', 'state'})
+        self.assertEqual(set(parts), {'vap', 'floor', 'future', 'act'})
         self.assertTrue(np.isfinite(float(total)))
         mono = self.model(self.taps[:, :, :1], self.final[:, :, :1])
-        diar_only = dict(slot_activity=torch.randint(0, 2, (2, 50, 2)).float(), slot_activity_w=torch.ones(2, 50, 2))
-        _, parts = m.loss(mono, diar_only)
+        diar = dict(slot_activity=torch.randint(0, 2, (2, 50, 2)).float(), slot_activity_w=torch.ones(2, 50, 2))
+        _, parts = m.loss(mono, diar)
         self.assertEqual(set(parts), {'slot_activity'})
-        _, parts = m.loss(mono, dict(diar_only, slot_state=torch.randint(0, self.n, (2, 50, 2)),
-                                     slot_state_w=torch.ones(2, 50, 2)))
-        self.assertEqual(set(parts), {'slot_activity', 'slot_state'})
-        p = m.vap_speaker_probabilities(out['vap'])
-        self.assertEqual(p.shape, (2, 50, 2))
-        self.assertTrue(((p >= 0) & (p <= 1)).all())
+        _, parts = m.loss(mono, dict(diar, **floor))
+        self.assertEqual(set(parts), {'slot_activity', 'floor', 'future', 'act'})
 
 
 if __name__ == '__main__':
