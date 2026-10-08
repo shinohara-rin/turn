@@ -14,7 +14,10 @@ manifest='cache-vap-update100-full-v1/manifest.json'
 initial=[manifest,'split.json','metadata.json','cache-vap-update100-full-v1/encoder-identity.json','cache-vap-update100-full-v1/causality.json']
 receipts={}
 def copy(rel):
- src=D/rel;dst=R/rel;dst.parent.mkdir(parents=True,exist_ok=True);h=sha(src);assert index[rel]['sha256']==h,(rel,'archive mismatch');shutil.copyfile(src,dst);assert sha(dst)==h;receipts[rel]=h
+ src=D/rel;dst=R/rel;dst.parent.mkdir(parents=True,exist_ok=True)
+ if dst.exists() and sha(dst)==index[rel]['sha256']:
+  receipts[rel]=index[rel]['sha256'];return
+ h=sha(src);assert index[rel]['sha256']==h,(rel,'archive mismatch');shutil.copyfile(src,dst);assert sha(dst)==h;receipts[rel]=h
 for rel in initial:copy(rel)
 sys.path.insert(0,str(R));from leakage_guard import validate_manifest
 proof=validate_manifest(R/manifest);assert proof['counts']=={'train':131,'dev':16,'gate':0}

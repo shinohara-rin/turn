@@ -220,7 +220,7 @@
     },
     {
       "path": "single_speaker/prepare.py",
-      "sha256": "57b727d9afc5ac0adf8109310634c4f3d6003aed99e9d97342bf8045056c4d3e"
+      "sha256": "fe0a65260990b3d648f261a412f81abb6fa972347d233b2d0842af347e7d4a7d"
     },
     {
       "path": "single_speaker/PROTOCOL.md",
@@ -233,6 +233,10 @@
     {
       "path": "webgpu_playground/deploy_remote.py",
       "sha256": "7f06e8fd6eac001a04c696fb0f3b5dd33126238b566ce68c550b6b5944e06fb7"
+    },
+    {
+      "path": "webgpu_playground/package_site.py",
+      "sha256": "575efbb28e8b793e775ec53de5a103e1b92ce290f6426fbbd2dd107fd1b8729f"
     },
     {
       "path": "webgpu_playground/worker.js",
@@ -251,6 +255,10 @@
       "sha256": "f6f3c85dcedbdf2b3859243fdd22942862ff202610251f540a7dbcab2398f7f0"
     },
     {
+      "path": "webgpu_playground/BUILD.md",
+      "sha256": "d37e8f279f842d788375046abc08fb631a001675e6a1c4e38688914b91f13f4d"
+    },
+    {
       "path": "webgpu_playground/style.css",
       "sha256": "221c1ec8df3ae778fe2a98e3ea78b1e0a1fc5b4eaa388d4d045b8ed1b2560a08"
     },
@@ -264,7 +272,7 @@
     },
     {
       "path": "webgpu_playground/app.js",
-      "sha256": "b1ff0760898b54018f75d5e6215e44c3525cb302e33aa005742bbf26a97501f3"
+      "sha256": "31cb04c0c14cc4a31d8d9f536539df36cff0aad1fc0061e545cd97f67f55b74a"
     },
     {
       "path": "webgpu_playground/prepare_remote.py",
