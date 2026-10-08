@@ -196,7 +196,7 @@ def loss(outputs, batch, weights=None):
     pseudo) is folded into the weights by the loader. Each term is normalized by its own
     weight mass, so the sampler's mixing ratio, not raw volume, sets each source's share.
     """
-    weights = dict(vap=1.0, floor=1.0, future=1.0, act=0.5, slot_activity=1.0, **(weights or {}))
+    weights = {**dict(vap=1.0, floor=1.0, future=1.0, act=0.5, slot_activity=1.0), **(weights or {})}
     terms = {}
     if 'vap' in outputs and 'vap' in batch:
         terms['vap'] = _weighted_ce(outputs['vap'], batch['vap'], batch['vap_valid'].float())

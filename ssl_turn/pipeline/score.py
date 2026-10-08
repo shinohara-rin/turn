@@ -76,6 +76,24 @@ def score_variants(post, silent=None):
     return out
 
 
+def load_tracks(run, model, task, split):
+    """Per-conversation [T, 2] score track for one model and score variant."""
+    import numpy as np
+    work.reload()
+    z = np.load(f'/work/runs/{run}/probs.npz')
+    tracks = {}
+    for k in z.files:
+        m_, sp, cid, t = k.split('/')
+        if m_ == model and sp == split:
+            if t == 'post':
+                sk = k[:-len('post')] + 'silent'
+                tracks[cid] = score_variants(z[k].astype(np.float32),
+                                             z[sk].astype(np.float32) if sk in z.files else None)[task]
+            elif t == task:
+                tracks[cid] = z[k]
+    return tracks
+
+
 def load_gold(split, cids):
     if split == 'tbdev':
         g = json.load(open('/work/gold/tbdev.json'))
@@ -122,24 +140,30 @@ def at_theta(rows, theta):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=16384, timeout=3600)
-def score_run(run, variants=None, refractories=(2.0,)):
+def score_run(run, variants=None, refractories=(2.0,), ensembles=None):
     """Sweep every (model, task variant) in a run on oto dev (selection) and tbdev (report)."""
     import numpy as np
     from concurrent.futures import ProcessPoolExecutor
     work.reload()
     z = np.load(f'/work/runs/{run}/probs.npz')
-    by = {}
+    by, posts = {}, {}
     for k in z.files:
         model, split, cid, task = k.split('/')
         if task == 'post':
             sk = k[:-len('post')] + 'silent'
-            silent = z[sk].astype(np.float32) if sk in z.files else None
-            for name, v in score_variants(z[k].astype(np.float32), silent).items():
-                by.setdefault((model, name), {}).setdefault(split, {})[cid] = v
-        elif task == 'silent':
-            continue
-        else:
+            posts.setdefault(model, {})[(split, cid)] = (z[k].astype(np.float32),
+                                                         z[sk].astype(np.float32) if sk in z.files else None)
+        elif task != 'silent':
             by.setdefault((model, task), {}).setdefault(split, {})[cid] = z[k]
+    for name, members in (ensembles or {}).items():  # average posteriors across models
+        members = [m_ for m_ in members if m_ in posts]
+        keys = set.intersection(*(set(posts[m_]) for m_ in members))
+        posts[name] = {key: (np.mean([posts[m_][key][0] for m_ in members], 0),
+                             np.mean([posts[m_][key][1] for m_ in members], 0)) for key in keys}
+    for model, items in posts.items():
+        for (split, cid), (post, silent) in items.items():
+            for name, v in score_variants(post, silent).items():
+                by.setdefault((model, name), {}).setdefault(split, {})[cid] = v
     jobs = {}
     with ProcessPoolExecutor(8) as pool:
         for (model, task), splits in by.items():
@@ -175,15 +199,16 @@ def fmt(r):
 
 
 @app.local_entrypoint()
-def main(run: str, variants: str = '', refractories: str = '2.0'):
+def main(run: str, variants: str = '', refractories: str = '2.0', ensembles: str = ''):
+    ens = json.loads(ensembles) if ensembles else None
     for e in score_run.remote(run, variants.split(',') if variants else None,
-                              tuple(float(x) for x in refractories.split(','))):
+                              tuple(float(x) for x in refractories.split(',')), ens):
         print(f"{e['model']:>14} {e['task']:<8} oto[{fmt(e['oto'])}]  tbdev@oto-θ[{fmt(e.get('tbdev_at_oto_theta'))}]"
               f"  tbdev-swept[{fmt(e.get('tbdev_swept'))}]")
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=16384, timeout=1800)
-def analyze(run, model, task, theta, split='tbdev'):
+def analyze(run, model, task, theta, split='tbdev', refractory_s=2.0):
     """Error anatomy at one operating point: per conversation type, FP by pause length,
     latency distribution, and how many gold events never get a fire within 3 s."""
     import numpy as np
@@ -191,8 +216,7 @@ def analyze(run, model, task, theta, split='tbdev'):
     from turnbench.score import TaskScore, merge, score_task
     from turnbench.sweep import commit_events
     work.reload()
-    z = np.load(f'/work/runs/{run}/probs.npz')
-    probs = {k.split('/')[2]: z[k] for k in z.files if k.startswith(f'{model}/{split}/') and k.endswith(f'/{task}')}
+    probs = load_tracks(run, model, task, split)
     gold = load_gold(split, list(probs))
     types = json.load(open('/work/gold/tbdev_types.json')) if split == 'tbdev' else {}
     key = 'eot' if task.startswith('eot') else 'int'
@@ -202,7 +226,7 @@ def analyze(run, model, task, theta, split='tbdev'):
         pos = [AnchorEvent(**x) for x in e[f'{key}_positive_events']]
         neg = [Interval(**x) for x in e[f'{key}_negative_spans']]
         exc = [Interval(**x) for x in e[f'{key}_excluded']]
-        ev = {s + 1: commit_events(p[:, s], 12.5, float(theta)) for s in (0, 1)}
+        ev = {s + 1: commit_events(p[:, s], 12.5, float(theta), refractory_s=refractory_s) for s in (0, 1)}
         sc = score_task(pos, neg, ev, exc)
         merge(by_type.setdefault(types.get(cid, 'all'), TaskScore()), sc)
         for span in neg:
@@ -217,31 +241,20 @@ def analyze(run, model, task, theta, split='tbdev'):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=16384, timeout=1800)
-def miss_anatomy(run, model, task, theta, split='tbdev'):
+def miss_anatomy(run, model, task, theta, split='tbdev', refractory_s=2.0):
     """Why EOT positives are missed at threshold theta (rising-edge rule, 2 s refractory):
     'prefired' = score already above theta when the window opens (no fresh edge),
     'refractory' = an edge in the window was suppressed by an earlier commit,
     'never' = score stays below theta for the whole window, plus the peak score."""
     import numpy as np
     from turnbench.sweep import commit_events
-    work.reload()
-    z = np.load(f'/work/runs/{run}/probs.npz')
-    tracks = {}
-    for k in z.files:
-        m_, sp, cid, t = k.split('/')
-        if m_ == model and sp == split:
-            if t == 'post':
-                sk = k[:-len('post')] + 'silent'
-                tracks[cid] = score_variants(z[k].astype(np.float32),
-                                             z[sk].astype(np.float32) if sk in z.files else None)[task]
-            elif t == task:
-                tracks[cid] = z[k]
+    tracks = load_tracks(run, model, task, split)
     gold = load_gold(split, list(tracks))
     cats, peaks, quiet_len = {}, [], []
     fps = 12.5
     for cid, p in tracks.items():
         e = gold[cid]['events']
-        fires = {s + 1: commit_events(p[:, s], fps, float(theta)) for s in (0, 1)}
+        fires = {s + 1: commit_events(p[:, s], fps, float(theta), refractory_s=refractory_s) for s in (0, 1)}
         pos = sorted(e['eot_positive_events'], key=lambda x: (x['speaker'], x['time_s']))
         for i, ev in enumerate(pos):
             s, t = ev['speaker'], ev['time_s']

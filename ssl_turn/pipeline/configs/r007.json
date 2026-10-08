@@ -1,0 +1,6 @@
+{
+  "base":       {"taps": [15, 23, 31], "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2},
+  "no_vap":     {"taps": [15, 23, 31], "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2, "loss_weights": {"vap": 0.0}},
+  "future_x3":  {"taps": [15, 23, 31], "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2, "loss_weights": {"future": 3.0}},
+  "act_x2":     {"taps": [15, 23, 31], "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2, "loss_weights": {"act": 1.0}}
+}

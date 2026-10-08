@@ -1,0 +1,8 @@
+{
+  "small_reg":      {"taps": [7, 15, 23, 31], "dim": 128, "layers": 2, "feat_dropout": 0.2, "time_mask": 2},
+  "small_reg_s2":   {"taps": [7, 15, 23, 31], "dim": 128, "layers": 2, "feat_dropout": 0.2, "time_mask": 2, "seed_tag": 2},
+  "small_reg_no7":  {"taps": [15, 23, 31], "dim": 128, "layers": 2, "feat_dropout": 0.2, "time_mask": 2},
+  "small_reg_t31":  {"taps": [31], "dim": 128, "layers": 2, "feat_dropout": 0.2, "time_mask": 2},
+  "mid_reg":        {"taps": [7, 15, 23, 31], "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2},
+  "mid_reg_no7":    {"taps": [15, 23, 31], "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2}
+}
