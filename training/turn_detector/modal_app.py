@@ -29,10 +29,9 @@ LAYOUT = '/content/drive/MyDrive/turn-detector-recreation'
 app = modal.App('turn-detector-training')
 workspace = modal.Volume.from_name('turn-detector-workspace', create_if_missing=True)
 datasets = modal.Volume.from_name('turnbench-datasets', create_if_missing=True)
-if modal.is_local():
-    secrets = [modal.Secret.from_local_environ(['HF_TOKEN'])]
-else:
-    secrets = []
+# Same object count locally and in the container (Modal checks this); the real
+# token exists only on the launching machine and is forwarded as an ephemeral Secret.
+secrets = [modal.Secret.from_dict({'HF_TOKEN': os.environ['HF_TOKEN']} if modal.is_local() else {})]
 
 image = (
     modal.Image.debian_slim(python_version='3.11')
@@ -51,7 +50,7 @@ volumes = {WORK: workspace, DATA: datasets}
 
 def _bootstrap():
     """Sync code into the workspace volume and ensure the pinned evaluator exists."""
-    for sub in ('turn-recreation', 'hf', 'archive'):
+    for sub in ('turn-recreation', 'hf', 'archive', 'turnbench'):
         Path(WORK, sub).mkdir(parents=True, exist_ok=True)
     subprocess.run(['cp', '-r', '/opt/turn_detector/.', f'{WORK}/turn-recreation/'], check=True)
     subprocess.run([sys.executable, '/opt/turn_detector/setup_remote.py'], check=True)
