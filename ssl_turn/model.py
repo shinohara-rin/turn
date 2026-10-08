@@ -179,14 +179,16 @@ def vap_speaker_probabilities(vap_logits, near_bins=2):
 
 
 def _weighted_ce(logits, target, weight):
-    ce = F.cross_entropy(logits.flatten(0, -2), target.flatten(), reduction='none')
+    """Hard (long, [...]) or soft (float, [..., C]) targets; soft ones carry hand-offs."""
+    target = target.flatten(0, -2) if target.is_floating_point() else target.flatten()
+    ce = F.cross_entropy(logits.flatten(0, -2), target, reduction='none')
     w = weight.flatten()
     return (ce * w).sum() / w.sum().clamp_min(1e-6)
 
 
 def loss(outputs, batch, weights=None):
     """Targets (labels.floor_targets / floor_projection / to_slots), each with a *_w weight:
-      floor [B,T] long, future [B,T,H] long, act [B,T,2] long, slot_activity [B,T,2] float (mono),
+      floor [B,T,4] soft, future [B,T,H,4] soft, act [B,T,2] long, slot_activity [B,T,2] float (mono),
       plus vap [B,T] long with vap_valid [B,T] bool (stereo).
 
     Partial labels: a source lacking a target omits it or zeroes its weight, e.g. podcast

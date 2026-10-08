@@ -5,8 +5,13 @@ Turn-taking is modeled as *who holds the floor*, not as per-speaker end-of-turn 
   floor (joint, one per frame): HELD_0, HELD_1, OPEN, CONTESTED
     HELD_c     speaker c holds the floor: talking, or pausing without yielding (a hold)
     OPEN       nobody holds it: the last holder yielded and nobody has claimed it yet
-    CONTESTED  both speakers are claiming the floor at once. Overlap is a state of the
-               floor, not two independent p(speaking) values
+    CONTESTED  both speakers are bidding for the floor at once (an overlap involving an
+               interruption or attempt). Overlap is a state of the floor, not two
+               independent p(speaking) values
+  Backchannels never contest: they are not claims.
+  Hand-offs (the next speaker starts before the current one finishes, with no
+  interruption label) are not contests either. The target is *soft* across the
+  overlap and moves linearly from HELD_old to HELD_new, with p(HELD_0) + p(HELD_1) = 1.
   act (per speaker): SILENT, CLAIM, BACKCHANNEL, LAUGHTER, NONCONTENT
     CLAIM is floor-claiming speech: turns, and interruptions whether or not they succeed
 
@@ -50,7 +55,7 @@ def floor_targets(times, segments, events):
     """times [T] frame times (s); segments: iterable of (speaker in {1,2}, start, end,
     canonical_label); events: asdict(ConversationEvents) from the pinned gold builder.
 
-    Returns dict(floor [T], floor_w [T], act [T, 2], act_w [T, 2]). Weights are 0 in the
+    Returns dict(floor [T, 4] soft target, floor_w [T], act [T, 2], act_w [T, 2]). Weights are 0 in the
     gold's no-majority spans: turn-view disputes for the floor, label-view disputes for
     acts. Agreed failed interruptions stay supervised: they define a lost contest.
     """
@@ -60,6 +65,7 @@ def floor_targets(times, segments, events):
     rank = np.full((T, 2), len(CANONICAL_TO_ACT))
     priority = {k: i for i, k in enumerate(CANONICAL_TO_ACT)}
     claim_end = np.full((T, 2), np.nan)  # end time of the claim segment covering each frame
+    bidding = np.zeros((T, 2), bool)     # inside an interruption or attempt
     attempts = set()
     for speaker, start, end, label in segments:
         if label not in CANONICAL_TO_ACT:
@@ -72,12 +78,14 @@ def floor_targets(times, segments, events):
             claim_end[m, c] = np.fmax(claim_end[m, c], end)
         if label == 'NonFloorTakingInterruption':
             attempts.add((speaker, start, end))
+        if label in ('Interruption', 'NonFloorTakingInterruption'):
+            bidding[m, c] = True
     anchors = {1: [], 2: []}
     for e in events.get('eot_positive_events', []):
         anchors[e['speaker']].append(e['time_s'])
 
     claiming = act == A['CLAIM']
-    floor = np.empty(T, np.int64)
+    hard = np.empty(T, np.int64)
     holder, last_end = None, {0: None, 1: None}
     for i in range(T):
         for c in (0, 1):
@@ -85,16 +93,40 @@ def floor_targets(times, segments, events):
                 last_end[c] = claim_end[i, c]
         n = claiming[i].sum()
         if n == 2:
-            floor[i] = F['CONTESTED']
+            hard[i] = F['CONTESTED']  # refined below: only bids stay contested
         elif n == 1:
             holder = int(np.argmax(claiming[i]))
-            floor[i] = holder
+            hard[i] = holder
         elif holder is None:
-            floor[i] = F['OPEN']
+            hard[i] = F['OPEN']
         else:
             # Silent floor: still held unless the holder's last claim ended at an EOT anchor.
             yielded = any(abs(a - last_end[holder]) <= ANCHOR_TOL_S for a in anchors[holder + 1])
-            floor[i] = F['OPEN'] if yielded else holder
+            hard[i] = F['OPEN'] if yielded else holder
+    floor = np.eye(len(FLOOR), dtype=np.float32)[hard]
+
+    # Overlap runs without an interruption or attempt: a hand-off or plain co-talk.
+    both = claiming.all(1)
+    i = 0
+    while i < T:
+        if not both[i]:
+            i += 1
+            continue
+        j = i
+        while j < T and both[j]:
+            j += 1
+        if not bidding[i:j].any():
+            before = hard[i - 1] if i and hard[i - 1] < 2 else None
+            after = hard[j] if j < T and hard[j] < 2 else None
+            if before is not None and after is not None and before != after:
+                alpha = (np.arange(j - i) + 0.5) / (j - i)  # linear hand-off
+                floor[i:j] = 0
+                floor[i:j, before] = 1 - alpha
+                floor[i:j, after] = alpha
+            elif before is not None or after is not None:
+                keep = before if before is not None else after  # co-talk that took nothing
+                floor[i:j] = np.eye(len(FLOOR), dtype=np.float32)[keep]
+        i = j
 
     floor_w = np.ones(T, np.float32)
     for span in events.get('eot_excluded', []):
@@ -108,10 +140,10 @@ def floor_targets(times, segments, events):
 
 
 def floor_projection(floor, floor_w, horizons_s=HORIZONS_S, frame_s=FRAME_S):
-    """Floor state at each horizon ahead: ([T, H] long, [T, H] weight; 0 past the end)."""
+    """Soft floor target at each horizon ahead: ([T, H, 4], [T, H] weight; 0 past the end)."""
     T = len(floor)
     steps = [int(round(h / frame_s)) for h in horizons_s]
-    target = np.zeros((T, len(steps)), np.int64)
+    target = np.zeros((T, len(steps), floor.shape[-1]), np.float32)
     weight = np.zeros((T, len(steps)), np.float32)
     for j, k in enumerate(steps):
         target[:T - k, j] = floor[k:]
@@ -155,12 +187,11 @@ def to_slots(targets):
     """Channel-indexed targets (floor_targets output, plus optional 'future') -> slot-indexed,
     adding 'slot_activity' for the diarization head."""
     order = arrival_order(activity(targets['act']))
-    remap = np.arange(len(FLOOR))
-    remap[order] = np.arange(2)  # HELD_<channel> -> HELD_<slot>
-    out = dict(targets, floor=remap[targets['floor']], act=targets['act'][:, order],
+    columns = np.r_[order, 2, 3]  # slot k takes channel order[k]'s HELD column
+    out = dict(targets, floor=targets['floor'][..., columns], act=targets['act'][:, order],
                act_w=targets['act_w'][:, order])
     if 'future' in targets:
-        out['future'] = remap[targets['future']]
+        out['future'] = targets['future'][..., columns]
     out['slot_activity'] = activity(out['act'])
     return out
 

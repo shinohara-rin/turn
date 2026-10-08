@@ -77,10 +77,20 @@ The primary target is **who holds the floor** (`labels.floor_targets`):
 |---|---|
 | `HELD_c` | c holds the floor: talking, or pausing without yielding (a hold) |
 | `OPEN` | the holder yielded and nobody has claimed it yet |
-| `CONTESTED` | both claim it at once |
+| `CONTESTED` | both bid for it at once (an overlap involving an interruption or attempt) |
 
-**Overlap is a state of the floor** (contested), not a coincidence of two independent
-p(speaking) values. **Vocal acts are separate from the floor:**
+**Overlap is a state of the floor**, not a coincidence of two independent p(speaking) values:
+- **Contest:** an overlap that involves an interruption or attempt is `CONTESTED`.
+- **Hand-off:** the next speaker starts before the current one finishes, with no
+  interruption label. The target is **soft** and moves linearly across the overlap from
+  `HELD_old` to `HELD_new`, with p(`HELD_0`) + p(`HELD_1`) = 1 and no contest mass.
+  The losses take soft targets.
+  - Alternative to try: interpolate by the two channels' relative VAD or energy instead
+    of by time.
+- **Co-talk that takes nothing:** stays `HELD_holder`.
+- **Backchannels never contest.**
+
+**Vocal acts are separate from the floor:**
 - a backchannel is speech that leaves the floor where it was;
 - a claim is speech that bids for it; turns and interruptions are claims whether or not
   they succeed.
@@ -113,6 +123,7 @@ How labels are derived from TurnBench gold:
 - the floor-taking interruption shows as `CONTESTED`, and the projection gives it to the
   interrupter;
 - the failed attempt also shows as `CONTESTED`, but the projection returns it to the holder;
+- a latched hand-off is a monotone soft transfer with zero contest mass;
 - a backchannel never contests.
 
 Beyond TurnBench, the floor is the quantity a dialogue system acts on: whether it may

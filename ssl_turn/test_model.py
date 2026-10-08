@@ -85,8 +85,9 @@ class TurnModelContracts(unittest.TestCase):
         vap_only = dict(vap=torch.from_numpy(labels).repeat(2, 1), vap_valid=torch.from_numpy(valid).repeat(2, 1))
         _, parts = m.loss(out, vap_only)
         self.assertEqual(set(parts), {'vap'})
-        floor = dict(floor=torch.randint(0, 4, (2, 50)), floor_w=torch.ones(2, 50),
-                     future=torch.randint(0, 4, (2, 50, self.H)), future_w=torch.ones(2, 50, self.H),
+        soft = lambda *shape: torch.softmax(torch.randn(*shape, 4), -1)
+        floor = dict(floor=soft(2, 50), floor_w=torch.ones(2, 50),
+                     future=soft(2, 50, self.H), future_w=torch.ones(2, 50, self.H),
                      act=torch.randint(0, len(lb.ACTS), (2, 50, 2)), act_w=torch.ones(2, 50, 2))
         total, parts = m.loss(out, dict(vap_only, **floor))
         total.backward()

@@ -25,6 +25,7 @@ SEGMENTS = [
     (1, 5.5, 7.0, 'Interruption'),                  # contest that speaker 1 takes
     (2, 7.5, 7.8, 'NonContent'),
     (2, 8.5, 10.0, 'Turn'),
+    (1, 9.6, 11.0, 'Turn'),                         # latched start: a hand-off, not a contest
 ]
 TURN_VIEW = ('Turn', 'Interruption')
 
@@ -36,16 +37,16 @@ class AgreesWithGold(unittest.TestCase):
         turn = [ConsensusEvent(s, a, b, 'Turn') for s, a, b, l in SEGMENTS if l in TURN_VIEW]
         fine = [ConsensusEvent(s, a, b, l) for s, a, b, l in SEGMENTS]
         cls.events = asdict(build_conversation_events(ConsensusViews(turn, [], fine, [])))
-        cls.times = (np.arange(150) + 1) * 0.08
+        cls.times = (np.arange(160) + 1) * 0.08
         cls.y = lb.floor_targets(cls.times, SEGMENTS, cls.events)
         cls.future, _ = lb.floor_projection(cls.y['floor'], cls.y['floor_w'])
 
     def floor_at(self, time_s):
-        return lb.FLOOR[self.y['floor'][np.searchsorted(self.times, time_s)]]
+        return lb.FLOOR[self.y['floor'][np.searchsorted(self.times, time_s)].argmax()]
 
     def test_gold_itself(self):
         eot = {(e['speaker'], e['time_s']) for e in self.events['eot_positive_events']}
-        self.assertTrue({(1, 4.0), (2, 6.0), (1, 7.0)} <= eot)
+        self.assertTrue({(1, 4.0), (2, 6.0), (1, 7.0), (2, 10.0)} <= eot)
         self.assertEqual([(e['speaker'], e['time_s']) for e in self.events['int_positive_events']], [(1, 5.5)])
 
     def test_eot_positives_release_the_floor_and_negatives_hold_it(self):
@@ -58,15 +59,27 @@ class AgreesWithGold(unittest.TestCase):
 
     def test_interruptions_are_contests_with_outcomes(self):
         i = np.searchsorted(self.times, 5.6)
-        self.assertEqual(lb.FLOOR[self.y['floor'][i]], 'CONTESTED')
-        self.assertEqual(lb.FLOOR[self.future[i, 1]], 'HELD_0')   # speaker 1 takes the floor
+        self.assertEqual(self.floor_at(5.6), 'CONTESTED')
+        self.assertEqual(lb.FLOOR[self.future[i, 1].argmax()], 'HELD_0')   # speaker 1 takes the floor
         j = np.searchsorted(self.times, 3.1)
-        self.assertEqual(lb.FLOOR[self.y['floor'][j]], 'CONTESTED')
-        self.assertEqual(lb.FLOOR[self.future[j, 1]], 'HELD_0')   # failed attempt: speaker 1 keeps it
+        self.assertEqual(self.floor_at(3.1), 'CONTESTED')
+        self.assertEqual(lb.FLOOR[self.future[j, 1].argmax()], 'HELD_0')   # failed attempt: speaker 1 keeps it
         self.assertEqual(self.floor_at(1.1), 'HELD_0')            # backchannel: no contest
         for span in self.events['int_negative_spans']:
             mid = np.searchsorted(self.times, (span['start'] + span['end']) / 2)
             self.assertIn(lb.ACTS[self.y['act'][mid, span['speaker'] - 1]], ('BACKCHANNEL', 'NONCONTENT'))
+
+    def test_handoff_overlap_is_soft_not_contested(self):
+        run = (self.times >= 9.6) & (self.times < 10.0)
+        f = self.y['floor'][run]
+        np.testing.assert_allclose(f[:, lb.F['HELD_0']] + f[:, lb.F['HELD_1']], 1.0)
+        self.assertTrue((f[:, lb.F['CONTESTED']] == 0).all())
+        held_new = f[:, lb.F['HELD_0']]
+        self.assertTrue((np.diff(held_new) > 0).all())          # moves monotonically to speaker 1
+        self.assertLess(held_new[0], 0.5)
+        self.assertGreater(held_new[-1], 0.5)
+        self.assertEqual(self.floor_at(10.3), 'HELD_0')
+        np.testing.assert_allclose(self.y['floor'].sum(1), 1.0)
 
     def test_open_floor_and_weights(self):
         self.assertEqual(self.floor_at(4.2), 'OPEN')
@@ -89,10 +102,13 @@ class AgreesWithGold(unittest.TestCase):
 
 class Slots(unittest.TestCase):
     def test_arrival_order_relabels_floor_and_acts(self):
-        y = dict(floor=np.array([2, 1, 1, 3, 0]), floor_w=np.ones(5, np.float32),
+        floor = np.eye(4, dtype=np.float32)[[2, 1, 1, 3, 0]]
+        floor[3] = [0.25, 0.75, 0, 0]  # a hand-off frame
+        y = dict(floor=floor, floor_w=np.ones(5, np.float32),
                  act=np.array([[0, 0], [0, 1], [0, 1], [1, 1], [1, 0]]), act_w=np.ones((5, 2), np.float32))
         s = lb.to_slots(y)  # channel 1 speaks first -> slot 0
-        self.assertEqual([lb.FLOOR[i] for i in s['floor']], ['OPEN', 'HELD_0', 'HELD_0', 'CONTESTED', 'HELD_1'])
+        self.assertEqual([lb.FLOOR[i] for i in s['floor'].argmax(1)], ['OPEN', 'HELD_0', 'HELD_0', 'HELD_0', 'HELD_1'])
+        np.testing.assert_allclose(s['floor'][3], [0.75, 0.25, 0, 0])
         np.testing.assert_array_equal(s['slot_activity'][3], [1, 1])
         np.testing.assert_array_equal(s['act'][:, 0], y['act'][:, 1])
 
