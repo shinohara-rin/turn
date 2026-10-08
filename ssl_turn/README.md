@@ -57,14 +57,43 @@ and event localization. See "Pseudo-labels" below.
 - Four layers of (shared per-channel causal self-attention → causal cross-attention to the
   other channel), as in VAP's stereo transformer. ALiBi recency bias with a hard 20 s window
   gives the same receptive field when training on crops and when streaming.
-- Heads:
-  - joint **256-class VAP** (bins 0.24/0.40/0.56/0.80 s over a 2 s horizon);
-  - per-speaker **EOT**, **INT** and **VAD** logits from `[own, other]`, using shared
-    weights so swapping speakers swaps the outputs (tested).
+- Heads (stereo):
+  - per-speaker **TurnBench label state** (`labels.py`), from `[own, other]` with shared
+    weights, so swapping speakers swaps the outputs (tested);
+  - joint **256-class VAP** (bins 0.24/0.40/0.56/0.80 s over a 2 s horizon), which needs only
+    activity and so works on unlabeled stereo.
+- **Mono mode** for mixed-speaker audio: the same trunk without cross-attention, a mono
+  embedding, and one conversation-level state head.
 - Decisions every 80 ms rather than attempt 1's 160 ms grid, which removes up to 80 ms of
   quantization latency.
 
-Unlike attempt 1, INT gets a head trained for it from the start.
+### Targets: TurnBench label states, not a bare p(EOT)
+
+`turnbench/gold.py` builds every EOT/INT event from annotated segments.
+`labels.frame_states` projects that gold onto the 12.5 Hz grid as one state per speaker
+per frame:
+- **Speaking:** `TURN`, `INT_FLOOR` (floor-taking interruption), `INT_ATTEMPT`
+  (non-floor-taking), `BACKCHANNEL`, `LAUGHTER`, `NONCONTENT`.
+- **Quiet:** `HOLD` (an EOT-negative pause), `YIELD` (from an EOT anchor until the speaker
+  next claims the floor, at most 3 s), `LISTEN`.
+
+Scores for the official sweep are read off the posterior: **EOT = p(YIELD),
+INT = p(INT_FLOOR)**. Excluded (no-majority) spans get zero weight for their task.
+
+Why this beats a binary p(EOT):
+- Every frame of every segment is supervised, not only pause frames.
+- Backchannels and noise are explicit competitors to floor-taking onsets, which is exactly
+  what INT negatives are.
+- One target serves both tasks.
+
+`test_labels` builds a conversation through the pinned `build_conversation_events` and checks
+the states against its anchors and spans.
+
+`labels.mono_states` merges the two speakers' states by priority into one per frame:
+- interruption > turn > backchannel > laughter > noise > yield > hold > listen.
+
+This is exact for stereo mixed down to mono, so every stereo source doubles as mono
+training data. Podcasts can be labeled on their original mono audio, with no separation step.
 
 ## Training stages
 
@@ -170,24 +199,69 @@ The gap between real and pseudo stereo, measured on identical conversations and 
 says which route to use and how much podcast hours must compensate. Only then reconstruct
 a 1k h subset.
 
+## Interruption supply
+
+TurnBench dev gold (public `dev-gold.json`, 7.31 h, 38 conversations), per hour:
+
+| | EOT + | EOT − | INT + (floor-taking) | INT − (backchannel / noise) |
+|---|---|---|---|---|
+| All | 260.6 | 145.5 | 47.5 | 510.8 |
+
+INT rate by conversation type:
+
+| Conversation type | INT / h |
+|---|---|
+| Argumentative/Deliberative | 70.8 |
+| Task-Oriented/Transactional | 69.5 |
+| Collaborative/Problem-Solving | 62.3 |
+| Instructional | 45.8 |
+| Casual/Spontaneous | 19.7 |
+| Narrative/Storytelling | 11.5 |
+
+Podcasts are mostly interview, casual and narrative talk, i.e. the *low*-INT genres, and
+separation is least reliable during overlap, which is where interruptions live. So
+**podcasts are expected to help VAP and EOT more than INT**. Interruption data needs its own
+plan:
+1. **Measure** INT/h on a reconstructed sample with the pseudo-labeler before scaling.
+   DuplexChat's own statistics (10% simultaneous speech, 48% of English transitions
+   overlapping) count overlap, not floor-taking interruptions.
+2. **Mine and oversample:** select feeds by PodcastIndex category (debate, politics, sports
+   talk, panel) and clips by measured overlap rate. 282k h leaves plenty of room to be
+   selective.
+3. **Use mono where separation fails:** the mono route labels INT from diarization and the
+   LLM without separating overlap.
+4. **Keep human labels decisive for INT:** otoSpeech gets a higher INT-state weight, and the
+   final fine-tune is on human labels only.
+
+LLM+TTS synthetic dialogues sounded unnatural in a past attempt and are postponed.
+
 ## Mixed-source training
 
 Sources differ in what they label and how much to trust it:
 
-| Source | Hours | VAP (activity) | EOT / INT | Channels |
-|---|---|---|---|---|
-| otoSpeech train | ~33 | human annotation | human | real |
-| Podcasts | 1k–10k+ | diarization or VAD | ASR+LLM pseudo-labels | pseudo |
+| Source | Input | VAP | Label states |
+|---|---|---|---|
+| otoSpeech train (~33 h) | real stereo | human activity | human |
+| otoSpeech mixed down | mono | – | exact (`mono_states`) |
+| Podcasts, separated or gated | pseudo stereo | VAD on channels | ASR+LLM pseudo |
+| Podcasts, original | mono | – | ASR+LLM pseudo on diarized segments |
+
+The objectives really are heterogeneous: stereo and mono inputs ask different questions
+(per speaker vs. per conversation). They share the encoder and trunk, and each has its
+own head.
 
 How the code handles this:
-- **Partial labels:** every target has a per-frame weight, and a missing label gets weight 0.
-  Each loss term is normalized by its own weight mass (`model.loss`).
+- **Partial labels:** every target has a per-frame weight; a missing target is omitted or
+  gets weight 0. Each loss term is normalized by its own weight mass (`model.loss`).
 - **Source conditioning:** a learned source embedding (`REAL_STEREO`, `GATED_PODCAST`,
   `SEPARATED_PODCAST`) lets the model absorb pipeline artifacts instead of baking them
   into its notion of a turn. Inference always uses `REAL_STEREO`. Ablate with and without it.
 - **Schedule:** pretrain on podcasts, mixing in otoSpeech at a fixed share (~10–20% of
   batches), then fine-tune on otoSpeech alone.
-- **Trust:** pseudo EOT/INT weights are scaled down (start at 0.3), or by labeler confidence.
+- **Trust:** pseudo label-state weights are scaled down (start at 0.3), or by labeler
+  confidence.
+- **Mono share:** mono batches are a fixed share of training. TurnBench (stereo) stays the
+  selection metric; mono is reported on otoSpeech dev mixed down.
 
 Evaluation ladder (TurnBench dev; each rung must beat the previous):
 1. otoSpeech only.
@@ -217,8 +291,11 @@ Pseudo-labeled corpora must also exclude every TurnBench dev/test file by constr
 - `model.py`: VAP labels, `TurnModel` and the losses.
 - `podcast_subset.py`: feed-disjoint, nested DuplexChat subsets in the upstream schema.
 - `pseudo_stereo.py`: `gated_stereo` and calibration metrics against real stereo.
-- `test_cat_encoder.py`, `test_model.py`, `test_podcast.py`: contracts. `CAT_DIR=<dir>`
-  enables the real-weight tests.
+- `labels.py`: TurnBench gold → per-frame label states (stereo and mono), plus score readout.
+- `test_cat_encoder.py`, `test_model.py`, `test_podcast.py`, `test_labels.py`: contracts.
+  `CAT_DIR=<dir>` enables the real-weight tests; `test_labels` needs the pinned `turnbench`
+  importable. Install TurnBench in its own environment: its `huggingface-hub==1.17.0` pin
+  breaks recent transformers.
 
 Next:
 1. otoSpeech feature caching and the stage-0 trainer.

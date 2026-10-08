@@ -1,21 +1,23 @@
-"""Stereo causal turn model over frozen (or adapted) Cat encoder features at 12.5 Hz.
+"""Causal turn model over frozen (or adapted) Cat encoder features at 12.5 Hz.
 
-Per frame t (available at (t+1)*80 ms) and speaker s it predicts:
-  - vap:  256-way discrete Voice Activity Projection over the next 2 s (shared, joint)
-  - eot:  this speaker's current pause is a turn end
-  - int:  the other speaker's current onset takes the floor from s (scored for the onset speaker)
-  - vad:  speaker s is talking now (auxiliary, also usable as the commit gate)
-VAP is self-supervised from per-channel activity, so it is the objective that
-scales to unlabeled (or pseudo-labeled) two-channel audio.
+Two input modes share one trunk:
+  stereo [.., T, 2, ..] (one channel per speaker; the TurnBench condition):
+    - state: per speaker, the TurnBench label state (labels.STATES), from which
+      EOT = p(YIELD) and INT = p(INT_FLOOR) are read for the official sweep
+    - vap:   256-way Voice Activity Projection over the next 2 s, which needs only
+             per-channel activity, so it scales to unlabeled stereo
+  mono [.., T, 1, ..] (mixed-speaker audio):
+    - state: one conversation-level state (labels.mono_states), same label set
+Frame t is available at (t+1)*80 ms.
 """
 from __future__ import annotations
-
-import math
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from labels import STATES
 
 FRAME_S = 0.08
 # VAP projection bins (frames). Ekstedt & Skantze use 0.2/0.4/0.6/0.8 s; the 80 ms
@@ -97,8 +99,8 @@ SOURCES = 3
 
 
 class TurnModel(nn.Module):
-    """inputs: taps [B, T, 2, L, 1280] and/or final [B, T, 2, 768] (channel = speaker),
-    plus optional source ids [B] (default REAL_STEREO)."""
+    """inputs: taps [B, T, C, L, 1280] and/or final [B, T, C, 768], with C=2 (channel =
+    speaker) or C=1 (mixed mono), plus optional source ids [B] (default REAL_STEREO)."""
 
     def __init__(self, tap_layers=4, tap_dim=1280, final_dim=768, dim=256, heads=4, layers=4,
                  window_s=20.0, dropout=0.1, sources=SOURCES):
@@ -108,6 +110,7 @@ class TurnModel(nn.Module):
         self.tap_proj = nn.Sequential(nn.LayerNorm(tap_dim), nn.Linear(tap_dim, dim)) if tap_layers else None
         self.final_proj = nn.Sequential(nn.LayerNorm(final_dim), nn.Linear(final_dim, dim)) if final_dim else None
         self.channel = nn.Parameter(torch.zeros(2, dim))
+        self.mono = nn.Parameter(torch.zeros(dim))
         self.source = nn.Embedding(sources, dim)
         nn.init.zeros_(self.source.weight)
         self.self_blocks = nn.ModuleList(CausalBlock(dim, heads, window, dropout=dropout) for _ in range(layers))
@@ -115,7 +118,8 @@ class TurnModel(nn.Module):
                                           for _ in range(layers))
         self.norm = nn.LayerNorm(dim)
         self.vap = nn.Linear(2 * dim, VAP_CLASSES)
-        self.speaker = nn.Linear(2 * dim, 3)  # eot, int, vad from [own, other]
+        self.state = nn.Linear(2 * dim, len(STATES))  # per speaker, from [own, other]
+        self.mono_state = nn.Linear(dim, len(STATES))
 
     def embed(self, taps=None, final=None, source=None):
         x = 0
@@ -124,24 +128,26 @@ class TurnModel(nn.Module):
             x = x + self.tap_proj((taps * w[:, None]).sum(-2))
         if self.final_proj is not None:
             x = x + self.final_proj(final)
-        x = x + self.channel  # [B, T, 2, dim]
+        x = x + (self.channel if x.shape[2] == 2 else self.mono)  # [B, T, C, dim]
         if source is None:
             source = torch.full((x.shape[0],), REAL_STEREO, dtype=torch.long, device=x.device)
         return x + self.source(source)[:, None, None]
 
     def forward(self, taps=None, final=None, source=None):
         x = self.embed(taps, final, source)
-        B, T, _, D = x.shape
-        x = x.permute(0, 2, 1, 3).reshape(2 * B, T, D)  # speakers as batch, shared weights
+        B, T, C, D = x.shape
+        if C not in (1, 2):
+            raise ValueError('expected 1 (mono) or 2 (stereo) channels')
+        x = x.permute(0, 2, 1, 3).reshape(C * B, T, D)  # channels as batch, shared weights
         for sa, ca in zip(self.self_blocks, self.cross_blocks):
             x = sa(x)
-            other = x.view(B, 2, T, D).flip(1).reshape(2 * B, T, D)
-            x = ca(x, other)
-        x = self.norm(x).view(B, 2, T, D).permute(0, 2, 1, 3)  # [B, T, 2, D]
-        pair = torch.cat([x, x.flip(2)], -1)  # own, other
-        per_speaker = self.speaker(pair)
+            if C == 2:
+                x = ca(x, x.view(B, 2, T, D).flip(1).reshape(2 * B, T, D))
+        x = self.norm(x).view(B, C, T, D).permute(0, 2, 1, 3)  # [B, T, C, D]
+        if C == 1:
+            return dict(mono_state=self.mono_state(x[:, :, 0]))
         return dict(vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)),
-                    eot=per_speaker[..., 0], int=per_speaker[..., 1], vad=per_speaker[..., 2])
+                    state=self.state(torch.cat([x, x.flip(2)], -1)))
 
 
 def vap_speaker_probabilities(vap_logits, near_bins=2):
@@ -155,23 +161,28 @@ def vap_speaker_probabilities(vap_logits, near_bins=2):
     return torch.stack(out, -1)
 
 
-def loss(outputs, batch, weights=(1.0, 1.0, 1.0, 0.5)):
-    """batch: vap [B,T] long, vap_valid [B,T] bool, and for k in eot/int/vad: k [B,T,2], k_w [B,T,2].
+def _weighted_ce(logits, target, weight):
+    ce = F.cross_entropy(logits.flatten(0, -2), target.flatten(), reduction='none')
+    w = weight.flatten()
+    return (ce * w).sum() / w.sum().clamp_min(1e-6)
 
-    Partial labels: a source without e.g. INT labels sets int_w to 0 for its rows,
-    and per-source trust (pseudo vs human) is folded into the *_w weights by the
-    loader. Each term is normalized by its own weight mass, so a batch that mixes
-    sources does not let the large pseudo-labeled source swamp the human one;
-    choose the mixing ratio in the sampler instead.
+
+def loss(outputs, batch, weights=None):
+    """Stereo batch: vap [B,T] long, vap_valid [B,T] bool, state [B,T,2] long, state_w [B,T,2].
+    Mono batch: mono_state [B,T] long, mono_state_w [B,T].
+
+    Partial labels: a source lacking a target omits it or sets its weight to 0, e.g.
+    VAD-only podcast stereo has VAP but no state. Per-source trust (human vs pseudo)
+    and class balancing are folded into the weights by the loader. Each term is
+    normalized by its own weight mass, so the sampler's mixing ratio, not raw volume,
+    decides how much each source counts.
     """
+    weights = dict(vap=1.0, state=1.0, mono_state=1.0, **(weights or {}))
     terms = {}
-    v = batch['vap_valid']
-    terms['vap'] = F.cross_entropy(outputs['vap'][v], batch['vap'][v]) if v.any() else outputs['vap'].sum() * 0
-    for name in ('eot', 'int', 'vad'):
-        if name not in batch:
-            continue
-        w = batch[name + '_w']
-        bce = F.binary_cross_entropy_with_logits(outputs[name], batch[name], reduction='none')
-        terms[name] = (bce * w).sum() / w.sum().clamp_min(1e-6)
-    total = sum(weights[i] * terms[k] for i, k in enumerate(('vap', 'eot', 'int', 'vad')) if k in terms)
-    return total, {k: float(t.detach()) for k, t in terms.items()}
+    if 'vap' in outputs and 'vap' in batch:
+        terms['vap'] = _weighted_ce(outputs['vap'], batch['vap'], batch['vap_valid'].float())
+    for name in ('state', 'mono_state'):
+        if name in outputs and name in batch:
+            terms[name] = _weighted_ce(outputs[name], batch[name], batch[name + '_w'])
+    total = sum(weights[k] * v for k, v in terms.items())
+    return total, {k: float(v.detach()) for k, v in terms.items()}

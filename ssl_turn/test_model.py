@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 import torch
 
+import labels as lb
 import model as m
 
 
@@ -30,54 +31,62 @@ class TurnModelContracts(unittest.TestCase):
                                  window_s=1.6, dropout=0.0).eval()
         self.taps = torch.randn(2, 50, 2, 2, 32)
         self.final = torch.randn(2, 50, 2, 16)
+        self.n = len(lb.STATES)
 
     def test_shapes(self):
         out = self.model(self.taps, self.final)
         self.assertEqual(out['vap'].shape, (2, 50, m.VAP_CLASSES))
-        for k in ('eot', 'int', 'vad'):
-            self.assertEqual(out[k].shape, (2, 50, 2))
+        self.assertEqual(out['state'].shape, (2, 50, 2, self.n))
+        mono = self.model(self.taps[:, :, :1], self.final[:, :, :1])
+        self.assertEqual(set(mono), {'mono_state'})
+        self.assertEqual(mono['mono_state'].shape, (2, 50, self.n))
+        scores = lb.turnbench_scores(out['state'])
+        self.assertEqual(scores['eot'].shape, (2, 50, 2))
 
-    def test_causal_in_time_for_both_channels(self):
+    def test_causal_in_time_stereo_and_mono(self):
         cut = 30
         taps, final = self.taps.clone(), self.final.clone()
         taps[:, cut:] = torch.randn_like(taps[:, cut:])
         final[:, cut:, 1] = torch.randn_like(final[:, cut:, 1])
-        a, b = self.model(self.taps, self.final), self.model(taps, final)
-        for k in a:
-            torch.testing.assert_close(a[k][:, :cut], b[k][:, :cut], rtol=0, atol=1e-6)
-            self.assertGreater((a[k][:, cut:] - b[k][:, cut:]).abs().max().item(), 1e-4)
+        for channels in (slice(0, 2), slice(0, 1)):
+            a = self.model(self.taps[:, :, channels], self.final[:, :, channels])
+            b = self.model(taps[:, :, channels], final[:, :, channels])
+            for k in a:
+                torch.testing.assert_close(a[k][:, :cut], b[k][:, :cut], rtol=0, atol=1e-6)
+                self.assertGreater((a[k][:, cut:] - b[k][:, cut:]).abs().max().item(), 1e-4)
 
     def test_speaker_swap_equivariance(self):
-        a = self.model(self.taps, self.final)
         # Swapping channels must swap per-speaker outputs (channel embedding aside).
         with torch.no_grad():
             self.model.channel.zero_()
         a = self.model(self.taps, self.final)
         b = self.model(self.taps.flip(2), self.final.flip(2))
-        for k in ('eot', 'int', 'vad'):
-            torch.testing.assert_close(a[k], b[k].flip(-1), rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(a['state'], b['state'].flip(2), rtol=1e-5, atol=1e-5)
 
     def test_source_conditioning(self):
         default = self.model(self.taps, self.final)
         real = self.model(self.taps, self.final, torch.tensor([m.REAL_STEREO] * 2))
-        torch.testing.assert_close(default['vap'], real['vap'])
+        torch.testing.assert_close(default['state'], real['state'])
         with torch.no_grad():
             self.model.source.weight.normal_()
         podcast = self.model(self.taps, self.final, torch.tensor([m.GATED_PODCAST] * 2))
         real = self.model(self.taps, self.final, torch.tensor([m.REAL_STEREO] * 2))
-        self.assertGreater((podcast['eot'] - real['eot']).abs().max().item(), 1e-4)
+        self.assertGreater((podcast['state'] - real['state']).abs().max().item(), 1e-4)
 
-    def test_loss_and_vap_marginal(self):
+    def test_partial_label_losses(self):
         out = self.model(self.taps, self.final)
         labels, valid = m.vap_labels(np.random.default_rng(0).random((50, 2)) > .5)
-        batch = dict(vap=torch.from_numpy(labels).repeat(2, 1), vap_valid=torch.from_numpy(valid).repeat(2, 1))
-        for k in ('eot', 'int', 'vad'):
-            batch[k] = torch.randint(0, 2, (2, 50, 2)).float()
-            batch[k + '_w'] = torch.rand(2, 50, 2)
-        total, parts = m.loss(out, batch)
+        vap_only = dict(vap=torch.from_numpy(labels).repeat(2, 1), vap_valid=torch.from_numpy(valid).repeat(2, 1))
+        total, parts = m.loss(out, vap_only)
+        self.assertEqual(set(parts), {'vap'})
+        full = dict(vap_only, state=torch.randint(0, self.n, (2, 50, 2)), state_w=torch.rand(2, 50, 2))
+        total, parts = m.loss(out, full)
         total.backward()
+        self.assertEqual(set(parts), {'vap', 'state'})
         self.assertTrue(np.isfinite(float(total)))
-        self.assertEqual(set(parts), {'vap', 'eot', 'int', 'vad'})
+        mono = self.model(self.taps[:, :, :1], self.final[:, :, :1])
+        _, parts = m.loss(mono, dict(mono_state=torch.randint(0, self.n, (2, 50)), mono_state_w=torch.ones(2, 50)))
+        self.assertEqual(set(parts), {'mono_state'})
         p = m.vap_speaker_probabilities(out['vap'])
         self.assertEqual(p.shape, (2, 50, 2))
         self.assertTrue(((p >= 0) & (p <= 1)).all())
