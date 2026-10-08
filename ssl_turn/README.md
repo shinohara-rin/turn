@@ -63,7 +63,8 @@ and event localization. See "Pseudo-labels" below.
   - joint **256-class VAP** (bins 0.24/0.40/0.56/0.80 s over a 2 s horizon), which needs only
     activity and so works on unlabeled stereo.
 - **Mono mode** for mixed-speaker audio: the same trunk without cross-attention, a mono
-  embedding, and one conversation-level state head.
+  embedding, and speakers in **arrival-order slots**. Each slot gets a diarization logit
+  (overlap allowed) and its own TurnBench label state.
 - Decisions every 80 ms rather than attempt 1's 160 ms grid, which removes up to 80 ms of
   quantization latency.
 
@@ -89,11 +90,36 @@ Why this beats a binary p(EOT):
 `test_labels` builds a conversation through the pinned `build_conversation_events` and checks
 the states against its anchors and spans.
 
-`labels.mono_states` merges the two speakers' states by priority into one per frame:
-- interruption > turn > backchannel > laughter > noise > yield > hold > listen.
+### Diarization objective (mono)
 
-This is exact for stereo mixed down to mono, so every stereo source doubles as mono
-training data. Podcasts can be labeled on their original mono audio, with no separation step.
+Mono targets put speakers in slots by order of first speech (`labels.slot_targets`),
+following Sortformer's arrival-time ordering ([Streaming Sortformer](https://arxiv.org/abs/2507.18446)):
+- Order of first speech is decided causally, so no permutation search is needed.
+- Each slot is supervised with:
+  - **activity**: multi-label, so overlap is a first-class target;
+  - **TurnBench label states**: as in stereo.
+
+Why an explicit diarization head:
+- **For the representation:** telling speakers apart and detecting overlap forces
+  speaker-discriminative, overlap-aware features. These are the cues that separate a
+  floor-taking interruption from a backchannel. Mono and stereo share the trunk, so stereo
+  benefits too.
+- **For users:** mono output answers *who* yielded or barged in, not only that something
+  happened.
+- **For data:** diarization is the cheapest podcast label. pyannote output gives slot
+  activity for every podcast hour (`slot_activity_from_segments`), while label states need
+  the ASR+LLM pass. Stereo mixed down to mono gives exact slot labels.
+
+Open issue: **speaker memory beyond the attention window.** A speaker silent for longer
+than the window (20 s by default) can only be re-identified from what is still in context.
+Planned fix: an arrival-ordered speaker cache, i.e. the highest-confidence past frame
+embeddings per slot kept as extra keys, as in Streaming Sortformer's AOSC. Measure
+slot-swap rate versus silence length on otoSpeech dev mixed down before building it.
+
+Evaluation:
+- diarization error on otoSpeech dev mixed down, both causal and arrival-ordered;
+- [`nvidia/diar_streaming_sortformer_4spk-v2`](https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2)
+  as an external streaming baseline.
 
 ## Training stages
 
@@ -242,13 +268,14 @@ Sources differ in what they label and how much to trust it:
 | Source | Input | VAP | Label states |
 |---|---|---|---|
 | otoSpeech train (~33 h) | real stereo | human activity | human |
-| otoSpeech mixed down | mono | – | exact (`mono_states`) |
+| otoSpeech mixed down | mono | – | exact per slot (`slot_targets`) |
 | Podcasts, separated or gated | pseudo stereo | VAD on channels | ASR+LLM pseudo |
-| Podcasts, original | mono | – | ASR+LLM pseudo on diarized segments |
+| Podcasts, original | mono | – | slot activity from pyannote; states from ASR+LLM |
 
-The objectives really are heterogeneous: stereo and mono inputs ask different questions
-(per speaker vs. per conversation). They share the encoder and trunk, and each has its
-own head.
+The objectives really are heterogeneous: in stereo, a channel identifies the speaker, while
+in mono the model must also diarize. Both modes share the encoder and trunk, and each has
+its own heads. In podcasts, agreement between pyannote and VAD on DialogueSidon's separated
+channels gives a free confidence weight for the diarization targets.
 
 How the code handles this:
 - **Partial labels:** every target has a per-frame weight; a missing target is omitted or

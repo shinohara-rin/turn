@@ -6,8 +6,9 @@ Two input modes share one trunk:
       EOT = p(YIELD) and INT = p(INT_FLOOR) are read for the official sweep
     - vap:   256-way Voice Activity Projection over the next 2 s, which needs only
              per-channel activity, so it scales to unlabeled stereo
-  mono [.., T, 1, ..] (mixed-speaker audio):
-    - state: one conversation-level state (labels.mono_states), same label set
+  mono [.., T, 1, ..] (mixed-speaker audio), with speakers in arrival-order slots:
+    - slot_activity: per-slot speech logits, i.e. streaming diarization with overlap
+    - slot_state:    per-slot TurnBench label states, as in stereo
 Frame t is available at (t+1)*80 ms.
 """
 from __future__ import annotations
@@ -103,7 +104,7 @@ class TurnModel(nn.Module):
     speaker) or C=1 (mixed mono), plus optional source ids [B] (default REAL_STEREO)."""
 
     def __init__(self, tap_layers=4, tap_dim=1280, final_dim=768, dim=256, heads=4, layers=4,
-                 window_s=20.0, dropout=0.1, sources=SOURCES):
+                 window_s=20.0, dropout=0.1, sources=SOURCES, slots=2):
         super().__init__()
         window = int(round(window_s / FRAME_S))
         self.tap_weights = nn.Parameter(torch.zeros(tap_layers)) if tap_layers else None
@@ -119,7 +120,9 @@ class TurnModel(nn.Module):
         self.norm = nn.LayerNorm(dim)
         self.vap = nn.Linear(2 * dim, VAP_CLASSES)
         self.state = nn.Linear(2 * dim, len(STATES))  # per speaker, from [own, other]
-        self.mono_state = nn.Linear(dim, len(STATES))
+        self.slots = slots
+        self.slot_activity = nn.Linear(dim, slots)
+        self.slot_state = nn.Linear(dim, slots * len(STATES))
 
     def embed(self, taps=None, final=None, source=None):
         x = 0
@@ -145,7 +148,9 @@ class TurnModel(nn.Module):
                 x = ca(x, x.view(B, 2, T, D).flip(1).reshape(2 * B, T, D))
         x = self.norm(x).view(B, C, T, D).permute(0, 2, 1, 3)  # [B, T, C, D]
         if C == 1:
-            return dict(mono_state=self.mono_state(x[:, :, 0]))
+            h = x[:, :, 0]
+            return dict(slot_activity=self.slot_activity(h),
+                        slot_state=self.slot_state(h).view(B, T, self.slots, len(STATES)))
         return dict(vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)),
                     state=self.state(torch.cat([x, x.flip(2)], -1)))
 
@@ -169,7 +174,8 @@ def _weighted_ce(logits, target, weight):
 
 def loss(outputs, batch, weights=None):
     """Stereo batch: vap [B,T] long, vap_valid [B,T] bool, state [B,T,2] long, state_w [B,T,2].
-    Mono batch: mono_state [B,T] long, mono_state_w [B,T].
+    Mono batch: slot_activity [B,T,K] float, slot_activity_w [B,T,K], and optionally
+    slot_state [B,T,K] long, slot_state_w [B,T,K]; all in arrival order (labels.slot_targets).
 
     Partial labels: a source lacking a target omits it or sets its weight to 0, e.g.
     VAD-only podcast stereo has VAP but no state. Per-source trust (human vs pseudo)
@@ -177,12 +183,16 @@ def loss(outputs, batch, weights=None):
     normalized by its own weight mass, so the sampler's mixing ratio, not raw volume,
     decides how much each source counts.
     """
-    weights = dict(vap=1.0, state=1.0, mono_state=1.0, **(weights or {}))
+    weights = dict(vap=1.0, state=1.0, slot_activity=1.0, slot_state=1.0, **(weights or {}))
     terms = {}
     if 'vap' in outputs and 'vap' in batch:
         terms['vap'] = _weighted_ce(outputs['vap'], batch['vap'], batch['vap_valid'].float())
-    for name in ('state', 'mono_state'):
+    for name in ('state', 'slot_state'):
         if name in outputs and name in batch:
             terms[name] = _weighted_ce(outputs[name], batch[name], batch[name + '_w'])
+    if 'slot_activity' in outputs and 'slot_activity' in batch:
+        w = batch['slot_activity_w']
+        bce = F.binary_cross_entropy_with_logits(outputs['slot_activity'], batch['slot_activity'], reduction='none')
+        terms['slot_activity'] = (bce * w).sum() / w.sum().clamp_min(1e-6)
     total = sum(weights[k] * v for k, v in terms.items())
     return total, {k: float(v.detach()) for k, v in terms.items()}

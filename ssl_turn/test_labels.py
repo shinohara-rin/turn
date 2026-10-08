@@ -65,18 +65,27 @@ class AgreesWithGold(unittest.TestCase):
                                       np.isin(self.state[:, 0], lb.SPEAKING))
 
 
-class Mono(unittest.TestCase):
-    def test_priority_merge(self):
+class Slots(unittest.TestCase):
+    def test_arrival_order_puts_first_speaker_in_slot_0(self):
         S = lb.S
-        state = np.array([[S['TURN'], S['BACKCHANNEL']],
-                          [S['TURN'], S['INT_FLOOR']],
-                          [S['YIELD'], S['LISTEN']],
-                          [S['HOLD'], S['BACKCHANNEL']],
-                          [S['HOLD'], S['LISTEN']]])
-        weight = np.array([[1, 1], [1, 1], [1, 1], [1, 1], [1, 0]], np.float32)
-        mono, w = lb.mono_states(state, weight)
-        self.assertEqual([lb.STATES[i] for i in mono], ['TURN', 'INT_FLOOR', 'YIELD', 'BACKCHANNEL', 'HOLD'])
-        np.testing.assert_array_equal(w, [1, 1, 1, 1, 0])
+        state = np.full((6, 2), S['LISTEN'])
+        state[2:4, 1] = S['TURN']        # channel 2 speaks first
+        state[3:6, 0] = S['INT_FLOOR']   # channel 1 barges in
+        weight = np.ones((6, 2), np.float32)
+        weight[5, 1] = 0
+        slot_state, slot_weight, slot_act = lb.slot_targets(state, weight)
+        np.testing.assert_array_equal(slot_state[:, 0], state[:, 1])
+        np.testing.assert_array_equal(slot_state[:, 1], state[:, 0])
+        np.testing.assert_array_equal(slot_weight[5], [0, 1])
+        np.testing.assert_array_equal(slot_act[3], [1, 1])  # overlap kept
+
+    def test_diarization_segments_in_arrival_order(self):
+        segs = [(1.0, 2.0, 'SPEAKER_04'), (0.2, 0.8, 'SPEAKER_02'), (1.5, 1.9, 'SPEAKER_02')]
+        a = lb.slot_activity_from_segments(segs, 30)
+        self.assertEqual(a[5].tolist(), [1, 0])     # 0.44 s: SPEAKER_02, first to speak
+        self.assertEqual(a[20].tolist(), [1, 1])    # 1.64 s: overlap
+        with self.assertRaises(ValueError):
+            lb.slot_activity_from_segments(segs + [(3, 4, 'SPEAKER_09')], 60)
 
 
 class Exclusions(unittest.TestCase):

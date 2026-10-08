@@ -90,23 +90,38 @@ def turnbench_scores(state_logits):
     return dict(eot=p[..., S['YIELD']], int=p[..., S['INT_FLOOR']])
 
 
-# Mixed-speaker (mono) inference has no channel per speaker, so the target is the
-# conversation-level state: the most salient of the two speakers' states.
-# Interruptions outrank turns, a turn outranks a backchannel, and any speech
-# outranks silence. Among silences, YIELD ("a turn just ended") outranks HOLD,
-# and HOLD outranks LISTEN.
-MONO_PRIORITY = ('INT_FLOOR', 'INT_ATTEMPT', 'TURN', 'BACKCHANNEL', 'LAUGHTER', 'NONCONTENT', 'YIELD', 'HOLD',
-                 'LISTEN')
+# Mixed-speaker (mono) audio has no channel per speaker. Speakers are instead
+# assigned to slots in order of first speech (Sortformer's arrival-time ordering),
+# which is causal and needs no permutation search. Each slot gets activity (an explicit
+# diarization target, overlap allowed) and the same TurnBench label states as stereo.
+# Stereo audio mixed down to mono therefore gives exact per-slot labels.
 
 
-def mono_states(state, weight):
-    """Stereo states [T, 2] -> mono state [T] and weight [T].
+def arrival_order(activity):
+    """[T, C] activity -> channel indices sorted by first active frame; never-active last."""
+    a = np.asarray(activity) > 0.5
+    first = np.where(a.any(0), a.argmax(0), len(a))
+    return np.argsort(first, kind='stable')
 
-    Exact for stereo audio mixed down to mono, so every stereo source doubles as
-    mono training data, and podcasts can be labeled on their original mono audio
-    without separation. Weight is 0 where either channel's chosen state is excluded.
+
+def slot_targets(state, weight):
+    """Stereo states [T, 2] -> arrival-ordered (slot_state [T, 2], slot_weight [T, 2],
+    slot_activity [T, 2])."""
+    order = arrival_order(activity(state))
+    return state[:, order], weight[:, order], activity(state)[:, order]
+
+
+def slot_activity_from_segments(segments, frames, slots=2, frame_s=0.08):
+    """Diarization output [(start_s, end_s, speaker_label)] -> arrival-ordered [frames, slots].
+
+    For podcast mono audio where only diarization (no label states) is available.
+    Speakers beyond `slots` raise: DuplexChat clips are selected to contain two.
     """
-    rank = np.array([MONO_PRIORITY.index(name) for name in STATES])
-    pick = np.argmin(rank[state], axis=1)
-    rows = np.arange(len(state))
-    return state[rows, pick], np.where((weight == 0).any(1), 0.0, weight[rows, pick]).astype(np.float32)
+    labels = sorted({spk for _, _, spk in segments}, key=lambda k: min(s for s, _, l in segments if l == k))
+    if len(labels) > slots:
+        raise ValueError(f'{len(labels)} speakers > {slots} slots')
+    a = np.zeros((frames, slots), np.float32)
+    centers = (np.arange(frames) + 0.5) * frame_s
+    for start, end, spk in segments:
+        a[(centers >= start) & (centers < end), labels.index(spk)] = 1
+    return a
