@@ -101,7 +101,25 @@ def load_gold(split, cids):
     return {c: json.load(open(f'/work/gold/oto/{c}.json')) for c in cids}
 
 
-def sweep_task(probs, gold, task, thetas=None, fps=12.5, refractory_s=2.0):
+def commit(p, fps, theta, refractory_s=2.0, recommit_s=None):
+    """Pinned rising-edge commit; optionally re-commit once the score has stayed above
+    theta for `recommit_s` since the last commit (one re-commit per continuous run)."""
+    import numpy as np
+    from turnbench.sweep import commit_events
+    times = commit_events(p, fps, theta, refractory_s=refractory_s)
+    if not recommit_s:
+        return times
+    above = np.asarray(p) > theta
+    extra, k = [], int(round(recommit_s * fps))
+    for t in times:
+        i = int(round(t * fps)) - 1  # frame index of the commit
+        j = i + k
+        if j < len(above) and above[i:j + 1].all():
+            extra.append((j + 1) / fps)
+    return sorted(set(times) | set(extra))
+
+
+def sweep_task(probs, gold, task, thetas=None, fps=12.5, refractory_s=2.0, recommit_s=None):
     import numpy as np
     from turnbench.gold import AnchorEvent, Interval
     from turnbench.score import TaskScore, merge, score_task
@@ -122,7 +140,7 @@ def sweep_task(probs, gold, task, thetas=None, fps=12.5, refractory_s=2.0):
     for theta in thetas:
         total = TaskScore()
         for cid, p in probs.items():
-            ev = {s + 1: commit_events(p[:, s], fps, float(theta), refractory_s=refractory_s) for s in (0, 1)}
+            ev = {s + 1: commit(p[:, s], fps, float(theta), refractory_s, recommit_s) for s in (0, 1)}
             merge(total, score_task(*golds[cid][:2], ev, golds[cid][2]))
         lat = total.latency()
         rows.append(dict(theta=float(theta), recall=total.recall, fp=total.fp_rate, p50=lat.p50, p10=lat.p10,
@@ -140,7 +158,7 @@ def at_theta(rows, theta):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=16384, timeout=3600)
-def score_run(run, variants=None, refractories=(2.0,), ensembles=None):
+def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits=(None,)):
     """Sweep every (model, task variant) in a run on oto dev (selection) and tbdev (report)."""
     import numpy as np
     from concurrent.futures import ProcessPoolExecutor
@@ -171,15 +189,16 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None):
                 continue
             for split, probs in splits.items():
                 for r in refractories:
-                    name = task if r == 2.0 else f'{task}@r{r}'
-                    jobs[(model, name, split)] = pool.submit(sweep_task, probs, load_gold(split, list(probs)),
-                                                             'eot' if task.startswith('eot') else 'int', None, 12.5, r)
+                    for rc in recommits:
+                        name = (task if r == 2.0 else f'{task}@r{r}') + (f'+rc{rc}' if rc else '')
+                        jobs[(model, name, split)] = pool.submit(sweep_task, probs, load_gold(split, list(probs)),
+                                                                 'eot' if task.startswith('eot') else 'int', None,
+                                                                 12.5, r, rc)
         rows = {k: f.result() for k, f in jobs.items()}
     report = []
-    for (model, task, split), r in sorted(rows.items()):
-        if split != 'oto':
-            continue
-        sel = operating_point(r)
+    for (model, task) in sorted({(m_, t) for m_, t, _ in rows}):
+        r = rows.get((model, task, 'oto'))
+        sel = operating_point(r) if r else None
         tb = rows.get((model, task, 'tbdev'))
         entry = dict(model=model, task=task, oto=sel)
         if tb:
@@ -187,7 +206,7 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None):
             entry['tbdev_swept'] = operating_point(tb)
         report.append(entry)
     json.dump(dict(report=report, rows={'|'.join(k): v for k, v in rows.items()}),
-              open(f'/work/runs/{run}/score.json', 'w'))
+              open(f'/work/runs/{run}/score' + ('_' + '-'.join(variants) if variants else '') + '.json', 'w'))
     work.commit()
     return report
 
@@ -199,10 +218,11 @@ def fmt(r):
 
 
 @app.local_entrypoint()
-def main(run: str, variants: str = '', refractories: str = '2.0', ensembles: str = ''):
+def main(run: str, variants: str = '', refractories: str = '2.0', ensembles: str = '', recommits: str = ''):
     ens = json.loads(ensembles) if ensembles else None
+    rcs = tuple(float(x) if x else None for x in recommits.split(',')) if recommits else (None,)
     for e in score_run.remote(run, variants.split(',') if variants else None,
-                              tuple(float(x) for x in refractories.split(',')), ens):
+                              tuple(float(x) for x in refractories.split(',')), ens, rcs):
         print(f"{e['model']:>14} {e['task']:<8} oto[{fmt(e['oto'])}]  tbdev@oto-θ[{fmt(e.get('tbdev_at_oto_theta'))}]"
               f"  tbdev-swept[{fmt(e.get('tbdev_swept'))}]")
 
@@ -281,7 +301,8 @@ def miss_anatomy(run, model, task, theta, split='tbdev', refractory_s=2.0):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=16384, timeout=1800)
-def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev'):
+def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev', recommit_eot=None,
+                       recommit_int=None):
     """Write an official predictions JSON for TurnBench dev at a fixed operating point,
     validate it with turnbench.check and score it with turnbench.score (pinned evaluator).
 
@@ -304,8 +325,9 @@ def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev')
         entry = dict(conversation_id=cid)
         for s in (0, 1):
             ev = {}
-            for key, tracks, theta in (('eot', eot_tracks, eot[2]), ('interruption', int_tracks, intr[2])):
-                times = commit_events(tracks[cid][:, s], 12.5, float(theta), refractory_s=refractory_s)
+            for key, tracks, theta, rc in (('eot', eot_tracks, eot[2], recommit_eot),
+                                           ('interruption', int_tracks, intr[2], recommit_int)):
+                times = commit(tracks[cid][:, s], 12.5, float(theta), refractory_s, rc)
                 ev[key] = [round(t, 3) for t in times if t <= dur]
             entry[f'speaker_{s + 1}'] = ev
         preds.append(entry)

@@ -46,6 +46,23 @@ directly comparable to dev.
 | r004 `@r0.5` | tap ablation, second seed, ensembles (131 conversations) | 0.904 / 0.065 / 310 ms (mid_reg_no7) | 0.986 / 0.098 / 551 ms (small_reg_t31) |
 | r005 `@r0.5` | **231 conversations** (+100 gate-free extra) | 0.892 / 0.092 / 220 ms | 0.986 / 0.097 / 495 ms (ensemble) |
 | r006 `@r0.5` | **32 conversations**, same pipeline | 0.897 / 0.100 / 356 ms | 0.983 / 0.096 / 577 ms |
+| r007 `@r0.5` | objective ablation: no VAP, 3× projection, 2× act | 0.882–0.890 (all within noise) | 0.977–0.980 |
+| r008 `@r0.5` | temporal label smoothing (3/5/9 frames) | 0.878–0.897 (within noise) | 0.977–0.983 |
+| r004 `@r0.5+rc1.0` | **re-commit** once the score stays above θ for 1 s | **0.942 / 0.091 / 246 ms** | — |
+
+### Official dev operating point (`runs/r004/predictions-dev-rc.json`)
+
+Validated by `turnbench.check` and scored by `turnbench.score` (pinned 38a6f87); the
+official scorer reproduces the sweep exactly.
+
+| Task | Model / score / policy | Recall | FP | p10 / p50 / p90 |
+|---|---|---|---|---|
+| EOT | r004 mid_reg_no7, `eot_q`, θ 0.81, 0.5 s refractory + 1 s re-commit | **0.939** | 0.068 | −53 / 296 / 1031 ms |
+| INT | r004 small_reg_no7, `int_spk`, θ 0.415, 0.5 s refractory | **0.974** | 0.085 | 150 / 585 / 1572 ms |
+
+The thresholds were picked on TurnBench dev with a margin under the 0.10 FP budget
+(recall is flat there: EOT 0.942 at FP 0.091 vs 0.939 at 0.068). This is dev evidence
+only; no test audio has been touched.
 
 ## What the probes showed
 
@@ -75,6 +92,13 @@ directly comparable to dev.
   in long holds (median 1.03 s vs 0.40 s for clean pauses), which is where semantic
   completeness should help. INT false fires are long backchannel/noise spans (median
   0.98 s).
+- **Noise floor:** the same config (mid_reg_no7) scored EOT 0.904 in r004 and 0.884 in
+  r007/r008. Differences under about 0.02 are not significant without repeated seeds.
+- **Re-commit fixes the pre-fired misses:** when the score crosses before the turn ends
+  (the model is right but early) and stays high, firing again after 1 s of continuous
+  score above θ lands inside the gold window. EOT recall 0.904 → 0.942 at similar FP and
+  lower p50. Pause FPs grow by at most one per long hold. This mirrors the "delayed
+  re-commit while the channel stays silent" in Ooma's description.
 - **Encoder precision:** pure bf16, and also bf16 autocast, drift on a few frames (cosine
   down to 0.88 against fp32). TF32 is within 0.9997, so features are cached with TF32.
 

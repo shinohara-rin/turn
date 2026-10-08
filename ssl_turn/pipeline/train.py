@@ -126,7 +126,7 @@ def infer(run, names, out_run=None):
     dev = 'cuda'
     split = json.load(open('/work/split.json'))['splits']
     have = {f[:-4] for f in os.listdir('/work/feats/oto')}
-    dev_ids = [c for c in split['dev'] if c in have]
+    dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
     tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
     global LOADED, FEAT_DIR
     models, configs = {}, {}
@@ -162,7 +162,8 @@ def build_model(cfg):
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
-def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False):
+def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
+          use_dev=True, train_from=None):
     import os, threading
     import numpy as np
     import torch
@@ -180,17 +181,20 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     global LOADED, FEAT_DIR
     mtd = any(c.get('feats') == 'mtd' for c in configs.values())
     FEAT_DIR = 'feats_mtd' if mtd else 'feats'
-    have = {f[:-4] for f in os.listdir(f'/work/{FEAT_DIR}/oto')}
+    have = {f[:-4] for f in os.listdir(f'/work/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
+    if train_from:  # pin the exact conversation list (e.g. to match another backbone's subset)
+        train_ids = [c for c in json.load(open(train_from)) if c in have]
     train_ids = [c for c in train_ids if c in have]
     LOADED = [t for t in TAPS if any(t in (c.get('taps') or []) for c in configs.values())]
     cols = None if mtd else columns(LOADED)
-    dev_ids = [c for c in split['dev'] if c in have]
+    dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
     tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
     t0 = time.time()
     X, off, lab = load_split('oto', train_ids, dev, cols)
     Y = stack_labels(lab, dev)
-    Xd, offd, labd = load_split('oto', dev_ids, dev, cols)
-    Yd = stack_labels(labd, dev)
+    if dev_ids:
+        Xd, offd, labd = load_split('oto', dev_ids, dev, cols)
+        Yd = stack_labels(labd, dev)
     print(f'loaded {len(train_ids)} train ({len(X)} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
           f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
 
@@ -241,7 +245,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
     # Fixed dev crops for comparable validation loss.
     g = torch.Generator(device=dev).manual_seed(1)
-    dstarts = torch.cat([torch.arange(a, b - crop, crop, device=dev) for a, b in zip(offd[:-1], offd[1:])])
+    dstarts = (torch.cat([torch.arange(a, b - crop, crop, device=dev) for a, b in zip(offd[:-1], offd[1:])])
+               if dev_ids else None)
     stats, stop = [], threading.Event()
     threading.Thread(target=gpu_monitor, args=(stats, stop), daemon=True).start()
     history = {n: [] for n in models}
@@ -278,7 +283,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             opts[name].step()
             scheds[name].step()
-        if step % eval_every == 0 or step == steps:
+        if not dev_ids and step == steps:  # no dev set: keep the final weights
+            for name, net in models.items():
+                best[name] = (float('nan'), {k: v.detach().clone() for k, v in net.state_dict().items()}, step)
+        if dev_ids and (step % eval_every == 0 or step == steps):
             for name, net in models.items():
                 net.eval()
                 tot = {}
@@ -307,8 +315,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         print(f'{name}: best step {best[name][2]} (floor+future {best[name][0]:.4f})', flush=True)
     torch.cuda.empty_cache()
 
-    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev)
-    del Xd
+    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev) if dev_ids else {}
+    if dev_ids:
+        del Xd
     torch.cuda.empty_cache()
     Xt, offt, _ = load_split('tbdev', tb_ids, dev, cols)
     probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
@@ -325,6 +334,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
 @app.local_entrypoint()
 def main(run: str, configs: str, n_train: int = 32, steps: int = 1500, batch: int = 64, gpu: str = 'A100',
-         extra: bool = False, seed: int = 0):
+         extra: bool = False, seed: int = 0, no_dev: bool = False, train_from: str = ''):
     cfgs = json.load(open(configs))
-    print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch, 375, 250, seed, extra))
+    print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch, 375, 250, seed, extra,
+                                             not no_dev, train_from or None))

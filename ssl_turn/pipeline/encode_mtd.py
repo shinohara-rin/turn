@@ -101,12 +101,16 @@ def encode(items, step=2, batch=96):
             valid = idx >= 0
             out[valid, c] = f[idx[valid]]
         os.makedirs(f'/work/feats_mtd/{split}', exist_ok=True)
-        np.save(f'/work/feats_mtd/{split}/{cid}.npy', out)
+        np.save(f'/work/feats_mtd/{split}/{cid}.tmp.npy', out)
+        os.replace(f'/work/feats_mtd/{split}/{cid}.tmp.npy', f'/work/feats_mtd/{split}/{cid}.npy')  # atomic
         done_s += 2 * n / me.SAMPLE_RATE
         util = [u for u, _ in stats[-20:]]
         print(f'{split}/{cid}: {T} frames; {done_s / (time.time() - t0):.1f} channel-s/s; '
               f'GPU {np.mean(util) if util else -1:.0f}%', flush=True)
-        work.commit()
+        if len(done_items := locals().setdefault('_done', [])) % 5 == 4:
+            work.commit()
+        done_items.append(cid)
+    work.commit()
     stop.set()
     util = [u for u, _ in stats]
     return dict(items=len(items), channel_seconds=done_s, wall_s=time.time() - t0,
@@ -114,7 +118,7 @@ def encode(items, step=2, batch=96):
 
 
 @app.local_entrypoint()
-def main(n_train: int = 32, step: int = 2):
+def main(n_train: int = 32, step: int = 2, splits: str = 'oto,tbdev'):
     import io
     print(fetch_mtd.remote())
     buf = io.BytesIO()
@@ -122,6 +126,12 @@ def main(n_train: int = 32, step: int = 2):
         buf.write(chunk)
     split = json.loads(buf.getvalue())['splits']
     tb = sorted(e.path.split('/')[-1][:-4] for e in work.listdir('feats/tbdev'))
-    items = [('oto', c) for c in split['train'][:n_train] + split['dev']] + [('tbdev', c) for c in tb]
+    have = {e.path.split('/')[-1][:-4] for sp in ('oto', 'tbdev') for e in
+            (work.listdir(f'feats_mtd/{sp}') if any(x.path.endswith(sp) for x in work.listdir('feats_mtd')) else [])}
+    items = []
+    if 'oto' in splits:
+        items += [('oto', c) for c in split['train'][:n_train] + split['dev'] if c not in have]
+    if 'tbdev' in splits:
+        items += [('tbdev', c) for c in tb if c not in have]
     print('items', len(items))
     print(encode.remote(items, step))
