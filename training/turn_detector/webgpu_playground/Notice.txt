@@ -1,0 +1,9 @@
+Licensed by NVIDIA Corporation under the NVIDIA Open Model License
+
+Encoder: NVIDIA Parakeet realtime EOU 120M v1, continued with a VAP training
+objective and converted to ONNX FP32 streaming graphs by this project.
+Original model revision: a7e2b4629593dce0ec19f600e00e9904353fda2d.
+The NVIDIA agreement is supplied in licenses/NVIDIA-Open-Model-License.pdf.
+
+Silero VAD and ONNX Runtime notices are supplied in licenses/.
+Pardon turn head and browser integration are separate project components.

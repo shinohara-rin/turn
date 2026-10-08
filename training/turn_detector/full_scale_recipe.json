@@ -1,0 +1,12 @@
+{
+  "hypothesis_node": "n11",
+  "purpose": "Paired frozen versus VAP-continued encoder comparison on expanded otoSpeech train/dev only",
+  "selection": {"train_conversations": 131, "dev_conversations": 16, "gate_conversations_loaded": 0},
+  "representations": ["original frozen Parakeet", "same pilot encoder after100VAP updates on16approved train conversations"],
+  "continued_encoder_checkpoint_sha256": "2cd76b022820e769ee95c6da08d075f5c30eadf70b0b414ff92a3c6c5c89489f",
+  "head": {"variant": "mlp", "seeds": [42,17], "epochs": 12, "other_hyperparameters": "unchanged heads.py pilot defaults"},
+  "serving_gate": "original mean-of-five Silero; identical cache values across representations",
+  "calibration": {"thresholds": "51 uniformly spaced from0through1", "recommit_seconds": [null,1.5], "false_positive_ceiling": 0.10},
+  "reporting": "Compare representations on same16dev conversations, report both seeds and recall/FPR/latency. Expanded dev metrics are not directly comparable to prior six-conversation pilot.",
+  "test_access": "none; no TurnBench dev/test used in this experiment"
+}

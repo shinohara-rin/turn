@@ -1,0 +1,20 @@
+{
+  "status": "experimental; implementation syntax-checked, GPU smoke pending",
+  "hypothesis": "Continuing the final two Parakeet encoder layers on joint future voice activity improves downstream turn-event prediction beyond a frozen encoder",
+  "train_only": "Exactly 16 conversations from the pinned speaker-separated Otospeech training partition, validated before waveform or annotation access",
+  "objective": "256-class joint VAP; two channels times four consecutive bins, 0.2/0.4/0.6/0.8 seconds; at least 50 percent annotated occupancy sets each bit",
+  "targets": "Future annotation only. Actual 160ms audio-availability grid. Complete two-second target horizon required. No future target audio is loaded.",
+  "input_crop": "6.4 seconds warmup plus 10.24 seconds scored; channel swap augmentation",
+  "optimizer": "AdamW, encoder1e-5/head3e-4, weight_decay0.01, clipping1; final2 encoder layers and1024-256-256 MLP",
+  "training": "4 independent conversations,64 scored chunks accumulated per update,100 updates maximum; entire encoder stays eval; cuDNN TF32 disabled",
+  "tbptt": "Detach all caches after every chunk. Do not run this through inference-mode encoder.extract: direct differentiable cache_aware_stream_step is required.",
+  "checkpoint": "Atomic replacement every25 updates, including encoder/head/optimizer/Python/NumPy/Torch/CUDA RNG and provenance; resume requires identical recipe, audit, model revision and code hash",
+  "selection": "This script performs no development selection or benchmark evaluation. Parent compares dev VAP and identical downstream heads against frozen baseline. VAP improvement alone is not turn-performance evidence.",
+  "limitations": "Synthetic gradient, checkpoint and post-update causality smoke pending. Actual training throughput/memory unknown. Crop resets limit long-context distribution. Labels are single-annotator Otospeech speech intervals, not benchmark consensus or Ooma's undisclosed exact recipe.",
+  "primary_sources": [
+    "https://huggingface.co/ooma-ai/turn-detector",
+    "https://github.com/ErikEkstedt/VoiceActivityProjection/blob/main/vap/objective.py",
+    "https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/asr/parts/mixins/streaming.py",
+    "https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/asr/modules/conformer_encoder.py"
+  ]
+}
