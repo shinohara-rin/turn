@@ -11,7 +11,7 @@ selection=ROOT/'selection-full-train-dev.json'
 if not selection.exists():run(['scale_cache.py','--split',str(ROOT/'split.json'),'--out',str(selection)])
 records=json.loads(selection.read_text())
 assert {p:sum(r['split']==p for r in records) for p in ('train','dev')}=={'train':131,'dev':16}
-common=['cache_batch.py','--selection-manifest',str(selection),'--batch-size','16']
+common=['cache_batch.py','--selection-manifest',str(selection),'--batch-size',os.environ.get('TD_CACHE_BATCH','16')]
 run(common+['--output-dir',str(ROOT/'cache-streaming-full-v1'),'--reuse-cache-manifest',str(ROOT/'cache-streaming-v2/manifest.json')])
 for kind,cache in [('frozen','cache-streaming-full-v1'),('continued','cache-vap-update100-full-v1')]:
     # Surface frozen full-data quality before the second feature pass completes.
