@@ -1,0 +1,8 @@
+{
+  "final":        {"final": true, "taps": []},
+  "t31":          {"final": true, "taps": [31]},
+  "t15_31":       {"final": true, "taps": [15, 31]},
+  "t_all":        {"final": true, "taps": [7, 15, 23, 31]},
+  "t_all_small":  {"final": true, "taps": [7, 15, 23, 31], "dim": 128, "layers": 2},
+  "t_all_w10":    {"final": true, "taps": [7, 15, 23, 31], "window_s": 10.0}
+}

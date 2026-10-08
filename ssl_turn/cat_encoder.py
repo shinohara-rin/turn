@@ -101,6 +101,13 @@ class CatEncoder(nn.Module):
                 self.encoder.append(modeling.MossAudioTokenizerProjectedTransformer(
                     **kwargs, context=int(rate * config.causal_transformer_context_duration)))
             rate /= self.encoder[-1].downsample_ratio
+        # Tokens per output frame at each stage, used to size streaming KV caches.
+        stage_rate = float(config.sampling_rate)
+        for module in self.encoder:
+            stage_rate /= module.downsample_ratio
+            for sub in module.modules():
+                if isinstance(sub, modeling.MossAudioTokenizerMultiheadAttention):
+                    sub.tokens_per_frame = int(round(stage_rate / rate))
         self.hop = int(config.downsample_rate)
         self.streaming_module = modeling.StreamingModule
         self.ring_cache = modeling.RingKVCache
@@ -132,7 +139,7 @@ class CatEncoder(nn.Module):
         taps = [self._captured[t] for t in self.taps]
         return dict(final=x.transpose(1, 2), taps=torch.stack(taps, dim=2) if taps else None)
 
-    def _widen_caches(self, chunk_frames):
+    def _widen_caches(self, chunk_frames, cache_dtype=None):
         """Upstream sizes each ring cache to exactly `context` keys, so a chunk of T
         tokens evicts keys its earliest queries still need: chunked encodes drift
         from the full-sequence result once audio exceeds the window. The attention
@@ -142,13 +149,17 @@ class CatEncoder(nn.Module):
             if isinstance(module, self.attention) and module._streaming_state is not None:
                 old = module._streaming_state.kv_cache
                 _, batch, heads, _, dim = old.cache.shape
-                # Lowest stage runs at 8 tokens per 12.5 Hz frame.
                 module._streaming_state.kv_cache = self.ring_cache(
-                    batch, heads, dim, module.context + 8 * chunk_frames,
-                    respect_exec_mask=old.respect_exec_mask, device=old.cache.device, dtype=old.cache.dtype)
+                    batch, heads, dim, module.context + module.tokens_per_frame * chunk_frames,
+                    respect_exec_mask=old.respect_exec_mask, device=old.cache.device,
+                    dtype=cache_dtype or old.cache.dtype)
 
-    def stream(self, wave, chunk_frames=25):
-        """Chunked streaming encode, identical to forward() on the whole sequence."""
+    def stream(self, wave, chunk_frames=25, out_device=None, out_dtype=None, cache_dtype=None):
+        """Chunked streaming encode, identical to forward() on the whole sequence.
+
+        out_device/out_dtype move each chunk's outputs off the GPU as they are produced,
+        so memory does not grow with conversation length. Under autocast, pass the
+        autocast dtype as cache_dtype (keys/values are produced in it)."""
         if chunk_frames < 1:
             raise ValueError('chunk_frames must be positive')
         step = chunk_frames * self.hop
@@ -158,12 +169,13 @@ class CatEncoder(nn.Module):
             for module in self.encoder:
                 if isinstance(module, self.streaming_module):
                     stack.enter_context(module.streaming(batch_size=wave.shape[0]))
-            self._widen_caches(chunk_frames)
+            self._widen_caches(chunk_frames, cache_dtype)
             for start in range(0, usable, step):
                 out = self(wave[:, start:min(start + step, usable)])
-                finals.append(out['final'])
+                move = lambda t: t.to(device=out_device or t.device, dtype=out_dtype or t.dtype, non_blocking=True)
+                finals.append(move(out['final']))
                 if out['taps'] is not None:
-                    taps.append(out['taps'])
+                    taps.append(move(out['taps']))
         return dict(final=torch.cat(finals, 1), taps=torch.cat(taps, 1) if taps else None)
 
 
