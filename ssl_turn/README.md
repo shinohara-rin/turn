@@ -387,6 +387,45 @@ Inherits `training/turn_detector/PROTOCOL.md`:
 
 Pseudo-labeled corpora must also exclude every TurnBench dev/test file by construction.
 
+## Status (2026-10-08, first autonomous round)
+
+Full results, ablations and costs are in [`RESULTS.md`](RESULTS.md). In short, on
+TurnBench **dev** (development evidence, dev-tuned operating points; test untouched), the
+frozen-Cat floor model with a learned silence gate and a re-commit policy scores:
+- **EOT:** 0.939 / FP 0.068 / p50 296 ms;
+- **INT:** 0.974 / FP 0.085 / p50 585 ms.
+
+That beats the official VAP baseline on dev (EOT 0.841 / 462 ms, INT 0.957 / 912 ms).
+The file `predictions-dev-rc.json` is validated and scored by the pinned evaluator.
+
+What the experiments changed in the plan:
+- **The commit policy mattered more than the model:**
+  - EOT recall was capped near 0.80 by the rising-edge rule. Three policy changes lifted it
+    to 0.94 with no retraining: gating by p(silent), a 0.5 s refractory, and a 1 s re-commit.
+  - Head size, taps, objective weights and label smoothing are all within the ±0.02
+    seed noise.
+- **More otoSpeech data stopped helping recall** after about 32 conversations (32 / 131 /
+  231 give the same recall); it only lowers latency. So **podcast scale-up should target
+  latency and robustness, not more of the same labels.** Weigh it against the backbone
+  question below before spending on DuplexChat reconstruction.
+- **Backbone:** at equal data (23 conversations), MOSS-Transcribe-Diarize features match
+  Cat's recall and fire about 170 ms earlier on both tasks, even with a coarser 160 ms
+  update. Exactly causal MTD features cost about 0.06 s of H100 time per channel-second
+  (one full 30 s pass per step), so scaling them to all of otoSpeech is about $9.
+  Cheaper routes:
+  - fine-tune a causal (block-causal) MTD student;
+  - distill MTD into the Cat-feature head.
+
+## Pipeline (`pipeline/`, Modal)
+
+| Step | Script | Notes |
+|---|---|---|
+| CPU prep | `prep.py` | Rebuilds attempt 1's actor split (verified 131/16/20/253), floor labels from the pinned gold builder, causal 24 kHz audio |
+| Cat features | `encode.py` | L4, TF32 (bf16 drifts), per-stage KV caches, about 180 channel-s/s |
+| MTD features | `encode_mtd.py` | H100, GPU log-mel identical to the processor, trailing 30 s windows every 160 ms |
+| Training | `train.py` | Features resident in VRAM, configs trained in lockstep on shared batches (94–98% GPU utilization), early stopping, speaker-swap augmentation, exact chunked causal inference; `infer` rescans saved checkpoints |
+| Scoring | `score.py` | Pinned `commit_events` / `score_task` sweeps, score variants from posteriors, miss anatomy, official `predictions-dev.json` export + `turnbench.check` + `turnbench.score` |
+
 ## Files
 
 - `cat_encoder.py`: fetches the pinned code and encoder-only weights (HTTP range reads; the
@@ -397,14 +436,18 @@ Pseudo-labeled corpora must also exclude every TurnBench dev/test file by constr
 - `pseudo_stereo.py`: `gated_stereo` and calibration metrics against real stereo.
 - `labels.py`: TurnBench gold → floor, floor projection and acts; arrival-order slots for mono;
   score readout.
-- `test_cat_encoder.py`, `test_model.py`, `test_podcast.py`, `test_labels.py`: contracts.
+- `mtd_encoder.py`, `hf_slice.py`: exactly causal trailing-window MOSS-Transcribe-Diarize
+  encoder; encoder-only tensor fetch by HTTP range reads.
+- `test_cat_encoder.py`, `test_mtd_encoder.py`, `test_model.py`, `test_podcast.py`,
+  `test_labels.py`: contracts.
   `CAT_DIR=<dir>` enables the real-weight tests; `test_labels` needs the pinned `turnbench`
   importable. Install TurnBench in its own environment: its `huggingface-hub==1.17.0` pin
   breaks recent transformers.
 
 Next:
-1. otoSpeech feature caching and the stage-0 trainer.
-2. Podcast-route calibration on otoSpeech mono mixes.
+1. Decide the backbone: scale MTD (or a causal MTD student) versus Cat, judged on latency
+   at equal recall.
+2. Podcast-route calibration on otoSpeech mono mixes, targeting latency and robustness.
 3. A pseudo-labeler prototype validated on otoSpeech train.
 
 The otoSpeech split stays frozen at 131/16/20, matching attempt 1.

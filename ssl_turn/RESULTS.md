@@ -49,6 +49,19 @@ directly comparable to dev.
 | r007 `@r0.5` | objective ablation: no VAP, 3× projection, 2× act | 0.882–0.890 (all within noise) | 0.977–0.980 |
 | r008 `@r0.5` | temporal label smoothing (3/5/9 frames) | 0.878–0.897 (within noise) | 0.977–0.983 |
 | r004 `@r0.5+rc1.0` | **re-commit** once the score stays above θ for 1 s | **0.942 / 0.091 / 246 ms** | — |
+| r011 `@r0.5+rc1.0` | 3 seeds of mid_reg_no7 (131 conversations; same batches, different init/dropout) | 0.941 / 0.930 / 0.935 (**0.935 ± 0.006**), p50 ~230 ms | 0.977–0.983, p50 ~520–550 ms |
+
+### Backbone comparison (same 23 conversations, fixed 500 steps, no early stopping)
+
+| Backbone | EOT `eot_q@r0.5+rc1.0` | INT `int_spk@r0.5` |
+|---|---|---|
+| Cat (causal codec encoder, 80 ms) | small 0.884 / 0.099 / 468 ms; mid 0.859 / 0.100 / 482 ms | small 0.971 / 0.096 / 596 ms; mid 0.960 / 0.098 / 554 ms |
+| MOSS-Transcribe-Diarize (trailing 30 s windows every 160 ms) | small 0.895 / 0.099 / **301 ms**; mid 0.869 / 0.099 / 304 ms | small 0.974 / 0.099 / **421 ms**; mid 0.977 / 0.100 / 412 ms |
+| Cat + MTD concatenated | small 0.882 / 0.100 / 341 ms; mid 0.847 / 0.094 / 440 ms | small 0.971 / 0.096 / 392 ms; mid 0.971 / 0.091 / 423 ms |
+
+MTD matches Cat's recall and commits about 150–170 ms earlier on both tasks, despite a
+2× coarser update. Fusion didn't help at this data size. Exactly causal MTD features cost
+about 37 channel-s/s on an H100, at 100% utilization (one 30 s pass per 160 ms step).
 
 ### Official dev operating point (`runs/r004/predictions-dev-rc.json`)
 
@@ -104,4 +117,13 @@ only; no test audio has been touched.
 
 ## Cost
 
-Running total for this attempt's apps is tracked with `modal billing report`.
+About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
+apps: H100 ~$3.6, A100-80GB ~$3, A100-40GB ~$0.8, L4 ~$0.75, CPU + memory ~$3.2).
+The largest avoidable costs, all fixed:
+- **TurnBench dev decode:** each of 8 CPU containers read the whole 4.2 GB parquet.
+- **Trainer RAM reservation:** 64 GB reserved while features lived in VRAM.
+- **MTD per-item volume commits:** about 30 s of an idle H100 per item.
+
+Training runs sit at 94–98% GPU utilization by training all configs in lockstep on
+VRAM-resident features. Feature loading went from 255 s to 146 s for 1.2× the data with
+parallel, preallocated reads.

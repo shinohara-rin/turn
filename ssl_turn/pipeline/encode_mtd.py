@@ -126,12 +126,13 @@ def main(n_train: int = 32, step: int = 2, splits: str = 'oto,tbdev'):
         buf.write(chunk)
     split = json.loads(buf.getvalue())['splits']
     tb = sorted(e.path.split('/')[-1][:-4] for e in work.listdir('feats/tbdev'))
-    have = {e.path.split('/')[-1][:-4] for sp in ('oto', 'tbdev') for e in
-            (work.listdir(f'feats_mtd/{sp}') if any(x.path.endswith(sp) for x in work.listdir('feats_mtd')) else [])}
+    dirs = {x.path.split('/')[-1] for x in work.listdir('feats_mtd')}
+    have = {sp: ({e.path.split('/')[-1][:-4] for e in work.listdir(f'feats_mtd/{sp}')} if sp in dirs else set())
+            for sp in ('oto', 'tbdev')}  # per split: conversation ids overlap across datasets
     items = []
     if 'oto' in splits:
-        items += [('oto', c) for c in split['train'][:n_train] + split['dev'] if c not in have]
+        items += [('oto', c) for c in split['train'][:n_train] + split['dev'] if c not in have['oto']]
     if 'tbdev' in splits:
-        items += [('tbdev', c) for c in tb if c not in have]
+        items += [('tbdev', c) for c in tb if c not in have['tbdev']]
     print('items', len(items))
     print(encode.remote(items, step))

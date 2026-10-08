@@ -20,6 +20,7 @@ TAPS = (7, 15, 23, 31)  # layout of encode.py features: 4 x 1280 taps, then 768 
 TAP_DIM, FINAL_DIM = 1280, 768
 LOADED = list(TAPS)  # taps actually kept in VRAM for this run (set by train/infer)
 FEAT_DIR = 'feats'   # 'feats' (Cat) or 'feats_mtd' (MOSS-Transcribe-Diarize, 4096-d, no taps)
+FUSE_MTD = False     # Cat columns + MTD 4096-d appended (config feats='cat+mtd')
 
 
 def columns(taps):
@@ -39,6 +40,8 @@ def load_split(split, cids, device, cols=None, workers=16):
 
     def length(cid):
         T = np.load(f'/work/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r').shape[0]
+        if FUSE_MTD:
+            T = min(T, np.load(f'/work/feats_mtd/{split}/{cid}.npy', mmap_mode='r').shape[0])
         if split == 'oto':
             with np.load(f'/work/labels/oto/{cid}.npz') as z:
                 T = min(T, len(z['floor']))
@@ -50,12 +53,17 @@ def load_split(split, cids, device, cols=None, workers=16):
         if split == 'oto':
             z = np.load(f'/work/labels/oto/{cid}.npz')
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
-        return (np.ascontiguousarray(f[:T]) if cols is None else np.ascontiguousarray(f[:T][..., cols])), lab
+        x = np.ascontiguousarray(f[:T]) if cols is None else np.ascontiguousarray(f[:T][..., cols])
+        if FUSE_MTD:  # append the 4096-d MOSS-Transcribe-Diarize features after the Cat columns
+            g = np.load(f'/work/feats_mtd/{split}/{cid}.npy', mmap_mode='r')
+            x = np.concatenate([x, np.ascontiguousarray(g[:T])], -1)
+        return x, lab
 
     with ThreadPoolExecutor(workers) as pool:
         lengths = list(pool.map(length, cids))
         offsets = np.concatenate([[0], np.cumsum(lengths)]).tolist()
         dim = len(cols) if cols is not None else np.load(f'/work/{FEAT_DIR}/{split}/{cids[0]}.npy', mmap_mode='r').shape[-1]
+        dim += 4096 if FUSE_MTD else 0
         X = torch.empty((offsets[-1], 2, dim), dtype=torch.float16, device=device)
         labs = []
         for a, (x, lab) in zip(offsets[:-1], pool.map(read, cids, lengths)):
@@ -154,7 +162,7 @@ def infer(run, names, out_run=None):
 def build_model(cfg):
     setup_path()
     import model as m
-    final_dim = 4096 if cfg.get('feats') == 'mtd' else FINAL_DIM
+    final_dim = {'mtd': 4096, 'cat+mtd': FINAL_DIM + 4096}.get(cfg.get('feats'), FINAL_DIM)
     return m.TurnModel(tap_layers=len(cfg.get('taps') or []), tap_dim=TAP_DIM,
                        final_dim=final_dim if cfg.get('final', True) else 0,
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
@@ -178,8 +186,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     train_ids = [c for c in split['train'] if c in have][:n_train]
     if extra:  # labeled data-scaling ablation: gate-free cross-partition conversations
         train_ids += [c for c in json.load(open('/work/extra_no_gate.json')) if c in have]
-    global LOADED, FEAT_DIR
+    global LOADED, FEAT_DIR, FUSE_MTD
     mtd = any(c.get('feats') == 'mtd' for c in configs.values())
+    FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
     FEAT_DIR = 'feats_mtd' if mtd else 'feats'
     have = {f[:-4] for f in os.listdir(f'/work/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
     if train_from:  # pin the exact conversation list (e.g. to match another backbone's subset)
