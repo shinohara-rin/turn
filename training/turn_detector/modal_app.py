@@ -12,6 +12,12 @@ Usage (from this directory; HF_TOKEN must be set locally, it is forwarded as an 
   TD_MODAL_GPU=A10G modal run modal_app.py --gpu --cmd "python cache_batch.py --batch-size 4 --output-dir /content/turn-recreation/cache-streaming-v2"
   modal run --detach modal_app.py --gpu --cmd "python continue_vap.py ..."  # long jobs
 
+Long jobs: deploy once, then spawn (survives the launching shell; only `modal app stop` ends it):
+  modal deploy modal_app.py
+  python submit.py --gpu --cmd "python run_full_scale.py"      # prints the FunctionCall id
+  modal app logs turn-detector-training                        # follow output
+  modal app stop turn-detector-training                        # release billed resources when finished
+
 Commands run in /content/turn-recreation, so README stage commands work unchanged.
 Code from this checkout is synced into the workspace volume on every run; run
 artifacts (splits, caches, checkpoints) are never deleted.
@@ -26,7 +32,7 @@ WORK = '/vol/workspace'
 DATA = '/vol/datasets'
 LAYOUT = '/content/drive/MyDrive/turn-detector-recreation'
 
-app = modal.App('turn-detector-training')
+app = modal.App(os.environ.get('TD_MODAL_APP', 'turn-detector-training'))
 workspace = modal.Volume.from_name('turn-detector-workspace', create_if_missing=True)
 datasets = modal.Volume.from_name('turnbench-datasets', create_if_missing=True)
 # Same object count locally and in the container (Modal checks this); the real
