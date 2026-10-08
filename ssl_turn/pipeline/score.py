@@ -278,3 +278,49 @@ def miss_anatomy(run, model, task, theta, split='tbdev', refractory_s=2.0):
             cats[c] = cats.get(c, 0) + 1
     q = lambda v: [round(float(x), 3) for x in np.quantile(v, [.1, .25, .5, .75, .9])] if v else None
     return dict(categories=cats, never_peak_quantiles=q(peaks))
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=16384, timeout=1800)
+def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev'):
+    """Write an official predictions JSON for TurnBench dev at a fixed operating point,
+    validate it with turnbench.check and score it with turnbench.score (pinned evaluator).
+
+    eot / intr: (model, score variant, theta). Committing uses the same rising-edge rule
+    with `refractory_s`; times are frame ends on the 12.5 Hz grid, clipped to duration."""
+    import os
+    import numpy as np
+    from turnbench.check import check_predictions
+    from turnbench.data import resolve_dataset
+    from turnbench.durations import load_durations
+    from turnbench.score import score_submission
+    from turnbench.submission import load_submission
+    from turnbench.sweep import commit_events
+    eot_tracks = load_tracks(run, eot[0], eot[1], 'tbdev')
+    int_tracks = load_tracks(run, intr[0], intr[1], 'tbdev')
+    gold = json.load(open('/work/gold/tbdev.json'))
+    preds = []
+    for cid in sorted(gold, key=lambda c: int(c)):
+        dur = gold[cid]['duration_s']
+        entry = dict(conversation_id=cid)
+        for s in (0, 1):
+            ev = {}
+            for key, tracks, theta in (('eot', eot_tracks, eot[2]), ('interruption', int_tracks, intr[2])):
+                times = commit_events(tracks[cid][:, s], 12.5, float(theta), refractory_s=refractory_s)
+                ev[key] = [round(t, 3) for t in times if t <= dur]
+            entry[f'speaker_{s + 1}'] = ev
+        preds.append(entry)
+    out = f'/work/runs/{run}/{name}.json'
+    json.dump(dict(schema_version=1, predictions=preds), open(out, 'w'))
+    work.commit()
+    from pathlib import Path
+    check_predictions(Path(out), load_durations('dev'))  # raises on any schema/coverage/time violation
+    ds = resolve_dataset(TB_DEV, skip_audio=True)
+    sc = score_submission(load_submission(Path(out)), ds)
+    res = {}
+    for task, t in (('eot', sc.task_eot), ('int', sc.task_int)):
+        lat = t.latency()
+        res[task] = dict(recall=t.recall, fp=t.fp_rate, p10=lat.p10, p50=lat.p50, p90=lat.p90, tp=t.tp, fn=t.fn,
+                         fp_n=t.fp)
+    json.dump(res, open(f'/work/runs/{run}/{name}.score.json', 'w'), indent=1)
+    work.commit()
+    return res

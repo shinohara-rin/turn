@@ -258,6 +258,16 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 out = net(taps, final)
             target = yb
+            if cfg.get('blur_frames', 0) > 1:  # temporal label smoothing of the floor targets
+                k = cfg['blur_frames']
+                kern = torch.bartlett_window(k + 2, periodic=False, device=dev)[1:-1]
+                kern = (kern / kern.sum()).view(1, 1, -1)
+                def blur(t):  # t [B, T, ..., 4] soft targets, smoothed along T
+                    shp = t.shape
+                    flat = t.movedim(1, -1).reshape(-1, 1, shp[1])
+                    sm = torch.nn.functional.conv1d(torch.nn.functional.pad(flat, (k // 2, k - 1 - k // 2), mode='replicate'), kern)
+                    return sm.reshape(*t.movedim(1, -1).shape).movedim(-1, 1)
+                target = dict(target, floor=blur(yb['floor']), future=blur(yb['future']))
             if cfg.get('pause_weight', 0) > 0:  # up-weight frames where nobody is claiming the floor
                 quiet = (yb['act'] != lb.A['CLAIM']).all(-1).float()
                 boost = 1 + cfg['pause_weight'] * quiet
