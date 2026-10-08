@@ -129,15 +129,74 @@ Known weak spots:
 - A text-only LLM ignores prosody. The model learns prosody from audio, but label noise
   concentrates on prosodically marked holds.
 
-Candidate two-channel audio, licenses unverified unless stated:
-- otoSpeech's own 104 h (human labels already exist);
-- Fisher English, ~1,960 h, and Switchboard, ~260 h: LDC licenses, 8 kHz telephone, so a
-  domain mismatch;
-- CANDOR: check whether per-speaker channels exist.
+The main audio source is podcasts (next section). Fisher and Switchboard (LDC, 8 kHz
+telephone) are a fallback. TurnBench dev/test are a separate private recording
+(154 conversations, 106 speakers), so the main risk from public corpora is domain, not leakage.
 
-Single-channel podcasts would need diarization and separation and are deferred. TurnBench
-dev/test are a separate private recording (154 conversations, 106 speakers), so the main risk
-from public corpora is domain, not leakage.
+## Podcasts: single-channel audio made into stereo
+
+**DuplexChat** has already done the diarization step at scale.
+- [sarulab-speech/DuplexChat](https://huggingface.co/datasets/sarulab-speech/DuplexChat)
+  @`ff5c418`, arXiv 2607.04941, MIT code and manifests, no audio.
+- 15.3M English clips (282k h) from PodcastIndex feeds; median clip 40 s.
+- Each clip is a span where pyannote community-1 found exactly two speakers, at least 10 s
+  long, with neither speaker above 80% of the talk.
+- Their `reconstruct_dataset.py` downloads each episode, slices the span and separates it
+  with **DialogueSidon** into L/R stereo, in resumable GPU shards.
+
+`podcast_subset.py` picks nested subsets for scaling runs (1k → 10k h). It splits by
+**feed**, because hosts recur across episodes, and caps hours per feed and per episode. On
+the manifest's first 58k rows, 100 h of training data spans 222 feeds.
+
+**Two ways to make stereo, both unvalidated:**
+
+| | DialogueSidon (upstream) | `gated_stereo` (ours) |
+|---|---|---|
+| Overlap | Separated | Both talkers in both channels (like strong bleed) |
+| Acoustics | **Re-synthesized**: w2v-BERT → diffusion → DAC vocoder, denoised | Original audio; the inactive channel is attenuated to a jittered bleed level |
+| Risk | Vocoder domain shift; restoration may drop breaths, laughter and room tone, which are turn-taking cues present in TurnBench | INT supervision is weak where overlaps are unseparated; diarization errors go straight into the channels |
+| License | **CC-BY-NC-4.0** weights | No extra model |
+
+Gating doesn't leak future labels. The model is causal, so it sees a gain change only after
+diarization says speech started or stopped, much as it would from a real channel's energy.
+
+**Calibration before scaling (the first podcast experiment).** otoSpeech has true channels:
+1. Mix otoSpeech train to mono.
+2. Run pyannote, then each route.
+3. Measure activity agreement with `activity_agreement`, especially overlap recall.
+4. Train stage 0 three ways (real / gated / Sidon otoSpeech) and compare on TurnBench dev.
+
+The gap between real and pseudo stereo, measured on identical conversations and labels,
+says which route to use and how much podcast hours must compensate. Only then reconstruct
+a 1k h subset.
+
+## Mixed-source training
+
+Sources differ in what they label and how much to trust it:
+
+| Source | Hours | VAP (activity) | EOT / INT | Channels |
+|---|---|---|---|---|
+| otoSpeech train | ~33 | human annotation | human | real |
+| Podcasts | 1k–10k+ | diarization or VAD | ASR+LLM pseudo-labels | pseudo |
+
+How the code handles this:
+- **Partial labels:** every target has a per-frame weight, and a missing label gets weight 0.
+  Each loss term is normalized by its own weight mass (`model.loss`).
+- **Source conditioning:** a learned source embedding (`REAL_STEREO`, `GATED_PODCAST`,
+  `SEPARATED_PODCAST`) lets the model absorb pipeline artifacts instead of baking them
+  into its notion of a turn. Inference always uses `REAL_STEREO`. Ablate with and without it.
+- **Schedule:** pretrain on podcasts, mixing in otoSpeech at a fixed share (~10–20% of
+  batches), then fine-tune on otoSpeech alone.
+- **Trust:** pseudo EOT/INT weights are scaled down (start at 0.3), or by labeler confidence.
+
+Evaluation ladder (TurnBench dev; each rung must beat the previous):
+1. otoSpeech only.
+2. + podcast pretraining with VAP only.
+3. + podcast pseudo EOT/INT.
+4. Scale hours 1k → 10k.
+
+The rung-4 curve decides whether more GPU time for reconstruction is worth it. Dozens of
+extra conversations rarely move the result, so meaningful steps here are thousands of hours.
 
 ## Protocol
 
@@ -156,8 +215,14 @@ Pseudo-labeled corpora must also exclude every TurnBench dev/test file by constr
   decoder and quantizer are never downloaded) and provides `CatEncoder` (full and streaming).
   Run `python cat_encoder.py <dir>`.
 - `model.py`: VAP labels, `TurnModel` and the losses.
-- `test_cat_encoder.py`, `test_model.py`: contracts. `CAT_DIR=<dir>` enables the real-weight
-  tests.
+- `podcast_subset.py`: feed-disjoint, nested DuplexChat subsets in the upstream schema.
+- `pseudo_stereo.py`: `gated_stereo` and calibration metrics against real stereo.
+- `test_cat_encoder.py`, `test_model.py`, `test_podcast.py`: contracts. `CAT_DIR=<dir>`
+  enables the real-weight tests.
 
-Next: the otoSpeech feature-caching script (stage 0) and its trainer, then a pseudo-labeler
-prototype validated on otoSpeech train.
+Next:
+1. otoSpeech feature caching and the stage-0 trainer.
+2. Podcast-route calibration on otoSpeech mono mixes.
+3. A pseudo-labeler prototype validated on otoSpeech train.
+
+The otoSpeech split stays frozen at 131/16/20, matching attempt 1.

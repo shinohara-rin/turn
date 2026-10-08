@@ -90,17 +90,26 @@ class CausalBlock(nn.Module):
         return x + self.drop(self.ff(x))
 
 
+# Data sources for heterogeneous training. The model is told which pipeline produced
+# its input channels; evaluation always uses REAL_STEREO, the TurnBench condition.
+REAL_STEREO, GATED_PODCAST, SEPARATED_PODCAST = 0, 1, 2
+SOURCES = 3
+
+
 class TurnModel(nn.Module):
-    """inputs: taps [B, T, 2, L, 1280] and/or final [B, T, 2, 768] (channel = speaker)."""
+    """inputs: taps [B, T, 2, L, 1280] and/or final [B, T, 2, 768] (channel = speaker),
+    plus optional source ids [B] (default REAL_STEREO)."""
 
     def __init__(self, tap_layers=4, tap_dim=1280, final_dim=768, dim=256, heads=4, layers=4,
-                 window_s=20.0, dropout=0.1):
+                 window_s=20.0, dropout=0.1, sources=SOURCES):
         super().__init__()
         window = int(round(window_s / FRAME_S))
         self.tap_weights = nn.Parameter(torch.zeros(tap_layers)) if tap_layers else None
         self.tap_proj = nn.Sequential(nn.LayerNorm(tap_dim), nn.Linear(tap_dim, dim)) if tap_layers else None
         self.final_proj = nn.Sequential(nn.LayerNorm(final_dim), nn.Linear(final_dim, dim)) if final_dim else None
         self.channel = nn.Parameter(torch.zeros(2, dim))
+        self.source = nn.Embedding(sources, dim)
+        nn.init.zeros_(self.source.weight)
         self.self_blocks = nn.ModuleList(CausalBlock(dim, heads, window, dropout=dropout) for _ in range(layers))
         self.cross_blocks = nn.ModuleList(CausalBlock(dim, heads, window, cross=True, dropout=dropout)
                                           for _ in range(layers))
@@ -108,17 +117,20 @@ class TurnModel(nn.Module):
         self.vap = nn.Linear(2 * dim, VAP_CLASSES)
         self.speaker = nn.Linear(2 * dim, 3)  # eot, int, vad from [own, other]
 
-    def embed(self, taps=None, final=None):
+    def embed(self, taps=None, final=None, source=None):
         x = 0
         if self.tap_proj is not None:
             w = torch.softmax(self.tap_weights, 0)
             x = x + self.tap_proj((taps * w[:, None]).sum(-2))
         if self.final_proj is not None:
             x = x + self.final_proj(final)
-        return x + self.channel  # [B, T, 2, dim]
+        x = x + self.channel  # [B, T, 2, dim]
+        if source is None:
+            source = torch.full((x.shape[0],), REAL_STEREO, dtype=torch.long, device=x.device)
+        return x + self.source(source)[:, None, None]
 
-    def forward(self, taps=None, final=None):
-        x = self.embed(taps, final)
+    def forward(self, taps=None, final=None, source=None):
+        x = self.embed(taps, final, source)
         B, T, _, D = x.shape
         x = x.permute(0, 2, 1, 3).reshape(2 * B, T, D)  # speakers as batch, shared weights
         for sa, ca in zip(self.self_blocks, self.cross_blocks):
@@ -144,7 +156,14 @@ def vap_speaker_probabilities(vap_logits, near_bins=2):
 
 
 def loss(outputs, batch, weights=(1.0, 1.0, 1.0, 0.5)):
-    """batch: vap [B,T] long, vap_valid [B,T] bool, and for k in eot/int/vad: k [B,T,2], k_w [B,T,2]."""
+    """batch: vap [B,T] long, vap_valid [B,T] bool, and for k in eot/int/vad: k [B,T,2], k_w [B,T,2].
+
+    Partial labels: a source without e.g. INT labels sets int_w to 0 for its rows,
+    and per-source trust (pseudo vs human) is folded into the *_w weights by the
+    loader. Each term is normalized by its own weight mass, so a batch that mixes
+    sources does not let the large pseudo-labeled source swamp the human one;
+    choose the mixing ratio in the sampler instead.
+    """
     terms = {}
     v = batch['vap_valid']
     terms['vap'] = F.cross_entropy(outputs['vap'][v], batch['vap'][v]) if v.any() else outputs['vap'].sum() * 0

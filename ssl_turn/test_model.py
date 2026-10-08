@@ -57,6 +57,16 @@ class TurnModelContracts(unittest.TestCase):
         for k in ('eot', 'int', 'vad'):
             torch.testing.assert_close(a[k], b[k].flip(-1), rtol=1e-5, atol=1e-5)
 
+    def test_source_conditioning(self):
+        default = self.model(self.taps, self.final)
+        real = self.model(self.taps, self.final, torch.tensor([m.REAL_STEREO] * 2))
+        torch.testing.assert_close(default['vap'], real['vap'])
+        with torch.no_grad():
+            self.model.source.weight.normal_()
+        podcast = self.model(self.taps, self.final, torch.tensor([m.GATED_PODCAST] * 2))
+        real = self.model(self.taps, self.final, torch.tensor([m.REAL_STEREO] * 2))
+        self.assertGreater((podcast['eot'] - real['eot']).abs().max().item(), 1e-4)
+
     def test_loss_and_vap_marginal(self):
         out = self.model(self.taps, self.final)
         labels, valid = m.vap_labels(np.random.default_rng(0).random((50, 2)) > .5)
