@@ -345,6 +345,64 @@ fine1_bal1 (2 seeds), scored with the official sweep (0.5 s refractory; EOT re-c
   operating point; it suppresses isolated score spikes). It does not transfer to oto dev,
   so adopting it would mean tuning on TB dev. It remains a latency knob, not a default.
 
+## Encoder vs head: event-level diagnosis (`pipeline/diagnose.py`)
+
+Question: is the plateau in the frozen features or in the floor head? Decision events
+come from the gold events (oto single-annotator, TB dev three-annotator):
+- **EOT:** turn ends vs holds, read at boundary + 0.24 s and + 0.48 s. Holds that end
+  before the readout are dropped.
+- **INT:** floor-taking onsets vs backchannel/non-content spans, read at onset + 0.40 s.
+  Spans that end before the readout are dropped.
+
+Every readout is causal (the frame whose features end at that time). The metric is ROC AUC
+(threshold-free, no commit policy). Two kinds of system are scored on the same events:
+- **Heads:** the r012 checkpoints, re-inferred with the post-review code.
+- **Probes:** linear and 512-unit MLP probes on frozen features (own/other channel, now plus
+  a 1 s trailing mean). They are trained on oto train events and selected on oto dev.
+
+The MTD rows use the 23 conversations that have MTD features (19 train / 4 selection),
+with Cat on the same conversations. One L4 run, about $0.9.
+
+AUC (train / oto dev / TB dev):
+
+| | EOT +0.24 s | EOT +0.48 s | INT +0.40 s |
+|---|---|---|---|
+| head fine1_bal1 s1 (`eot` / `int_nobc`) | 0.841 / 0.813 / 0.884 | 0.854 / 0.804 / 0.896 | 0.844 / 0.725 / 0.850 |
+| head nofine s1 (`eot` / `int_spk`) | 0.847 / 0.818 / 0.890 | 0.858 / 0.807 / 0.903 | 0.738 / 0.636 / 0.839 |
+| Cat tap 15 linear probe (131 conv) | 0.859 / 0.807 / 0.851 | 0.873 / 0.812 / 0.864 | 0.991 / 0.858 / 0.763 |
+| Cat tap 15 MLP probe (131 conv) | 0.910 / 0.803 / 0.857 | 0.931 / 0.806 / 0.858 | 0.991 / 0.884 / 0.833 |
+| Cat head input, linear (19 conv) | 0.850 / 0.824 / 0.849 | 0.920 / 0.846 / 0.850 | 0.965 / 0.711 / 0.622 |
+| MTD, linear (19 conv) | 0.980 / 0.842 / 0.877 | 0.963 / 0.874 / 0.892 | 1.000 / 0.789 / 0.766 |
+| MTD, MLP (19 conv) | 1.000 / 0.860 / 0.885 | 0.997 / 0.878 / 0.897 | 1.000 / 0.737 / 0.802 |
+
+(For MTD rows the first column is the 19 probe-training conversations and the second is
+the 4 selection conversations.)
+
+- **The head is not capacity-limited.**
+  - The heads score about the same on their own training conversations as on oto dev
+    (EOT 0.84–0.86 vs 0.80–0.82).
+  - MLP probes memorize the training events (AUC up to 1.000), yet gain nothing on dev.
+  - What limits this data is generalization, not fit.
+- **For EOT the head adds little beyond the features.**
+  - A single-frame linear probe on any Cat tap from 7 to 31 reaches 0.84–0.87 on TB dev,
+    against 0.88–0.90 for the heads with 20 s of context.
+  - The taps are interchangeable, which matches the tap ablations.
+- **For EOT the encoder matters: MTD carries more of the decision than Cat.**
+  - At equal data (19 conversations), MTD probes beat Cat on oto selection
+    (0.84–0.88 vs 0.81–0.85) and on TB dev (0.88–0.90 vs 0.83–0.85).
+  - An MTD linear probe trained on 19 conversations matches the full Cat head trained on 131.
+  - This fits the residuals: Cat carries no lexical-completeness cue, and MTD is an ASR encoder.
+- **INT does not transfer from oto to TB dev, whatever the input.**
+  - Probes beat the head on oto dev (0.86–0.89 vs 0.72) but lose to it on TB dev
+    (0.73–0.83 vs 0.85).
+  - The backchannel-vs-take-over decision learned on otoSpeech does not carry over, and
+    MTD does not change that.
+  - The head's floor objective transfers better than a probe trained on the decision itself.
+- **Caveats:**
+  - AUC at a fixed readout is not the TurnBench score: no commit policy, no latency.
+  - TB dev events count each turn end at two delays separately.
+  - The heads were early-stopped on floor loss, not on these events.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
