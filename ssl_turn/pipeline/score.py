@@ -611,3 +611,135 @@ def oracle_fusion(run, model, weights=(0.0, 0.25, 0.5, 0.75, 1.0), control=None)
     json.dump(out, open(f'/work/runs/{run}/oracle_fusion_{model}{"_" + control if control else ""}.json', 'w'), indent=1)
     work.commit()
     return out
+
+
+
+TASK_SCORE = {'eot': ('eot_q', 1.0), 'int': ('int_nobc', None)}  # score variant, recommit_s
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=32768, timeout=3600)
+def verifier_fires(run, model, budgets=(0.30, 0.20, 0.15, 0.10, 0.07, 0.05), split='tbdev'):
+    """Audio-model commit events at a few thresholds; an LLM verifier then keeps or vetoes each
+    fire. Query times are the model's own fires, so text availability carries no gold timing."""
+    from concurrent.futures import ProcessPoolExecutor
+    out = {}
+    with ProcessPoolExecutor(2) as pool:
+        tracks = {t: load_tracks(run, model, v, split) for t, (v, _) in TASK_SCORE.items()}
+        gold = load_gold(split, list(tracks['eot']))
+        rows = {t: pool.submit(sweep_task, tracks[t], gold, t, None, 12.5, 0.5, rc) for t, (_, rc) in TASK_SCORE.items()}
+        for t, (_, rc) in TASK_SCORE.items():
+            rs = rows[t].result()
+            out[t] = {}
+            for b in budgets:
+                op = operating_point(rs, b)
+                fires = {cid: {s + 1: commit(p[:, s], 12.5, op['theta'], 0.5, rc) for s in (0, 1)}
+                         for cid, p in tracks[t].items()}
+                out[t][str(b)] = dict(theta=op['theta'], recall=op['recall'], fp=op['fp'], p50=op['p50'], fires=fires)
+    json.dump(out, open(f'/work/llm/fires_{model}.json', 'w'))
+    work.commit()
+    return {t: {b: (d['theta'], round(d['recall'], 4), round(d['fp'], 4),
+                    sum(len(v) for f in d['fires'].values() for v in f.values())) for b, d in x.items()}
+            for t, x in out.items()}
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=16384, timeout=3600)
+def verifier_score(model, answers, cuts=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0), control=None,
+                   split='tbdev'):
+    """Score verifier-gated fires. answers: {task: {cid: {speaker: {time: confidence}}}} (str keys).
+    A fire is kept when the LLM's confidence that it is a true event is >= cut (no answer -> kept).
+    control='shuffle' permutes confidences among fires of the same task (same fires, no content)."""
+    import random
+    from turnbench.gold import AnchorEvent, Interval
+    from turnbench.score import TaskScore, merge, score_task
+    work.reload()
+    allf = json.load(open(f'/work/llm/fires_{model}.json'))
+    gold = None
+    if control == 'shuffle':
+        rnd = random.Random(0)
+        for t, x in answers.items():
+            keys = [(c, s, k) for c, d in x.items() for s, e in d.items() for k in e]
+            vals = [x[c][s][k] for c, s, k in keys]
+            rnd.shuffle(vals)
+            for (c, s, k), v in zip(keys, vals):
+                x[c][s][k] = v
+    out = {}
+    for t, by in allf.items():
+        key = 'eot' if t == 'eot' else 'int'
+        for b, d in by.items():
+            if gold is None:
+                gold = load_gold(split, list(d['fires']))
+            for cut in cuts:
+                total, kept, n = TaskScore(), 0, 0
+                for cid, f in d['fires'].items():
+                    e = gold[cid]['events']
+                    ev = {}
+                    for s, times in f.items():
+                        a = answers.get(t, {}).get(cid, {}).get(s, {})
+                        ev[int(s)] = [x for x in times if a.get(f'{x:.2f}', 1.0) >= cut]
+                        kept += len(ev[int(s)])
+                        n += len(times)
+                    merge(total, score_task([AnchorEvent(**x) for x in e[f'{key}_positive_events']],
+                                            [Interval(**x) for x in e[f'{key}_negative_spans']], ev,
+                                            [Interval(**x) for x in e[f'{key}_excluded']]))
+                lat = total.latency()
+                out[f'{t}|{b}|{cut}'] = dict(theta=d['theta'], recall=round(total.recall, 4), fp=round(total.fp_rate, 4),
+                                             p50=lat.p50, kept=kept, fires=n)
+    return out
+
+
+def _queries_above(p, theta, step):
+    """Query frames: each rising edge of p > theta, then every `step` frames while it stays above."""
+    out, last = [], None
+    for i in range(len(p)):
+        if p[i] <= theta:
+            last = None
+        elif last is None or i - last >= step:
+            out.append(i)
+            last = i
+    return out
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=32768, timeout=3600)
+def verifier_candidates(run, model, budget=0.30, step=5, split='tbdev'):
+    """LLM-verifier query times taken from the audio model's own timeline (no gold timing).
+
+    theta_low = the audio score's operating point at a generous FP budget; queries go at each
+    rising edge above theta_low and every `step` frames while the score stays above it."""
+    from concurrent.futures import ProcessPoolExecutor
+    tasks = {'eot': 'eot_q', 'int': 'int_nobc'}
+    out = {}
+    with ProcessPoolExecutor(2) as pool:
+        tracks = {t: load_tracks(run, model, v, split) for t, v in tasks.items()}
+        gold = load_gold(split, list(tracks['eot']))
+        rows = {t: pool.submit(sweep_task, tracks[t], gold, t, None, 12.5, 0.5, 1.0 if t == 'eot' else None)
+                for t in tasks}
+        for t in tasks:
+            op = operating_point(rows[t].result(), budget)
+            q = {cid: [[i, s + 1] for s in (0, 1) for i in _queries_above(p[:, s], op['theta'], step)]
+                 for cid, p in tracks[t].items()}
+            out[t] = dict(theta_low=op['theta'], recall=op['recall'], fp=op['fp'], queries=q,
+                          n=sum(map(len, q.values())))
+    json.dump(out, open(f'/work/llm/candidates_{model}.json', 'w'))
+    work.commit()
+    return {t: {k: v for k, v in d.items() if k != 'queries'} for t, d in out.items()}
+
+
+@app.local_entrypoint()
+def verify(answers: str, out: str, model: str = 'fine1_bal1_s1'):
+    """Score llm_verifier.py output (local JSONL) with and without the shuffled-answer control."""
+    recs = {}
+    for line in open(answers):
+        r = json.loads(line)
+        if r.get('answer') is not None:
+            recs[(r['kind'], r['text'])] = r
+    res = {}
+    for field, cuts in (('answer', (0.0, 0.5)), ('p', (0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95))):
+        ans = {}
+        for r in recs.values():
+            v = r[field] if r.get(field) is not None else r['answer']
+            for cid, s, t in r['at']:
+                ans.setdefault(r['kind'], {}).setdefault(cid, {}).setdefault(s, {})[t] = v
+        calls = {c: verifier_score.spawn(model, ans, cuts, c) for c in (None, 'shuffle')}
+        res[field] = {str(c): f.get() for c, f in calls.items()}
+    json.dump(dict(answered=len(recs), **res), open(out, 'w'), indent=1)
+    print('answered', len(recs))
