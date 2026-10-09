@@ -743,3 +743,97 @@ def verify(answers: str, out: str, model: str = 'fine1_bal1_s1'):
         res[field] = {str(c): f.get() for c, f in calls.items()}
     json.dump(dict(answered=len(recs), **res), open(out, 'w'), indent=1)
     print('answered', len(recs))
+
+
+def _events(conv, annotators, min_agreement):
+    """TurnBench event sets built from a subset of the annotators (gold.py with ANNOTATORS and
+    MIN_AGREEMENT patched; one annotator with agreement 1 = that annotator's own reading)."""
+    from dataclasses import asdict
+    import turnbench.gold as G
+    saved = G.ANNOTATORS, G.MIN_AGREEMENT
+    G.ANNOTATORS, G.MIN_AGREEMENT = tuple(annotators), min_agreement
+    try:
+        return asdict(G.events_for_conversation(conv))
+    finally:
+        G.ANNOTATORS, G.MIN_AGREEMENT = saved
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=16384, timeout=3600)
+def human_ceiling(model='fine1_bal1_s1', budget='0.1'):
+    """How well does one annotator agree with the others, under TurnBench's own scoring?
+
+    Each annotator's own labels become a 'system' (EOT fires at their turn ends, INT fires at
+    their interruption onsets, zero latency, full hindsight). Scored against (a) gold built from
+    the other two annotators (2-of-2 agreement) and (b) the official 3-annotator gold, which
+    includes the annotator (optimistic). The audio model's fires at its operating point
+    (score.verifier_fires) are scored the same way, and its errors are split by how many
+    annotators individually mark an event there."""
+    from turnbench.data import ANNOTATORS, conversation, conversation_ids, resolve_dataset
+    from turnbench.gold import AnchorEvent, Interval
+    from turnbench.score import TaskScore, merge, score_task
+    work.reload()
+    ds = resolve_dataset(TB_DEV, skip_audio=True)
+    official = json.load(open('/work/gold/tbdev.json'))
+    fires = json.load(open(f'/work/llm/fires_{model}.json'))
+    model_fires = {t: {cid: {int(s): v for s, v in f.items()} for cid, f in fires[t][budget]['fires'].items()}
+                   for t in ('eot', 'int')}
+    own, loo = {}, {}
+    cids = conversation_ids(ds)
+    for cid in cids:
+        conv = conversation(ds, cid)
+        if _events(conv, ANNOTATORS, 2) != official[cid]['events']:  # patched builder == official gold
+            raise ValueError(f'gold rebuild mismatch for {cid}')
+        for x in ANNOTATORS:
+            own[(cid, x)] = _events(conv, [x], 1)
+            loo[(cid, x)] = _events(conv, [a for a in ANNOTATORS if a != x], 2)
+
+    def score(gold_of, fires_of, task):
+        total = TaskScore()
+        for cid in cids:
+            e = gold_of(cid)
+            merge(total, score_task([AnchorEvent(**x) for x in e[f'{task}_positive_events']],
+                                    [Interval(**x) for x in e[f'{task}_negative_spans']], fires_of(cid),
+                                    [Interval(**x) for x in e[f'{task}_excluded']]))
+        lat = total.latency()
+        return dict(recall=round(total.recall, 4), fp=round(total.fp_rate, 4), p50=round(lat.p50, 0) if lat.p50 == lat.p50 else None,
+                    tp=total.tp, fn=total.fn, fpn=total.fp)
+
+    def human_fires(cid, x, task):
+        out = {1: [], 2: []}
+        for ev in own[(cid, x)][f'{task}_positive_events']:
+            out[ev['speaker']].append(ev['time_s'])
+        return {s: sorted(v) for s, v in out.items()}
+
+    res = {}
+    for task in ('eot', 'int'):
+        for x in ANNOTATORS:
+            res[f'{task}|human {x} vs other two'] = score(lambda c: loo[(c, x)], lambda c: human_fires(c, x, task), task)
+            res[f'{task}|human {x} vs official'] = score(lambda c: official[c]['events'], lambda c: human_fires(c, x, task), task)
+            res[f'{task}|model vs other two (w/o {x})'] = score(lambda c: loo[(c, x)], lambda c: model_fires[task][c], task)
+        res[f'{task}|model vs official'] = score(lambda c: official[c]['events'], lambda c: model_fires[task][c], task)
+
+    # Error anatomy on the official gold: how many annotators individually mark an event here?
+    def n_marking(cid, task, speaker, a, b):
+        return sum(any(ev['speaker'] == speaker and a <= ev['time_s'] <= b for ev in own[(cid, x)][f'{task}_positive_events'])
+                   for x in ANNOTATORS)
+    anatomy = {}
+    for task in ('eot', 'int'):
+        pos, neg = {}, {}
+        for cid in cids:
+            e = official[cid]['events']
+            mf = model_fires[task][cid]
+            for ev in e[f'{task}_positive_events']:
+                k = n_marking(cid, task, ev['speaker'], ev['time_s'] - 0.3, ev['time_s'] + 0.3)
+                hit = any(ev['time_s'] - 0.25 <= t <= ev['time_s'] + 3.0 for t in mf[ev['speaker']])
+                d = pos.setdefault(k, [0, 0]); d[0] += 1; d[1] += hit
+            for sp in e[f'{task}_negative_spans']:
+                k = n_marking(cid, task, sp['speaker'], sp['start'] - 0.25, sp['end'])
+                fired = any(sp['start'] <= t <= sp['end'] for t in mf[sp['speaker']])
+                d = neg.setdefault(k, [0, 0]); d[0] += 1; d[1] += fired
+        anatomy[task] = dict(
+            positives_by_annotators_marking={k: dict(n=v[0], model_recall=round(v[1] / v[0], 3)) for k, v in sorted(pos.items())},
+            negatives_by_annotators_marking_event={k: dict(n=v[0], model_fp=round(v[1] / v[0], 3)) for k, v in sorted(neg.items())})
+    out = dict(scores=res, anatomy=anatomy, model=model, budget=budget)
+    json.dump(out, open('/work/human_ceiling.json', 'w'), indent=1)
+    work.commit()
+    return out

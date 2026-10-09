@@ -254,6 +254,40 @@ Sanity check on the first ~3.5k EOT answers (10 TB dev conversations, loose thre
 
 Stopped at ~7k of 32.8k prompts. Bolting an LM onto the scores this way looks like a dead end.
 
+## Human ceiling: annotator agreement under TurnBench scoring
+
+`score.human_ceiling`. Each TB dev annotator's own labels are treated as a system: EOT fires
+at their turn ends, INT fires at their floor-taking interruption onsets. These fires have
+zero latency and full hindsight. They are scored with TurnBench's scorer against gold rebuilt
+from the other two annotators (2-of-2). Rebuilding the gold with all three annotators
+reproduces the official gold exactly. The audio model (r012 fine α=1 s1, official operating
+point) is scored against the same leave-one-out golds.
+
+| vs. the other two annotators | EOT recall / FP | INT recall / FP |
+|---|---|---|
+| annotator a | 0.894 / 0.119 | 0.647 / 0.000 |
+| annotator b | 0.877 / 0.093 | 0.686 / 0.000 |
+| annotator c | 0.822 / 0.092 | 0.527 / 0.000 |
+| model (mean of 3 golds) | 0.937 / 0.080 | 0.979 / 0.055 |
+
+**EOT is at the label-agreement ceiling.**
+- The model agrees with any two annotators better than the third annotator does.
+- Errors by annotator agreement (official gold):
+  - Recall is 0.955 on unanimous ends and 0.911 on 2-of-3 ends; the 2-of-3 ends hold
+    about half the misses.
+  - In mid-turn pauses where one annotator marked an end, FP is 0.111, vs 0.059 where none
+    did. Those spans hold only ~8 of the 71 false fires.
+- So most EOT false fires sit in pauses that every annotator calls a hold. The model is
+  wrong there, not the labels.
+
+**INT false fires are not label noise.**
+- No annotator ever marks a backchannel or non-content span as an interruption (FP ≈ 0).
+- Annotators mostly disagree on positives, i.e. which category an overlap belongs to
+  (recall 0.53–0.69).
+- The model's INT false fires (backchannels) are a causal problem: at ~400 ms it cannot
+  yet hear what a human hears with hindsight. Headroom there is real, but it is a
+  latency/evidence trade-off, not a labeling one.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
