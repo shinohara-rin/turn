@@ -227,6 +227,7 @@ def build_head(cfg):
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
           use_dev=True, train_from=None, infer=True):
     import os, threading
+    os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')  # before the first CUDA allocation
     import numpy as np
     import torch
     setup_path()
