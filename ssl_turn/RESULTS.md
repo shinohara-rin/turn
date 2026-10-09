@@ -196,6 +196,41 @@ Setup: 4 arms × 2 seeds on 131 conversations. With FP capped at 0.10, recall is
   backchannels also follow real yields. The listener-backchannel EOT confusion needs a
   training-side fix, not gating.
 
+## LLM text oracle (upper bound for fusing an LM)
+
+Question: how much could conversational understanding from text add to the audio model?
+Setup (`pipeline/llm_oracle.py`, `score.oracle_fusion`):
+- **Text:** annotator transcripts stand in for a perfect streaming ASR. Words are revealed
+  uniformly over each segment, with 0.3 s latency. Only text and timing are used, never labels.
+- **Queries:** a hosted 30B LLM (thinking off) gives P(yes) from first-token logprobs.
+  - EOT: asked at each segment end + 0.3 s.
+  - INT: asked at 1/2/4/all words of segments that start during the other speaker's speech.
+  - 25.6k queries over TB dev + oto dev.
+- **Fusion:** geometric `audio^(1-w) · text^w`, with text = 0.5 wherever no query is live.
+  The audio model is r012 fine α=1, 2 seeds.
+- **Control:** the same query times with answers shuffled across queries of the same kind.
+
+TB dev, FP at fixed recall:
+
+| | w | real text | shuffled text |
+|---|---|---|---|
+| INT @R0.97, s1 | 0 | 0.049 | 0.049 |
+| | 0.5 | 0.025 | 0.019 |
+| | 0.75 | 0.013 | 0.016 |
+| INT @R0.97, s2 | 0 | 0.044 | 0.044 |
+| | 0.5 | 0.021 | 0.020 |
+| | 0.75 | 0.015 | 0.015 |
+| EOT @R0.92 | 0.5 | ~0.21 (from 0.054) | same |
+
+- **The naive INT gain (3× fewer FPs) is a timing leak.** Query times sit on annotated
+  segment boundaries, so "text exists here" marks real speech onsets. Shuffled answers get
+  almost all of the gain. The content-specific increment is about zero.
+- **EOT fusion trades precision for latency, and content adds nothing over shuffled text.**
+- **Takeaway:** with naive fusion, a text LM's content does not reduce the residual
+  false fires. A fair test needs text queries on the model's own (VAD/onset) timeline,
+  reported against the shuffled baseline, and probably a learned fusion. Transcripts and LLM
+  outputs stay off git (scratch + Modal volume only).
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`

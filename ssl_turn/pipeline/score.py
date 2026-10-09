@@ -496,3 +496,118 @@ def residuals(run, eot, intr, refractory_s=0.5, recommit_eot=1.0):
     json.dump(out, open(f'/work/runs/{run}/residuals_summary.json', 'w'), indent=1)
     work.commit()
     return out
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=32768, timeout=1800)
+def dump_transcripts():
+    """Text + timing only (no labels) for the LLM oracle: TurnBench dev annotator 'a' and
+    otoSpeech dev SRTs. Returns {split: {cid: {speaker: [[start, end, text], ...]}}}."""
+    import re
+    from turnbench.data import conversation, conversation_ids, resolve_dataset
+    out = {'tbdev': {}, 'oto': {}}
+    ds = resolve_dataset(TB_DEV, skip_audio=True)
+    for cid in conversation_ids(ds):
+        ann = conversation(ds, cid).annotations
+        out['tbdev'][cid] = {s: [[a, b, t] for a, b, _, t in ann.get((s, 'a'), [])] for s in (1, 2)}
+    split = json.load(open('/work/split.json'))['splits']
+    import srt
+    for cid in split['dev']:
+        segs = {}
+        for s in (1, 2):
+            rows = []
+            for e in srt.parse(open(f'/datasets/otoearth/otoSpeech-full-duplex-turn-104h/{cid}/speaker_{s}_annotation_a.srt').read()):
+                m = re.match(r'\[([^]]+)\]\s*(.*)', e.content, re.S)
+                rows.append([e.start.total_seconds(), e.end.total_seconds(), (m[2] if m else e.content).strip()])
+            segs[s] = rows
+        out['oto'][cid] = segs
+    return out
+
+
+def _text_tracks(recs, conv, T, fps=12.5, latency=0.3):
+    """Per-frame causal text features [T, 2] for eot and int (NaN = no text yet)."""
+    import numpy as np
+    eot = np.full((T, 2), np.nan, np.float32)
+    intr = np.full((T, 2), np.nan, np.float32)
+    end_t = (np.arange(T) + 1) / fps  # frame i commits at its end
+    for r in sorted(recs, key=lambda r: r['t']):
+        if r['p'] is None:
+            continue
+        s = r['speaker']
+        segs = conv[str(s)]
+        i = int(r['id'].split('/')[3])
+        lo = np.searchsorted(end_t, r['t'])
+        if r['kind'] == 'eot':
+            nxt = segs[i + 1][0] if i + 1 < len(segs) else 1e9
+            hi = np.searchsorted(end_t, nxt)
+            eot[lo:hi, s - 1] = r['p']
+        else:
+            hi = np.searchsorted(end_t, segs[i][1] + latency)
+            intr[lo:hi, s - 1] = r['p']  # later (longer-prefix) records overwrite earlier ones
+    return eot, intr
+
+
+def _fp_at(rows, target):
+    ok = [r for r in rows if r['recall'] >= target and r['fp'] == r['fp']]
+    if not ok:
+        return None
+    b = min(ok, key=lambda r: (r['fp'], r['p50']))
+    return dict(fp=round(b['fp'], 4), p50=round(b['p50'], 0), theta=round(b['theta'], 4))
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=32768, timeout=3600)
+def oracle_fusion(run, model, weights=(0.0, 0.25, 0.5, 0.75, 1.0), control=None):
+    """Fuse LLM text-oracle tracks into the audio scores and sweep (see llm_oracle.py).
+
+    control='shuffle' permutes the LLM answers among queries of the same split and kind,
+    keeping every query's timing (annotated segment boundaries) but destroying its content:
+    whatever gain survives the shuffle is a timing leak, not language understanding."""
+    import numpy as np
+    from concurrent.futures import ProcessPoolExecutor
+    work.reload()
+    transcripts = json.load(open('/work/llm/transcripts.json'))
+    recs = {}
+    for line in open('/work/llm/oracle.jsonl'):
+        r = json.loads(line)
+        recs.setdefault((r['split'], r['cid']), {})[r['id']] = r  # last answer per id wins
+    if control == 'shuffle':
+        rng = np.random.default_rng(0)
+        for split in ('oto', 'tbdev'):
+            for kind in ('eot', 'int'):
+                group = [r for (sp, _), d in recs.items() if sp == split for r in d.values() if r['kind'] == kind]
+                ps = [r['p'] for r in group]
+                rng.shuffle(ps)
+                for r, p in zip(group, ps):
+                    r['p'] = p
+    out, jobs = {}, {}
+    with ProcessPoolExecutor(8) as pool:
+        for split in ('oto', 'tbdev'):
+            base_eot = load_tracks(run, model, 'eot_q', split)
+            base_int = load_tracks(run, model, 'int_nobc', split)
+            gold = load_gold(split, list(base_eot))
+            text = {cid: _text_tracks(list(recs.get((split, cid), {}).values()), transcripts[split][cid],
+                                      len(base_eot[cid])) for cid in base_eot}
+            for w in weights:
+                fe, fi = {}, {}
+                for cid in base_eot:
+                    te, ti = text[cid]
+                    te = np.where(np.isnan(te), 0.5, te)
+                    ti = np.where(np.isnan(ti), 0.5, ti)
+                    fe[cid] = np.clip(base_eot[cid], 1e-6, 1) ** (1 - w) * te ** w
+                    fi[cid] = np.clip(base_int[cid], 1e-6, 1) ** (1 - w) * ti ** w
+                jobs[(split, w, 'eot')] = pool.submit(sweep_task, fe, gold, 'eot', None, 12.5, 0.5, 1.0)
+                jobs[(split, w, 'int')] = pool.submit(sweep_task, fi, gold, 'int', None, 12.5, 0.5, None)
+        for (split, w, task), f in jobs.items():
+            rows = f.result()
+            op = operating_point(rows)
+            tg = (0.90, 0.92) if task == 'eot' else (0.95, 0.97)
+            out[f'{split}|{task}|w{w}'] = dict(
+                op=dict(recall=round(op['recall'], 4), fp=round(op['fp'], 4), p50=round(op['p50'], 0)) if op else None,
+                **{f'fp@{t}': _fp_at(rows, t) for t in tg})
+    coverage = {}
+    for split in ('oto', 'tbdev'):
+        rs = [r for (sp, _), d in recs.items() if sp == split for r in d.values()]
+        coverage[split] = dict(n=len(rs), ok=sum(r['p'] is not None for r in rs))
+    out['coverage'] = coverage
+    json.dump(out, open(f'/work/runs/{run}/oracle_fusion_{model}{"_" + control if control else ""}.json', 'w'), indent=1)
+    work.commit()
+    return out
