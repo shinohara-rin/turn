@@ -231,6 +231,29 @@ TB dev, FP at fixed recall:
   reported against the shuffled baseline, and probably a learned fusion. Transcripts and LLM
   outputs stay off git (scratch + Modal volume only).
 
+### Follow-up: LLM as a verifier on the audio model's fires (stopped)
+
+`pipeline/llm_verifier.py` puts the queries on the audio model's own fires, so no gold timing
+leaks. The transcript mimics streaming ASR (0.3 s lag). The question is plain ("is A done?" /
+"is A taking the floor?"), with a sentence or two of visible reasoning, and the answer is a
+yes/no line. Model thinking was turned off because it ran past 2k tokens.
+
+Sanity check on the first ~3.5k EOT answers (10 TB dev conversations, loose threshold):
+
+| keep fire if | real: recall / FP | shuffled: recall / FP |
+|---|---|---|
+| (audio only) | 0.948 / 0.318 | |
+| answer = yes | 0.704 / 0.188 | 0.771 / 0.211 |
+| P(yes) >= 0.8 | 0.592 / 0.152 | 0.693 / 0.186 |
+
+- **Worse than random gating.** The LLM says "done" 61% of the time at true ends and 69% at
+  mid-turn pauses (last words visible).
+- **Lag:** 28% of true-end fires come before the final words clear the ASR lag.
+- **Prompt-shape problems:** the listener's later backchannel follows the speaker's
+  unfinished line, and long annotator segments look complete.
+
+Stopped at ~7k of 32.8k prompts. Bolting an LM onto the scores this way looks like a dead end.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
