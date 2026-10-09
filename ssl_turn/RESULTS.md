@@ -456,3 +456,49 @@ The largest avoidable costs, all fixed:
 Training runs sit at 94–98% GPU utilization by training all configs in lockstep on
 VRAM-resident features. Feature loading went from 255 s to 146 s for 1.2× the data with
 parallel, preallocated reads.
+
+## Text end-of-turn model at every pause (`textfuse/`, CPU only)
+
+Question: does transcript content help EOT if it comes from a model trained for the job
+rather than a chat LLM asked zero-shot, and is it fused fairly?
+- **Text:** annotator-'a' transcripts (a perfect ASR upper bound). Context uses no labels:
+  own segments plus the other speaker's segments with 3 or more words, the last 6 turns.
+- **Text models:** LiveKit's turn detector (Qwen2.5-0.5B fine-tuned for end-of-utterance,
+  P(`<|im_end|>`)), zero-shot. Also a logistic probe on its last hidden state, trained on
+  TB dev with 5-fold cross-validation by conversation (optimistic: it sees TB labels).
+- **Queries:** every one of the 5525 segment ends. All 1063 holds and 1901 of 1904 EOT
+  ends start at a segment end, so ends and holds are compared at the same kind of point.
+- **Audio:** r012 fine1_bal1 `eot_q`, both seeds.
+
+Discrimination of ends vs holds at segment ends (AUC; audio = max `eot_q` over the first
+1 s of the pause):
+
+| | all | long holds (>0.6 s) vs ends | hard subset (audio above the 75th pct of holds) |
+|---|---|---|---|
+| text, zero-shot | 0.616 | 0.639 | 0.525 / 0.531 |
+| text, probe | 0.664 | 0.643 | 0.596 / 0.584 |
+| audio (s1 / s2) | 0.960 / 0.958 | 0.936 | — |
+| audio + text probe, logistic (s1 / s2) | 0.960 / 0.958 | | |
+| audio + shuffled probe (s1 / s2) | 0.960 / 0.958 | | |
+
+Frame-level fusion, `logit(eot_q) + w · centred logit(text)` live from segment end + 0.3 s
+until the speaker's next segment, scored with the pinned scorer (`@r0.5+rc1.0`):
+
+| EOT FP@R0.92 / FP@R0.94 (s1) | w 0 | 0.25 | 0.5 | 1.0 |
+|---|---|---|---|---|
+| zero-shot | 0.054 / 0.127 | 0.064 / 0.165 | 0.086 / 0.179 | 0.171 / — |
+| zero-shot, shuffled | | 0.067 / 0.141 | 0.113 / 0.177 | 0.171 / 0.287 |
+| probe | | 0.057 / 0.125 | 0.060 / 0.153 | 0.097 / 0.192 |
+| probe, shuffled | | 0.064 / 0.118 | 0.064 / 0.126 | 0.121 / 0.180 |
+
+Seed 2 behaves the same (audio 0.061 / 0.132; no text arm is better).
+
+- **The words barely separate ends from holds** on this data (AUC 0.62–0.66), and on the cases
+  the audio model gets wrong they are near chance (0.53–0.60). TurnBench holds mostly
+  follow syntactically complete clauses, and many ends are short, generic phrases.
+- **Fusion never beats audio alone.** The best arm ties it, and real and shuffled text
+  behave alike.
+- **Verdict:** with perfect transcripts and a purpose-built end-of-turn LM, late text fusion
+  is not a lever for TurnBench EOT. Semantics, if they help, have to come in as learned
+  features (an ASR encoder such as MTD or a streaming transducer) inside the head, where the
+  model can combine them with prosody.
