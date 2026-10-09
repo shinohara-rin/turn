@@ -21,6 +21,9 @@ TAP_DIM, FINAL_DIM = 1280, 768
 LOADED = list(TAPS)  # taps actually kept in VRAM for this run (set by train/infer)
 FEAT_DIR = 'feats'   # 'feats' (Cat) or 'feats_mtd' (MOSS-Transcribe-Diarize, 4096-d, no taps)
 FUSE_MTD = False     # Cat columns + MTD 4096-d appended (config feats='cat+mtd')
+WARM = 0             # context-only frames before each training crop (encoder-tuning runs: CatTop window)
+CAT_DIR = '/work/models/cat'
+_CAT = None
 
 
 def columns(taps):
@@ -98,6 +101,27 @@ def select_inputs(x, cfg):
     return taps, final
 
 
+def run_net(net, cfg, x, warm=0):
+    """Forward one model on loaded features x [B, T, 2, D]; outputs cover frames [warm, T)."""
+    tune = cfg.get('tune')
+    if tune:
+        first = tune.get('first', 16)
+        i = LOADED.index(first - 1)
+        return net(x[..., i * TAP_DIM:(i + 1) * TAP_DIM], warm)
+    taps, final = select_inputs(x[:, warm:], cfg)
+    return net(taps, final)
+
+
+def model_context(cfg):
+    """Left context (frames) for exact chunked inference: head windows (+ CatTop windows)."""
+    ctx = cfg.get('layers', 4) * int(round(cfg.get('window_s', 20.0) / 0.08))
+    if cfg.get('tune'):
+        setup_path()
+        import cat_top
+        ctx += (32 - cfg['tune'].get('first', 16)) * (cat_top.WINDOW - 1)
+    return ctx
+
+
 def infer_all(models, configs, splits, dev):
     """Exact chunked causal inference: each 1000-frame chunk carries enough left context to
     cover the stacked attention windows (layers x window frames). Exports floor posteriors
@@ -108,16 +132,15 @@ def infer_all(models, configs, splits, dev):
     for name, net in models.items():
         net.eval()
         cfg = configs[name]
-        ctx = cfg.get('layers', 4) * int(round(cfg.get('window_s', 20.0) / 0.08))
+        ctx = model_context(cfg)
         for split, Xs, offs, ids in splits:
             for cid, a, b in zip(ids, offs[:-1], offs[1:]):
                 outs = []
                 with torch.no_grad():
                     for s in range(a, b, 1000):
                         lo = max(a, s - ctx)
-                        taps, final = select_inputs(Xs[lo:min(b, s + 1000)][None], cfg)
                         with torch.autocast('cuda', dtype=torch.bfloat16):
-                            o = net(taps, final)
+                            o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None])
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items()
                                      if k in ('floor', 'future', 'act', 'fine')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
@@ -148,7 +171,7 @@ def infer(run, names, out_run=None):
         ck = torch.load(f'/work/runs/{run}/{n}.pt', map_location=dev)
         configs[n] = ck['cfg']
         models[n] = build_model(ck['cfg']).to(dev)
-        models[n].load_state_dict(ck['state'])
+        models[n].load_state_dict(ck['state'], strict=not ck['cfg'].get('tune'))  # tuned: trainable params only
     mtd = any(c.get('feats') == 'mtd' for c in configs.values())
     FEAT_DIR = 'feats_mtd' if mtd else 'feats'
     LOADED = [t for t in TAPS if any(t in (c.get('taps') or []) for c in configs.values())]
@@ -165,7 +188,32 @@ def infer(run, names, out_run=None):
     return len(probs)
 
 
+def load_cat():
+    """The Cat encoder (CPU, fp32) whose top stage CatTop copies; built once per container."""
+    global _CAT
+    if _CAT is None:
+        setup_path()
+        import cat_encoder as ce
+        _CAT = ce.build(CAT_DIR, f'{CAT_DIR}/cat_encoder.safetensors', taps=())
+    return _CAT
+
+
 def build_model(cfg):
+    import torch
+    head = build_head(cfg)
+    tune = cfg.get('tune')
+    if not tune:
+        return head
+    import cat_top
+    first = tune.get('first', 16)
+    top = cat_top.CatTop(load_cat(), first=first, taps=[t for t in cfg['taps'] if t >= first],
+                         rank=tune.get('rank', 16), alpha=tune.get('alpha', 32.0), dropout=tune.get('dropout', 0.0),
+                         train_norms=tune.get('norms', False), checkpoint=tune.get('checkpoint', False),
+                         base_dtype=torch.bfloat16)
+    return cat_top.Tuned(top, head, cfg['taps'])
+
+
+def build_head(cfg):
     setup_path()
     import model as m
     final_dim = {'mtd': 4096, 'cat+mtd': FINAL_DIM + 4096}.get(cfg.get('feats'), FINAL_DIM)
@@ -177,7 +225,7 @@ def build_model(cfg):
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
-          use_dev=True, train_from=None):
+          use_dev=True, train_from=None, infer=True):
     import os, threading
     import numpy as np
     import torch
@@ -192,7 +240,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     train_ids = [c for c in split['train'] if c in have][:n_train]
     if extra:  # labeled data-scaling ablation: gate-free cross-partition conversations
         train_ids += [c for c in json.load(open('/work/extra_no_gate.json')) if c in have]
-    global LOADED, FEAT_DIR, FUSE_MTD
+    global LOADED, FEAT_DIR, FUSE_MTD, WARM
+    setup_path()
+    import cat_top
+    WARM = cat_top.WINDOW if any(c.get('tune') for c in configs.values()) else 0
     mtd = any(c.get('feats') == 'mtd' for c in configs.values())
     FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
     FEAT_DIR = 'feats_mtd' if mtd else 'feats'
@@ -200,7 +251,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if train_from:  # pin the exact conversation list (e.g. to match another backbone's subset)
         train_ids = [c for c in json.load(open(train_from)) if c in have]
     train_ids = [c for c in train_ids if c in have]
-    LOADED = [t for t in TAPS if any(t in (c.get('taps') or []) for c in configs.values())]
+    need = {t for c in configs.values() for t in (c.get('taps') or [])}
+    need |= {c['tune'].get('first', 16) - 1 for c in configs.values() if c.get('tune')}
+    LOADED = [t for t in TAPS if t in need]
     cols = None if mtd else columns(LOADED)
     dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
     tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
@@ -228,19 +281,29 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         print('fine class frames', counts.long().tolist(), flush=True)
 
     # Valid crop starts: within one conversation.
-    starts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(off[:-1], off[1:]) if b - a > crop])
+    # Valid crop starts (first labelled frame): WARM context frames before it, all in one conversation.
+    starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev) for a, b in zip(off[:-1], off[1:])
+                        if b - a > crop + WARM])
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = build_model(cfg).to(dev)
         models[name] = net
-        opts[name] = torch.optim.AdamW(net.parameters(), lr=cfg.get('lr', 3e-4), weight_decay=cfg.get('wd', 0.05))
-        scheds[name] = torch.optim.lr_scheduler.OneCycleLR(opts[name], max_lr=cfg.get('lr', 3e-4), total_steps=steps,
-                                                            pct_start=0.1)
-        print(name, cfg, f'{sum(p.numel() for p in net.parameters()) / 1e6:.2f}M params', flush=True)
+        groups = [dict(params=[p for n, p in net.named_parameters() if p.requires_grad and not n.startswith('top.')],
+                       lr=cfg.get('lr', 3e-4), weight_decay=cfg.get('wd', 0.05))]
+        if cfg.get('tune'):  # LoRA (+ norms) of the encoder top: own learning rate, no weight decay
+            groups.append(dict(params=[p for n, p in net.named_parameters() if p.requires_grad and n.startswith('top.')],
+                               lr=cfg['tune'].get('lr', 1e-4), weight_decay=0.0))
+        opts[name] = torch.optim.AdamW(groups)
+        scheds[name] = torch.optim.lr_scheduler.OneCycleLR(opts[name], max_lr=[g['lr'] for g in groups],
+                                                            total_steps=steps, pct_start=0.1)
+        n_train_p = sum(p.numel() for p in net.parameters() if p.requires_grad)
+        print(name, cfg, f'{n_train_p / 1e6:.2f}M trainable / {sum(p.numel() for p in net.parameters()) / 1e6:.1f}M params',
+              flush=True)
 
     def crops(Xs, Ys, idx):
-        span = idx[:, None] + torch.arange(crop, device=dev)
-        b = {k: v[span] for k, v in Ys.items()}
+        """Features for [idx - WARM, idx + crop), labels for [idx, idx + crop)."""
+        span = idx[:, None] + torch.arange(-WARM, crop, device=dev)
+        b = {k: v[span[:, WARM:]] for k, v in Ys.items()}
         return Xs[span], b
 
     SWAP = torch.tensor([1, 0, 2, 3], device=dev)  # HELD_0 <-> HELD_1
@@ -272,9 +335,24 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
                 xb = xb * ~((t >= start) & (t < start + length))[..., None, None]
         return xb
 
+    for name, cfg in configs.items():  # CatTop on cached tap (first-1) must reproduce the cached upper taps
+        if cfg.get('tune'):
+            net, first = models[name], cfg['tune'].get('first', 16)
+            n = min(1500, off[1] - off[0])  # conversation start: the cache had no more left context either
+            x = X[:n][None]
+            i = LOADED.index(first - 1)
+            with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16):
+                o = net.top(x[0, :, :, i * TAP_DIM:(i + 1) * TAP_DIM].transpose(0, 1).float())
+            for t in [t for t in LOADED if t >= first] + ['final']:
+                ref = (x[0, :, :, LOADED.index(t) * TAP_DIM:(LOADED.index(t) + 1) * TAP_DIM] if t != 'final'
+                       else x[0, :, :, len(LOADED) * TAP_DIM:]).transpose(0, 1).float()
+                cos = torch.nn.functional.cosine_similarity(o[t].float(), ref, dim=-1)
+                print(f'{name}: CatTop vs cached {t}: cosine mean {cos.mean():.4f} min {cos.min():.4f}', flush=True)
+            break
+
     # Fixed dev crops for comparable validation loss.
     g = torch.Generator(device=dev).manual_seed(1)
-    dstarts = (torch.cat([torch.arange(a, b - crop, crop, device=dev) for a, b in zip(offd[:-1], offd[1:])])
+    dstarts = (torch.cat([torch.arange(a + WARM, b - crop, crop, device=dev) for a, b in zip(offd[:-1], offd[1:])])
                if dev_ids else None)
     stats, stop = [], threading.Event()
     threading.Thread(target=gpu_monitor, args=(stats, stop), daemon=True).start()
@@ -288,9 +366,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         for name, net in models.items():
             net.train()
             cfg = configs[name]
-            taps, final = select_inputs(regularize(xb, cfg), cfg)
             with torch.autocast('cuda', dtype=torch.bfloat16):
-                out = net(taps, final)
+                out = run_net(net, cfg, regularize(xb, cfg), WARM)
             target = yb
             if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
                 target = dict(target, fine_w=yb['fine_w'] * fine_cw[name][yb['fine']])
@@ -316,7 +393,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             scheds[name].step()
         if not dev_ids and step == steps:  # no dev set: keep the final weights
             for name, net in models.items():
-                best[name] = (float('nan'), {k: v.detach().clone() for k, v in net.state_dict().items()}, step)
+                best[name] = (float('nan'), cat_top.trainable_state(net), step)
         if dev_ids and (step % eval_every == 0 or step == steps):
             for name, net in models.items():
                 net.eval()
@@ -324,9 +401,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
                 with torch.no_grad():
                     for i in range(0, len(dstarts), 128):
                         xb, yb = crops(Xd, Yd, dstarts[i:i + 128])
-                        taps, final = select_inputs(xb, configs[name])
                         with torch.autocast('cuda', dtype=torch.bfloat16):
-                            out = net(taps, final)
+                            out = run_net(net, configs[name], xb, WARM)
                         _, parts = m.loss({k: v.float() for k, v in out.items()}, yb)
                         for k, v in parts.items():
                             tot[k] = tot.get(k, 0) + v * len(xb)
@@ -334,15 +410,19 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
                 history[name].append(dict(step=step, **tot))
                 key = tot['floor'] + tot['future']
                 if key < best[name][0]:
-                    best[name] = (key, {k: v.detach().clone() for k, v in net.state_dict().items()}, step)
+                    best[name] = (key, cat_top.trainable_state(net), step)
                 print(f'step {step} {name}: ' + ' '.join(f'{k} {v:.4f}' for k, v in tot.items()), flush=True)
             util = [u for u, _ in stats[-30:]]
             print(f'  {(time.time() - tstep) / step * 1000:.0f} ms/step for {len(models)} models; '
                   f'GPU util {np.mean(util) if util else -1:.0f}% mem {max(mm for _, mm in stats) if stats else -1} MiB',
                   flush=True)
     del X, Y
+    if not infer:  # pilot: timing/memory/numerics only
+        stop.set()
+        return {n: dict(best_step=best[n][2], best=best[n][0], ms_per_step=(time.time() - tstep) / steps * 1000,
+                        peak_gib=torch.cuda.max_memory_allocated() / 2**30) for n in history}
     for name, net in models.items():  # restore the best dev checkpoint (early stopping)
-        net.load_state_dict(best[name][1])
+        net.load_state_dict(best[name][1], strict=False)  # trainable params; frozen encoder weights unchanged
         print(f'{name}: best step {best[name][2]} (floor+future {best[name][0]:.4f})', flush=True)
     torch.cuda.empty_cache()
 
@@ -355,7 +435,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     os.makedirs(f'/work/runs/{run}', exist_ok=True)
     np.savez_compressed(f'/work/runs/{run}/probs.npz', **probs)
     for name, net in models.items():
-        torch.save(dict(cfg=configs[name], state=net.state_dict()), f'/work/runs/{run}/{name}.pt')
+        torch.save(dict(cfg=configs[name], state=cat_top.trainable_state(net)), f'/work/runs/{run}/{name}.pt')
     json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
                    wall_s=time.time() - t0, gpu_util=[u for u, _ in stats]), open(f'/work/runs/{run}/train.json', 'w'))
     work.commit()
@@ -365,7 +445,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
 @app.local_entrypoint()
 def main(run: str, configs: str, n_train: int = 32, steps: int = 1500, batch: int = 64, gpu: str = 'A100',
-         extra: bool = False, seed: int = 0, no_dev: bool = False, train_from: str = ''):
+         extra: bool = False, seed: int = 0, no_dev: bool = False, train_from: str = '', eval_every: int = 250,
+         no_infer: bool = False):
     cfgs = json.load(open(configs))
-    print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch, 375, 250, seed, extra,
-                                             not no_dev, train_from or None))
+    print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch, 375, eval_every, seed, extra,
+                                             not no_dev, train_from or None, not no_infer))
