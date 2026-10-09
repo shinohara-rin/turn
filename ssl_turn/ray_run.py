@@ -143,6 +143,20 @@ def cmd_score(a):
               flush=True)
 
 
+def cmd_fpat(a):
+    """FP (and p50) at fixed recall on TB dev from a run's saved score sweep."""
+    import glob
+    import score
+    targets = [float(x) for x in a.recalls.split(',')]
+    for f in sorted(glob.glob(f'{WORK}/runs/{a.run}/score*.json')):
+        rows = json.load(open(f))['rows']
+        for k in sorted(rows):
+            model, task, split = k.split('|')
+            if split == 'tbdev':
+                print(f'{model:>14} {task:<22}', '  '.join(f'R{t}: {score._fp_at(rows[k], t)}' for t in targets),
+                      flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -165,6 +179,9 @@ def main():
     s.add_argument('--variants', default='')
     s.add_argument('--refractories', default='2.0')
     s.add_argument('--recommits', default='')
+    f = sub.add_parser('fpat')
+    f.add_argument('run')
+    f.add_argument('--recalls', default='0.92,0.95,0.97')
     a = ap.parse_args()
     globals()[f'cmd_{a.cmd}'](a)
 

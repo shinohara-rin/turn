@@ -403,6 +403,37 @@ the 4 selection conversations.)
   - TB dev events count each turn end at two delays separately.
   - The heads were early-stopped on floor loss, not on these events.
 
+## Full head on MTD features (r015, Ray RTX 3090)
+
+This follows up the diagnosis above: the same floor head, trained on MTD features in
+place of Cat (`configs/r015_mtd.json`, `feats: mtd`, the 4 × 1024 final + hidden-layer
+stack). It ran on a single RTX 3090 through `ray_run.py` / `ray_submit.py`.
+- **Data:** the first 32 training conversations so far (Cat r012 used all 131).
+- **Training:** 1000 steps × 64 crops, 4 arms trained together, about 15 min. Every arm's
+  dev floor+future loss is best at step 250 and rises after that, so 32 conversations
+  overfit quickly.
+- **Labels:** built with the post-review rules (CONTESTED etc.). Scoring uses the official
+  TurnBench dev gold, so the comparison is fair on the test side.
+
+TB dev FP at fixed recall (same scoring as the LoRA table above):
+
+| TB dev | EOT (`eot_q@r0.5+rc1.0`) FP@R0.92 | EOT FP@R0.94 | INT (`int_nobc@r0.5`) FP@R0.95 | INT FP@R0.97 |
+|---|---|---|---|---|
+| Cat head, 131 conv (r012 fine1_bal1, s1 / s2) | 0.054 / 0.061 | 0.127 / 0.132 | 0.014 / 0.018 | 0.048 / 0.044 |
+| MTD head, 32 conv (r015 fine1_bal1, s1 / s2) | **0.048 / 0.041** | **0.073 / 0.071** | 0.015 / 0.014 | **0.021 / 0.027** |
+| MTD head, 32 conv (r015 nofine, s1 / s2) | 0.045 / 0.043 | 0.081 / 0.066 | 0.031 / 0.037 (`int_nobc`) | 0.076 / 0.057 |
+
+- **EOT:** at recall 0.94, false fires drop by about 45% (0.13 → 0.07), with a quarter of
+  the training data. Latency at that point is p50 ~300 ms.
+- **INT:** about the same at recall 0.95, and roughly half the FP at recall 0.97. The fine
+  head is still what makes `int_nobc` work.
+- **At the FP ≤ 0.10 budget**, swept on TB dev: EOT R 0.945–0.951 (p50 ~265 ms) and INT
+  R 0.986 (p50 ~330 ms), against Cat's 0.939 and 0.974 (p50 585 ms).
+- **Caveat:** MTD re-encodes a 30 s window every 160 ms. This is causal, but it costs far
+  more than Cat. Encoding runs at about 7.4 channel-seconds per second on the 3090, so it
+  is not real time.
+- **Next:** rerun on all 131 conversations once they are encoded.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
