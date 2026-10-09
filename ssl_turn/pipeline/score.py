@@ -346,3 +346,139 @@ def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev',
     json.dump(res, open(f'/work/runs/{run}/{name}.score.json', 'w'), indent=1)
     work.commit()
     return res
+
+
+FUNCTION_WORDS = {'and', 'but', 'so', 'or', 'because', 'um', 'uh', 'like', 'the', 'a', 'to', 'of', 'that', 'if',
+                  'with', 'i', 'you', 'we', 'is', 'was', 'which', 'then'}
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=32768, timeout=3600)
+def residuals(run, eot, intr, refractory_s=0.5, recommit_eot=1.0):
+    """Content-level anatomy of errors at a fixed operating point on TurnBench dev, using the
+    three annotators' segments and transcripts. For each candidate factor it reports counts
+    and error rates, so factors are compared against base rates rather than read from anecdotes."""
+    import numpy as np
+    from collections import defaultdict
+    from turnbench.data import conversation, resolve_dataset
+    from turnbench.gold import CANONICAL
+    ds = resolve_dataset(TB_DEV, skip_audio=True)
+    gold = json.load(open('/work/gold/tbdev.json'))
+    types = json.load(open('/work/gold/tbdev_types.json'))
+    eot_tr = load_tracks(run, eot[0], eot[1], 'tbdev')
+    int_tr = load_tracks(run, intr[0], intr[1], 'tbdev')
+    fps = 12.5
+    rows = dict(eot_pos=[], eot_neg=[], int_pos=[], int_neg=[])
+
+    def last_words(text, n=2):
+        w = [x.strip('.,?!"\'').lower() for x in text.split()]
+        return w[-n:] if w else []
+
+    def seg_at_end(segs, t, tol=0.5):
+        best = min(segs, key=lambda x: abs(x[1] - t), default=None)
+        return best if best and abs(best[1] - t) <= tol else None
+
+    def seg_covering(segs, a, b):
+        return [x for x in segs if x[0] < b and x[1] > a]
+
+    for cid in sorted(gold, key=int):
+        conv = conversation(ds, cid)
+        ann = conv.annotations
+        e = gold[cid]['events']
+        for s in (1, 2):
+            o = 3 - s
+            own = {a: ann.get((s, a), []) for a in ('a', 'b', 'c')}
+            oth = {a: ann.get((o, a), []) for a in ('a', 'b', 'c')}
+            ef = commit(eot_tr[cid][:, s - 1], fps, float(eot[2]), refractory_s, recommit_eot)
+            inf = commit(int_tr[cid][:, s - 1], fps, float(intr[2]), refractory_s, None)
+            pos = sorted(x['time_s'] for x in e['eot_positive_events'] if x['speaker'] == s)
+            for i, t in enumerate(pos):
+                hi = min(t + 3.0, pos[i + 1] if i + 1 < len(pos) else t + 3.0)
+                hit = [f for f in ef if t - 0.25 <= f <= hi]
+                w = eot_tr[cid][max(0, int((t - 0.25) * fps)):int(hi * fps) + 1, s - 1]
+                seg = seg_at_end(own['a'], t) or seg_at_end(own['b'], t) or seg_at_end(own['c'], t)
+                agree = sum(seg_at_end(own[a], t, 0.25) is not None for a in own)
+                nxt = [x for x in oth['a'] if x[0] > t - 3 and CANONICAL.get(x[2]) in ('Turn', 'Interruption')
+                       and x[1] > t]
+                gap = (min(x[0] for x in nxt) - t) if nxt else None
+                earlier = [f for f in ef if t - 3 <= f < t - 0.25]
+                rows['eot_pos'].append(dict(
+                    cid=cid, type=types.get(cid), hit=bool(hit), lat=(hit[0] - t) if hit else None,
+                    peak=float(w.max()) if len(w) else 0.0, fired_before=bool(earlier),
+                    label=seg[2] if seg else None, dur=(seg[1] - seg[0]) if seg else None,
+                    text=seg[3][-80:] if seg else '', last=last_words(seg[3]) if seg else [], agree=agree,
+                    gap=gap))
+            for span in (x for x in e['eot_negative_spans'] if x['speaker'] == s):
+                a, b = span['start'], span['end']
+                fired = [f for f in ef if a <= f <= b]
+                prev = seg_at_end(own['a'], a, 0.3)
+                bc = [x for x in seg_covering(oth['a'], a, b) if CANONICAL.get(x[2]) == 'Backchannel']
+                rows['eot_neg'].append(dict(
+                    cid=cid, type=types.get(cid), fired=bool(fired), dur=b - a,
+                    fire_after=(fired[0] - a) if fired else None, prev_label=prev[2] if prev else None,
+                    prev_text=prev[3][-80:] if prev else '', last=last_words(prev[3]) if prev else [],
+                    other_backchannel=bool(bc)))
+            ipos = sorted(x['time_s'] for x in e['int_positive_events'] if x['speaker'] == s)
+            for i, t in enumerate(ipos):
+                hi = min(t + 3.0, ipos[i + 1] if i + 1 < len(ipos) else t + 3.0)
+                hit = [f for f in inf if t - 0.25 <= f <= hi]
+                seg = min(own['a'], key=lambda x: abs(x[0] - t), default=None)
+                rows['int_pos'].append(dict(cid=cid, hit=bool(hit), lat=(hit[0] - t) if hit else None,
+                                            label=seg[2] if seg else None, text=seg[3][:80] if seg else ''))
+            for span in (x for x in e['int_negative_spans'] if x['speaker'] == s):
+                a, b = span['start'], span['end']
+                fired = [f for f in inf if a <= f <= b]
+                labs = [x[2] for an in own.values() for x in seg_covering(an, a, b)]
+                lab = max(set(labs), key=labs.count) if labs else None
+                txt = next((x[3] for x in seg_covering(own['a'], a, b)), '')
+                rows['int_neg'].append(dict(cid=cid, type=types.get(cid), fired=bool(fired), dur=b - a, label=lab,
+                                            text=txt[:60], other_talking=bool(seg_covering(oth['a'], a, b))))
+    json.dump(rows, open(f'/work/runs/{run}/residuals.json', 'w'))
+    work.commit()
+
+    def table(items, key, flag, bins=None):
+        g = defaultdict(lambda: [0, 0])
+        for r in items:
+            v = key(r)
+            if bins is not None and v is not None:
+                v = next((lab for lo, hi, lab in bins if lo <= v < hi), 'other')
+            g[v][0] += 1
+            g[v][1] += bool(flag(r))
+        return {str(k): dict(n=n, rate=round(m / n, 3)) for k, (n, m) in sorted(g.items(), key=lambda x: -x[1][0])}
+
+    ep, en, ip, inn = rows['eot_pos'], rows['eot_neg'], rows['int_pos'], rows['int_neg']
+    miss = lambda r: not r['hit']
+    out = dict(
+        counts=dict(eot_pos=len(ep), eot_miss=sum(map(miss, ep)), eot_neg=len(en), eot_fp=sum(r['fired'] for r in en),
+                    int_pos=len(ip), int_miss=sum(map(miss, ip)), int_neg=len(inn), int_fp=sum(r['fired'] for r in inn)),
+        eot_miss_by_gap=table(ep, lambda r: r['gap'], miss, [(-99, -0.3, 'overlap>0.3s'), (-0.3, 0, 'overlap<0.3s'),
+                                                             (0, 0.3, 'gap<0.3s'), (0.3, 1, 'gap0.3-1s'), (1, 99, 'gap>1s')]),
+        eot_miss_by_agree=table(ep, lambda r: r['agree'], miss),
+        eot_miss_by_label=table(ep, lambda r: r['label'], miss),
+        eot_miss_by_dur=table(ep, lambda r: r['dur'], miss, [(0, 0.6, '<0.6s'), (0.6, 1.5, '0.6-1.5s'), (1.5, 4, '1.5-4s'),
+                                                             (4, 999, '>4s')]),
+        eot_miss_by_last_function_word=table(ep, lambda r: bool(r['last']) and r['last'][-1] in FUNCTION_WORDS, miss),
+        eot_miss_by_fired_before=table(ep, lambda r: r['fired_before'], miss),
+        eot_miss_by_type=table(ep, lambda r: r['type'], miss),
+        eot_miss_peak_q=[round(float(x), 3) for x in np.quantile([r['peak'] for r in ep if miss(r)], [.1, .25, .5, .75, .9])],
+        eot_fp_by_dur=table(en, lambda r: r['dur'], lambda r: r['fired'], [(0, 0.3, '<0.3s'), (0.3, 0.6, '0.3-0.6s'),
+                                                                           (0.6, 1.2, '0.6-1.2s'), (1.2, 2.5, '1.2-2.5s'),
+                                                                           (2.5, 999, '>2.5s')]),
+        eot_fp_by_prev_label=table(en, lambda r: r['prev_label'], lambda r: r['fired']),
+        eot_fp_by_last_function_word=table(en, lambda r: bool(r['last']) and r['last'][-1] in FUNCTION_WORDS,
+                                           lambda r: r['fired']),
+        eot_fp_by_other_backchannel=table(en, lambda r: r['other_backchannel'], lambda r: r['fired']),
+        eot_fp_fire_after_q=[round(float(x), 2) for x in np.quantile([r['fire_after'] for r in en if r['fired']],
+                                                                     [.1, .5, .9])],
+        int_fp_by_label=table(inn, lambda r: r['label'], lambda r: r['fired']),
+        int_fp_by_dur=table(inn, lambda r: r['dur'], lambda r: r['fired'], [(0, 0.4, '<0.4s'), (0.4, 0.8, '0.4-0.8s'),
+                                                                          (0.8, 1.5, '0.8-1.5s'), (1.5, 999, '>1.5s')]),
+        int_fp_by_other_talking=table(inn, lambda r: r['other_talking'], lambda r: r['fired']),
+        int_misses=[dict(label=r['label'], text=r['text']) for r in ip if miss(r)],
+        examples=dict(
+            eot_miss=[dict(t=r['text'], label=r['label'], gap=r['gap'], agree=r['agree'], peak=round(r['peak'], 2))
+                      for r in ep if miss(r)][:25],
+            eot_fp=[dict(t=r['prev_text'], label=r['prev_label'], dur=round(r['dur'], 2)) for r in en if r['fired']][:25],
+            int_fp=[dict(t=r['text'], label=r['label'], dur=round(r['dur'], 2)) for r in inn if r['fired']][:25]))
+    json.dump(out, open(f'/work/runs/{run}/residuals_summary.json', 'w'), indent=1)
+    work.commit()
+    return out

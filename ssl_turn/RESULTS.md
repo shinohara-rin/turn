@@ -115,6 +115,54 @@ only; no test audio has been touched.
 - **Encoder precision:** pure bf16, and also bf16 autocast, drift on a few frames (cosine
   down to 0.88 against fp32). TF32 is within 0.9997, so features are cached with TF32.
 
+## Residual analysis at the official dev operating point
+
+`score.py::residuals` uses TurnBench dev's three-annotator segments and transcripts and
+compares each factor against its base rate. Its window matching approximates the
+scorer: 109 misses and 68 FPs, where the official counts are 116 and 72.
+
+**EOT misses (about 5.7% of 1904):**
+- *Lapses:* if the other speaker's next turn starts more than 1 s later, misses are 9.3%
+  (about 4% otherwise). With no following turn ("Okay.", "Bye-bye", call endings), misses
+  are 35% (15/43). Until someone speaks, these look like holds, so they are largely
+  irreducible causally.
+- *Early fires:* 50/109 misses had a fire 0.25–3 s before the annotated end, often at a
+  pause before a final phrase or a trailing laugh.
+- *Not factors:* overlapping hand-offs (4.2–4.3%), annotator agreement (nearly all 3/3),
+  and conversation type (4.8–8.6%).
+
+**EOT false fires (6.4% of 1063 holds):**
+
+| Hold length | <0.3 s | 0.3–0.6 s | 0.6–1.2 s | 1.2–2.5 s | >2.5 s |
+|---|---|---|---|---|---|
+| FP rate | 0.8% | 4.5% | 7.9% | 24.5% | 62.5% |
+
+- Long holds are the mirror image of lapses, and many follow syntactically complete
+  sentences.
+- A listener backchannel inside the hold raises FPs 3.5× (13.5% vs 3.9%). The model
+  reads it as floor take-up, though backchannels never move the floor in gold, so this
+  is a fixable model error.
+- Holds after an interruption-won turn run 13–17%.
+- A trailing function word ("and", "so", "um") does *not* lower FPs (5.7% vs 6.5%): the
+  Cat features carry no lexical-incompleteness cue.
+
+**INT false fires (8.4% of 3733 backchannel/noise spans):**
+- Reaction backchannels 35%, acknowledgements 20%, continuers 6.5%, against noise 1.1%,
+  bleed 0.6% and non-linguistic 2.6%. So the errors are lexical backchannels that sound
+  like turns.
+- Backchannels into silence (the main speaker paused) fire 36%.
+- Spans whose majority fine label is "Normal Turn" or "Bounded Response" fire about 50%;
+  that is label ambiguity.
+
+**INT misses (9):** mostly laughter-initial interruptions.
+
+**Summary:**
+- *Inherent to causal detection plus TurnBench's conventions:* about 45 EOT misses
+  (lapses, no reply) and about 30 FPs (holds over 1.2 s).
+- *Targetable:* backchannel-during-hold confusion, turn-like reaction backchannels,
+  laughter onsets, and early fires before trailing laughs. These point to semantic
+  features and to emphasizing those cases in training, not to more data of the same kind.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
