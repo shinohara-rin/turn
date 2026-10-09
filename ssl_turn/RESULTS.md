@@ -502,3 +502,36 @@ Seed 2 behaves the same (audio 0.061 / 0.132; no text arm is better).
   is not a lever for TurnBench EOT. Semantics, if they help, have to come in as learned
   features (an ASR encoder such as MTD or a streaming transducer) inside the head, where the
   model can combine them with prosody.
+
+## ASR encoders as head input: probe test (`pipeline/diagnose_asr.py`)
+
+Question: would an ASR encoder that carries the words help the head, alone or fused with Cat?
+Same events, readouts and equal-data split as the encoder-vs-head diagnosis (draft PR #4:
+19 oto train / 4 selection conversations among the 23 with MTD features, TB dev for report).
+Each readout encodes the last 16 s of each channel ending at the readout time and keeps the
+final 80 ms frame plus the last 1.04 s mean, for a middle layer and the output (causal).
+- **stream:** `nvidia/stt_en_fastconformer_hybrid_large_streaming_multi` (114M) at attention
+  context [70, 0], i.e. the cache-aware streaming encoder with no lookahead.
+- **tdt:** `nvidia/parakeet-tdt-0.6b-v2` (600M), full attention inside the window.
+
+AUC on TB dev (linear / MLP probe); "long" = long holds (≥1.2 s) vs all ends:
+
+| | EOT +0.24 s | EOT +0.48 s | EOT +0.48 s, long | INT +0.40 s |
+|---|---|---|---|---|
+| Cat head input | 0.849 / 0.832 | 0.850 / 0.851 | 0.816 / 0.825 | 0.622 / 0.773 |
+| MTD | 0.877 / 0.885 | 0.892 / 0.897 | 0.863 / 0.885 | 0.766 / 0.802 |
+| stream (114M, causal) | 0.874 / 0.873 | 0.887 / 0.894 | 0.856 / 0.882 | 0.823 / 0.816 |
+| tdt (600M) | 0.897 / 0.887 | 0.901 / 0.900 | 0.874 / 0.882 | 0.757 / 0.778 |
+| Cat + stream | 0.855 / 0.864 | 0.878 / 0.889 | 0.838 / 0.864 | 0.686 / 0.784 |
+| Cat + tdt | 0.878 / 0.893 | 0.890 / 0.907 | 0.857 / 0.873 | 0.705 / 0.812 |
+| Cat + MTD | 0.878 / 0.880 | 0.893 / 0.897 | 0.876 / 0.873 | 0.747 / 0.766 |
+
+- **Every ASR encoder beats Cat on EOT by about 0.03–0.05 AUC,** including on long holds.
+  All three ASR encoders are within noise of each other (4 selection conversations; differences
+  under ~0.02 are not meaningful).
+- **Adding Cat to an ASR encoder does not help** (as with Cat + MTD). At this data size the
+  extra 18k Cat dimensions mostly add overfitting.
+- **The 114M streaming FastConformer matches MTD** while being causal by construction: one
+  cache-aware pass per channel instead of a 30 s window every 160 ms. That makes it the cheap
+  way to put word content into the head.
+- **Cost:** about $0.3 on a Modal L4 (encoding 32k windows: 4.5 min stream, about 10 min tdt).
