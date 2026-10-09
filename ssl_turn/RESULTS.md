@@ -163,6 +163,39 @@ scorer: 109 misses and 68 FPs, where the official counts are 116 and 72.
   laughter onsets, and early fires before trailing laughs. These point to semantic
   features and to emphasizing those cases in training, not to more data of the same kind.
 
+## Fine annotator labels (r012)
+
+`labels.FINE` gives each speaker frame one of 17 annotator labels (plus SILENT), so
+backchannel and interruption subtypes, Strong Floor Hold, Bounded Response, Awkward
+Silence and so on are supervised directly. The fine head is per-speaker (per-slot in
+mono), with optional inverse-frequency balancing (weight ∝ freq^-α, clipped at 20×).
+
+Setup: 4 arms × 2 seeds on 131 conversations. With FP capped at 0.10, recall is saturated
+(INT ~0.98, EOT ~0.93), so arms are compared by **FP at fixed recall** (mean of 2 seeds).
+
+| INT FP (p50) | recall ≥ 0.95 | recall ≥ 0.97 |
+|---|---|---|
+| no fine head, `int_spk` | 0.032 (847 ms) | 0.060 (668 ms) |
+| fine, α=1, `int_nobc` | **0.016** (878 ms) | **0.046** (628 ms) |
+| fine, α=0.5, `int_nobc` | 0.023 (862 ms) | 0.048 (649 ms) |
+| fine head, scored with plain `int_spk` | 0.033–0.041 | 0.082–0.084 |
+
+`int_nobc` = `int_spk` × (1 − the speaker's own predicted backchannel + noise mass).
+
+- **The gain comes through scoring:** the fine head alone, scored the old way, does not
+  reduce INT false fires.
+- **It lands where the residuals pointed** (control vs fine α=1 at matched recall 0.971 /
+  0.974): reaction backchannels 0.294 → 0.188, acknowledgements 0.157 → 0.115,
+  continuers 0.043 → 0.034, backchannels into silence 0.279 → 0.135. INT false fires
+  total 240 → 177 (−26%). Non-speech noise rises slightly (4 → 11 fires).
+- **Earlier INT detection:** `int_ft` (the floor-taking subtype posterior alone) fires
+  much earlier (p50 ~260–330 ms vs ~600 ms) at higher FP. That is a latency/precision
+  knob.
+- **EOT doesn't improve:** FP at recall 0.92 is 0.053–0.061 in every arm.
+  Suppressing EOT while the listener backchannels (`eot_nobc`) is worse, because
+  backchannels also follow real yields. The listener-backchannel EOT confusion needs a
+  training-side fix, not gating.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`

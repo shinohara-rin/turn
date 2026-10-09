@@ -42,6 +42,25 @@ CANONICAL_TO_ACT = {
     'Laughter': 'LAUGHTER',
     'NonContent': 'NONCONTENT',
 }
+# Fine per-speaker acts: every annotator label in TurnBench's LABEL_MAP, so subtypes such as
+# reaction vs continuer backchannels or floor-taking vs failed interruptions are supervised
+# directly. Earlier entries win where segments overlap on one channel. 'Regular Turn' is an
+# alias of 'Normal Turn'. 'Awkward Silence' marks a lapse in the speaker's own channel.
+FINE = ('SILENT',
+        'Floor-taking Competitive Interruption', 'Floor-taking Cooperative Interruption',
+        'Non-floor Taking Competitive Interruption', 'Non-floor Taking Cooperative Interruption',
+        'Normal Turn', 'Strong Floor Hold', 'Bounded Response', 'Overlap', 'Filler',
+        'Reaction Backchannel', 'Acknowledgement Backchannel', 'Continuer Backchannel',
+        'Laughter', 'Speech, Non-Linguistic', 'Non-Speech Noise', 'Channel Bleed', 'Awkward Silence')
+FI = {name: i for i, name in enumerate(FINE)}
+FINE_ALIASES = {'Regular Turn': 'Normal Turn'}
+FINE_GROUPS = {  # index sets for score readout
+    'backchannel': [FI[x] for x in ('Reaction Backchannel', 'Acknowledgement Backchannel', 'Continuer Backchannel')],
+    'noncontent': [FI[x] for x in ('Speech, Non-Linguistic', 'Non-Speech Noise', 'Channel Bleed', 'Laughter')],
+    'floor_taking': [FI[x] for x in ('Floor-taking Competitive Interruption', 'Floor-taking Cooperative Interruption')],
+    'attempt': [FI[x] for x in ('Non-floor Taking Competitive Interruption', 'Non-floor Taking Cooperative Interruption')],
+    'turn': [FI[x] for x in ('Normal Turn', 'Strong Floor Hold', 'Bounded Response', 'Overlap', 'Filler')],
+}
 HORIZONS_S = (0.4, 0.8, 1.6)
 FRAME_S = 0.08
 ANCHOR_TOL_S = 0.05
@@ -137,6 +156,23 @@ def floor_targets(times, segments, events):
             continue
         act_w[_in(t, span['start'], span['end']), span['speaker'] - 1] = 0
     return dict(floor=floor, floor_w=floor_w, act=act, act_w=act_w)
+
+
+def fine_acts(times, fine_segments):
+    """times [T]; fine_segments: iterable of (speaker in {1,2}, start, end, fine_label).
+    Returns fine [T, 2] int64 (indices into FINE; SILENT where unlabeled). Unknown labels are
+    ignored. Weights: reuse floor_targets' act_w (same dispute spans)."""
+    t = np.asarray(times, np.float64)
+    fine = np.zeros((len(t), 2), np.int64)
+    for speaker, start, end, label in fine_segments:
+        label = FINE_ALIASES.get(label, label)
+        if label not in FI:
+            continue
+        c, m = speaker - 1, _in(t, start, end)
+        # lower index = higher priority; SILENT (0) is always overwritten
+        cur = fine[m, c]
+        fine[m, c] = np.where((cur == 0) | (FI[label] < cur), FI[label], cur)
+    return fine
 
 
 def floor_projection(floor, floor_w, horizons_s=HORIZONS_S, frame_s=FRAME_S):

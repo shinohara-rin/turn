@@ -38,7 +38,7 @@ def cache_tbdev_gold():
     return len(out)
 
 
-def score_variants(post, silent=None):
+def score_variants(post, silent=None, fine=None):
     """post [T, 1 + H, 4]: floor now and at 0.4/0.8/1.6 s (HELD_0, HELD_1, OPEN, CONTESTED)
     -> per-speaker [T, 2] score tracks."""
     import numpy as np
@@ -73,6 +73,17 @@ def score_variants(post, silent=None):
         out['eot_mix_q'] = clip((eot_now + eot_f04) / 2 * silent)
         out['eot_q_sqrt'] = clip(eot_now * np.sqrt(silent))
         out['int_spk'] = clip(holds(f04) * (1 - silent))  # c must be vocalizing to take the floor
+    if fine is not None and silent is not None:  # fine annotator-label posteriors [T, 2, len(FINE)]
+        from common import setup_path
+        setup_path()
+        import labels as lb
+        grp = {k: fine[..., v].sum(-1) for k, v in lb.FINE_GROUPS.items()}
+        not_bc = np.clip(1 - grp['backchannel'] - grp['noncontent'], 0, 1)
+        out['int_nobc'] = clip(holds(f04) * (1 - silent) * not_bc)
+        out['int_ft'] = clip(grp['floor_taking'])
+        out['int_claim'] = clip(holds(f04) * (grp['floor_taking'] + grp['turn']))
+        other_bc = (grp['backchannel'] + grp['noncontent'])[:, ::-1]
+        out['eot_nobc'] = clip(eot_now * silent * np.clip(1 - other_bc, 0, 1))
     return out
 
 
@@ -86,9 +97,10 @@ def load_tracks(run, model, task, split):
         m_, sp, cid, t = k.split('/')
         if m_ == model and sp == split:
             if t == 'post':
-                sk = k[:-len('post')] + 'silent'
+                sk, fk = k[:-len('post')] + 'silent', k[:-len('post')] + 'fine'
                 tracks[cid] = score_variants(z[k].astype(np.float32),
-                                             z[sk].astype(np.float32) if sk in z.files else None)[task]
+                                             z[sk].astype(np.float32) if sk in z.files else None,
+                                             z[fk].astype(np.float32) if fk in z.files else None)[task]
             elif t == task:
                 tracks[cid] = z[k]
     return tracks
@@ -168,19 +180,21 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits
     for k in z.files:
         model, split, cid, task = k.split('/')
         if task == 'post':
-            sk = k[:-len('post')] + 'silent'
+            sk, fk = k[:-len('post')] + 'silent', k[:-len('post')] + 'fine'
             posts.setdefault(model, {})[(split, cid)] = (z[k].astype(np.float32),
-                                                         z[sk].astype(np.float32) if sk in z.files else None)
-        elif task != 'silent':
+                                                         z[sk].astype(np.float32) if sk in z.files else None,
+                                                         z[fk].astype(np.float32) if fk in z.files else None)
+        elif task not in ('silent', 'fine'):
             by.setdefault((model, task), {}).setdefault(split, {})[cid] = z[k]
     for name, members in (ensembles or {}).items():  # average posteriors across models
         members = [m_ for m_ in members if m_ in posts]
         keys = set.intersection(*(set(posts[m_]) for m_ in members))
-        posts[name] = {key: (np.mean([posts[m_][key][0] for m_ in members], 0),
-                             np.mean([posts[m_][key][1] for m_ in members], 0)) for key in keys}
+        avg = lambda key, i: (None if posts[members[0]][key][i] is None
+                              else np.mean([posts[m_][key][i] for m_ in members], 0))
+        posts[name] = {key: (avg(key, 0), avg(key, 1), avg(key, 2)) for key in keys}
     for model, items in posts.items():
-        for (split, cid), (post, silent) in items.items():
-            for name, v in score_variants(post, silent).items():
+        for (split, cid), (post, silent, fine) in items.items():
+            for name, v in score_variants(post, silent, fine).items():
                 by.setdefault((model, name), {}).setdefault(split, {})[cid] = v
     jobs = {}
     with ProcessPoolExecutor(8) as pool:

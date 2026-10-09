@@ -53,6 +53,8 @@ def load_split(split, cids, device, cols=None, workers=16):
         if split == 'oto':
             z = np.load(f'/work/labels/oto/{cid}.npz')
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
+            if 'fine' in z.files:
+                lab['fine'], lab['fine_w'] = z['fine'][:T], z['act_w'][:T]
         x = np.ascontiguousarray(f[:T]) if cols is None else np.ascontiguousarray(f[:T][..., cols])
         if FUSE_MTD:  # append the 4096-d MOSS-Transcribe-Diarize features after the Cat columns
             g = np.load(f'/work/feats_mtd/{split}/{cid}.npy', mmap_mode='r')
@@ -116,12 +118,16 @@ def infer_all(models, configs, splits, dev):
                         taps, final = select_inputs(Xs[lo:min(b, s + 1000)][None], cfg)
                         with torch.autocast('cuda', dtype=torch.bfloat16):
                             o = net(taps, final)
-                        outs.append({k: v[0, s - lo:].float() for k, v in o.items() if k in ('floor', 'future', 'act')})
+                        outs.append({k: v[0, s - lo:].float() for k, v in o.items()
+                                     if k in ('floor', 'future', 'act', 'fine')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
                 future = torch.cat([o['future'] for o in outs]).softmax(-1)
                 silent = torch.cat([o['act'] for o in outs]).softmax(-1)[..., 0]  # [T, 2] p(SILENT)
                 out[f'{name}/{split}/{cid}/post'] = torch.cat([floor[:, None], future], 1).cpu().numpy().astype(np.float16)
                 out[f'{name}/{split}/{cid}/silent'] = silent.cpu().numpy().astype(np.float16)
+                if 'fine' in outs[0]:  # [T, 2, len(FINE)] fine-label posteriors
+                    out[f'{name}/{split}/{cid}/fine'] = torch.cat([o['fine'] for o in outs]).softmax(-1) \
+                        .cpu().numpy().astype(np.float16)
     return out
 
 
@@ -207,6 +213,20 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     print(f'loaded {len(train_ids)} train ({len(X)} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
           f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
 
+    # Inverse-frequency class weights for the fine head (per config: weight = freq^-alpha,
+    # normalized to mean 1 over training frames, clipped at 20x).
+    fine_cw = None
+    if 'fine' in Y:
+        counts = torch.bincount(Y['fine'].flatten(), minlength=len(lb.FINE)).float().clamp_min(1)
+        freq = counts / counts.sum()
+        fine_cw = {}
+        for name, cfg in configs.items():
+            a = cfg.get('fine_balance', 0.0)
+            w = freq.pow(-a)
+            w = w / (w * freq).sum()
+            fine_cw[name] = w.clamp(max=20.0)
+        print('fine class frames', counts.long().tolist(), flush=True)
+
     # Valid crop starts: within one conversation.
     starts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(off[:-1], off[1:]) if b - a > crop])
     models, opts, scheds = {}, {}, {}
@@ -230,7 +250,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         """Channel-swap augmentation on rows in `mask`: features, acts, floor holders, VAP bits."""
         xb = torch.where(mask[:, None, None, None], xb.flip(2), xb)
         out = dict(yb)
-        for k in ('act', 'act_w', 'activity'):
+        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w') if k in yb]:
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k].flip(-1), yb[k])
         for k in ('floor', 'future'):
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k][..., SWAP], yb[k])
@@ -272,6 +292,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 out = net(taps, final)
             target = yb
+            if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
+                target = dict(target, fine_w=yb['fine_w'] * fine_cw[name][yb['fine']])
             if cfg.get('blur_frames', 0) > 1:  # temporal label smoothing of the floor targets
                 k = cfg['blur_frames']
                 kern = torch.bartlett_window(k + 2, periodic=False, device=dev)[1:-1]

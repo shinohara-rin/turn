@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from labels import ACTS, HORIZONS_S
+from labels import ACTS, FINE, HORIZONS_S
 
 FRAME_S = 0.08
 # VAP projection bins (frames). Ekstedt & Skantze use 0.2/0.4/0.6/0.8 s; the 80 ms
@@ -125,9 +125,11 @@ class TurnModel(nn.Module):
         self.held = nn.Linear(2 * dim, steps)        # HELD_c logit per step, from [own, other]
         self.shared = nn.Linear(dim, 2 * steps)      # OPEN, CONTESTED per step, from own + other
         self.act = nn.Linear(2 * dim, len(ACTS))
+        self.fine = nn.Linear(2 * dim, len(FINE))   # per-speaker fine annotator label (labels.FINE)
         self.slots = slots
         self.slot_floor = nn.Linear(dim, steps * (slots + 2))
         self.slot_act = nn.Linear(dim, slots * len(ACTS))
+        self.slot_fine = nn.Linear(dim, slots * len(FINE))
         self.slot_activity = nn.Linear(dim, slots)
 
     def embed(self, taps=None, final=None, source=None):
@@ -158,12 +160,13 @@ class TurnModel(nn.Module):
             floor = self.slot_floor(h).view(B, T, self.steps, self.slots + 2)
             return dict(floor=floor[:, :, 0], future=floor[:, :, 1:],
                         act=self.slot_act(h).view(B, T, self.slots, len(ACTS)),
+                        fine=self.slot_fine(h).view(B, T, self.slots, len(FINE)),
                         slot_activity=self.slot_activity(h))
         pair = torch.cat([x, x.flip(2)], -1)                       # [B, T, 2, 2D]: own, other
         held = self.held(pair).permute(0, 1, 3, 2)                 # [B, T, steps, 2]
         shared = self.shared(x.sum(2)).view(B, T, self.steps, 2)   # [B, T, steps, 2]
         floor = torch.cat([held, shared], -1)                      # HELD_0, HELD_1, OPEN, CONTESTED
-        return dict(floor=floor[:, :, 0], future=floor[:, :, 1:], act=self.act(pair),
+        return dict(floor=floor[:, :, 0], future=floor[:, :, 1:], act=self.act(pair), fine=self.fine(pair),
                     vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)))
 
 
@@ -196,12 +199,12 @@ def loss(outputs, batch, weights=None):
     pseudo) is folded into the weights by the loader. Each term is normalized by its own
     weight mass, so the sampler's mixing ratio, not raw volume, sets each source's share.
     """
-    weights = {**dict(vap=1.0, floor=1.0, future=1.0, act=0.5, slot_activity=1.0), **(weights or {})}
+    weights = {**dict(vap=1.0, floor=1.0, future=1.0, act=0.5, fine=0.5, slot_activity=1.0), **(weights or {})}
     terms = {}
     if 'vap' in outputs and 'vap' in batch:
         terms['vap'] = _weighted_ce(outputs['vap'], batch['vap'], batch['vap_valid'].float())
-    for name in ('floor', 'future', 'act'):
-        if name in batch:
+    for name in ('floor', 'future', 'act', 'fine'):
+        if name in batch and name in outputs and weights.get(name, 0) > 0:
             terms[name] = _weighted_ce(outputs[name], batch[name], batch[name + '_w'])
     if 'slot_activity' in outputs and 'slot_activity' in batch:
         w = batch['slot_activity_w']

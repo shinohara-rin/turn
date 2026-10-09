@@ -100,6 +100,21 @@ class AgreesWithGold(unittest.TestCase):
         self.assertLess(s['int'][0, 0].item(), 0.01)
 
 
+class Fine(unittest.TestCase):
+    def test_priority_alias_and_groups(self):
+        t = (np.arange(30) + 1) * 0.08
+        segs = [(1, 0.0, 1.0, 'Regular Turn'), (1, 0.5, 0.9, 'Floor-taking Cooperative Interruption'),
+                (2, 0.2, 0.6, 'Reaction Backchannel'), (2, 1.2, 1.6, 'Awkward Silence'), (2, 0.0, 2.0, 'Made Up')]
+        f = lb.fine_acts(t, segs)
+        at = lambda s, c: lb.FINE[f[np.searchsorted(t, s), c]]
+        self.assertEqual(at(0.3, 0), 'Normal Turn')
+        self.assertEqual(at(0.7, 0), 'Floor-taking Cooperative Interruption')   # higher priority wins
+        self.assertEqual(at(0.4, 1), 'Reaction Backchannel')
+        self.assertEqual(at(1.4, 1), 'Awkward Silence')
+        self.assertEqual(at(1.9, 1), 'SILENT')                                  # unknown label ignored
+        self.assertEqual(sorted(sum(lb.FINE_GROUPS.values(), [])), list(range(1, len(lb.FINE) - 1)))
+
+
 class Slots(unittest.TestCase):
     def test_arrival_order_relabels_floor_and_acts(self):
         floor = np.eye(4, dtype=np.float32)[[2, 1, 1, 3, 0]]

@@ -39,8 +39,9 @@ class TurnModelContracts(unittest.TestCase):
         self.assertEqual(out['floor'].shape, (2, 50, len(lb.FLOOR)))
         self.assertEqual(out['future'].shape, (2, 50, self.H, len(lb.FLOOR)))
         self.assertEqual(out['act'].shape, (2, 50, 2, len(lb.ACTS)))
+        self.assertEqual(out['fine'].shape, (2, 50, 2, len(lb.FINE)))
         mono = self.model(self.taps[:, :, :1], self.final[:, :, :1])
-        self.assertEqual(set(mono), {'floor', 'future', 'act', 'slot_activity'})
+        self.assertEqual(set(mono), {'floor', 'future', 'act', 'fine', 'slot_activity'})
         self.assertEqual(mono['floor'].shape, (2, 50, len(lb.FLOOR)))
         self.assertEqual(mono['slot_activity'].shape, (2, 50, 2))
         scores = lb.turnbench_scores(out['floor'], out['future'])
@@ -68,6 +69,7 @@ class TurnModelContracts(unittest.TestCase):
         torch.testing.assert_close(a['floor'], b['floor'][..., swap], rtol=1e-5, atol=1e-5)
         torch.testing.assert_close(a['future'], b['future'][..., swap], rtol=1e-5, atol=1e-5)
         torch.testing.assert_close(a['act'], b['act'].flip(2), rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(a['fine'], b['fine'].flip(2), rtol=1e-5, atol=1e-5)
 
     def test_source_conditioning(self):
         default = self.model(self.taps, self.final)
@@ -88,17 +90,20 @@ class TurnModelContracts(unittest.TestCase):
         soft = lambda *shape: torch.softmax(torch.randn(*shape, 4), -1)
         floor = dict(floor=soft(2, 50), floor_w=torch.ones(2, 50),
                      future=soft(2, 50, self.H), future_w=torch.ones(2, 50, self.H),
-                     act=torch.randint(0, len(lb.ACTS), (2, 50, 2)), act_w=torch.ones(2, 50, 2))
+                     act=torch.randint(0, len(lb.ACTS), (2, 50, 2)), act_w=torch.ones(2, 50, 2),
+                     fine=torch.randint(0, len(lb.FINE), (2, 50, 2)), fine_w=torch.ones(2, 50, 2))
         total, parts = m.loss(out, dict(vap_only, **floor))
         total.backward()
-        self.assertEqual(set(parts), {'vap', 'floor', 'future', 'act'})
+        self.assertEqual(set(parts), {'vap', 'floor', 'future', 'act', 'fine'})
+        _, parts = m.loss(out, dict(vap_only, **floor), {'fine': 0.0})
+        self.assertNotIn('fine', parts)
         self.assertTrue(np.isfinite(float(total)))
         mono = self.model(self.taps[:, :, :1], self.final[:, :, :1])
         diar = dict(slot_activity=torch.randint(0, 2, (2, 50, 2)).float(), slot_activity_w=torch.ones(2, 50, 2))
         _, parts = m.loss(mono, diar)
         self.assertEqual(set(parts), {'slot_activity'})
         _, parts = m.loss(mono, dict(diar, **floor))
-        self.assertEqual(set(parts), {'slot_activity', 'floor', 'future', 'act'})
+        self.assertEqual(set(parts), {'slot_activity', 'floor', 'future', 'act', 'fine'})
 
 
 if __name__ == '__main__':

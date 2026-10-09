@@ -154,6 +154,35 @@ def tbdev_ids():
     return conversation_ids(ds)
 
 
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=1, memory=2048, timeout=900)
+def add_fine(cid):
+    """Add fine annotator-label targets (labels.FINE) to an existing label file (SRT only)."""
+    import numpy as np
+    setup_path()
+    import labels as lb
+    path = f'/work/labels/oto/{cid}.npz'
+    z = dict(np.load(path))
+    if 'fine' in z:
+        return cid, 'cached'
+    segs = [(s, a, b, label) for s in (1, 2) for a, b, label in parse_srt(f'{OTO}/{cid}/speaker_{s}_annotation_a.srt')]
+    z['fine'] = lb.fine_acts(z['times'], segs)
+    np.savez_compressed(path, **z)
+    work.commit()
+    return cid, np.bincount(z['fine'].ravel(), minlength=len(lb.FINE)).tolist()
+
+
+@app.local_entrypoint()
+def fine():
+    import collections
+    cids = [e.path.split('/')[-1][:-4] for e in work.listdir('labels/oto')]
+    total = collections.Counter()
+    for cid, counts in add_fine.map(cids):
+        if counts != 'cached':
+            total.update(dict(enumerate(counts)))
+    print('conversations', len(cids))
+    print('frame counts by fine class', dict(sorted(total.items())))
+
+
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=4096, timeout=1800)
 def extra_ids():
     """Cross-partition conversations whose speakers are all train/dev actors (no gate speaker).
