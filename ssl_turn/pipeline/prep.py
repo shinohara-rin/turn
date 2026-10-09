@@ -12,7 +12,7 @@ import json
 
 import modal
 
-from common import OTO, TB_DEV, VOLUMES, cpu_image, setup_path, work
+from common import WORK, OTO, TB_DEV, VOLUMES, cpu_image, setup_path, work
 
 app = modal.App('ssl-turn-prep')
 FRAME_S = 0.08
@@ -61,8 +61,8 @@ def make_split():
     counts = {k: len(v) for k, v in splits.items()}
     if counts != dict(train=131, dev=16, gate=20, excluded_cross_partition=253):
         raise ValueError(f'split does not reproduce attempt 1: {counts}')
-    os.makedirs('/work', exist_ok=True)
-    json.dump(out, open('/work/split.json', 'w'), indent=1)
+    os.makedirs(f'{WORK}', exist_ok=True)
+    json.dump(out, open(f'{WORK}/split.json', 'w'), indent=1)
     work.commit()
     return counts
 
@@ -89,7 +89,7 @@ def oto_item(cid):
     setup_path()
     from turnbench.gold import CANONICAL, TURN_CANONICAL, ConsensusEvent, ConsensusViews, build_conversation_events
     import labels as lb
-    if os.path.exists(f'/work/labels/oto/{cid}.npz') and os.path.exists(f'/work/audio/oto/{cid}.npy'):
+    if os.path.exists(f'{WORK}/labels/oto/{cid}.npz') and os.path.exists(f'{WORK}/audio/oto/{cid}.npy'):
         return cid, 'cached'
     src = f'{OTO}/{cid}'
     chans, sr = [], None
@@ -116,11 +116,11 @@ def oto_item(cid):
     y = lb.floor_targets(times, segments, events)
     future, future_w = lb.floor_projection(y['floor'], y['floor_w'])
     for d in ('audio/oto', 'labels/oto', 'gold/oto'):
-        os.makedirs(f'/work/{d}', exist_ok=True)
-    np.save(f'/work/audio/oto/{cid}.npy', audio.astype(np.float16))
-    np.savez_compressed(f'/work/labels/oto/{cid}.npz', floor=y['floor'], floor_w=y['floor_w'], act=y['act'],
+        os.makedirs(f'{WORK}/{d}', exist_ok=True)
+    np.save(f'{WORK}/audio/oto/{cid}.npy', audio.astype(np.float16))
+    np.savez_compressed(f'{WORK}/labels/oto/{cid}.npz', floor=y['floor'], floor_w=y['floor_w'], act=y['act'],
                         act_w=y['act_w'], future=future, future_w=future_w, activity=activity, times=times)
-    json.dump(dict(duration_s=duration, events=events), open(f'/work/gold/oto/{cid}.json', 'w'))
+    json.dump(dict(duration_s=duration, events=events), open(f'{WORK}/gold/oto/{cid}.json', 'w'))
     work.commit()
     return cid, round(duration, 1), sr, int(T)
 
@@ -132,7 +132,7 @@ def tbdev_audio(cids):
     import numpy as np
     from turnbench.data import conversation, resolve_dataset
     ds = resolve_dataset(TB_DEV)
-    os.makedirs('/work/audio/tbdev', exist_ok=True)
+    os.makedirs(f'{WORK}/audio/tbdev', exist_ok=True)
     out = []
     for cid in cids:
         conv = conversation(ds, cid)
@@ -140,7 +140,7 @@ def tbdev_audio(cids):
         sr = chans[0][1]
         n = min(len(c[0]) for c in chans)
         audio = causal_resample(np.stack([c[0][:n] for c in chans], 1), sr)
-        np.save(f'/work/audio/tbdev/{cid}.npy', audio.astype(np.float16))
+        np.save(f'{WORK}/audio/tbdev/{cid}.npy', audio.astype(np.float16))
         out.append((cid, sr, round(conv.duration_s, 2)))
     work.commit()
     return out
@@ -160,7 +160,7 @@ def add_fine(cid):
     import numpy as np
     setup_path()
     import labels as lb
-    path = f'/work/labels/oto/{cid}.npz'
+    path = f'{WORK}/labels/oto/{cid}.npz'
     z = dict(np.load(path))
     if 'fine' in z:
         return cid, 'cached'
@@ -199,10 +199,10 @@ def extra_ids():
     rng.shuffle(actors)
     n = len(actors)
     assign = {a: ('train' if i < int(n * .6) else 'dev' if i < int(n * .8) else 'gate') for i, a in enumerate(actors)}
-    excluded = json.load(open('/work/split.json'))['splits']['excluded_cross_partition']
+    excluded = json.load(open(f'{WORK}/split.json'))['splits']['excluded_cross_partition']
     by = {r['_dir']: r for r in rows}
     keep = [c for c in excluded if 'gate' not in {assign[by[c][f'speaker_{s}_actor_id']] for s in (1, 2)}]
-    json.dump(keep, open('/work/extra_no_gate.json', 'w'))
+    json.dump(keep, open(f'{WORK}/extra_no_gate.json', 'w'))
     work.commit()
     return keep
 

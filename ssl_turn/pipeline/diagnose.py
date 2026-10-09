@@ -24,7 +24,7 @@ import json
 
 import modal
 
-from common import VOLUMES, gpu_image, setup_path, work
+from common import WORK, VOLUMES, gpu_image, setup_path, work
 
 app = modal.App('ssl-turn-diagnose')
 FRAME_S = 0.08
@@ -168,10 +168,10 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
     import score as sc
     t0 = time.time()
     dev = 'cuda'
-    split = json.load(open('/work/split.json'))['splits']
-    tb_gold = json.load(open('/work/gold/tbdev.json'))
-    resid = json.load(open(f'/work/runs/{run}/residuals.json'))
-    mtd_ids = set(json.load(open('/work/mtd_train_ids.json')))
+    split = json.load(open(f'{WORK}/split.json'))['splits']
+    tb_gold = json.load(open(f'{WORK}/gold/tbdev.json'))
+    resid = json.load(open(f'{WORK}/runs/{run}/residuals.json'))
+    mtd_ids = set(json.load(open(f'{WORK}/mtd_train_ids.json')))
     # Split TurnBench dev residual rows per conversation in the order residuals() emitted them.
     per = {cid: {'eot_neg': [], 'int_neg': []} for cid in tb_gold}
     for key in ('eot_neg', 'int_neg'):
@@ -187,31 +187,31 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
     head_cols = tr.columns(tr.LOADED)
     nets, cfgs = {}, {}
     for n in models:
-        ck = torch.load(f'/work/runs/{run}/{n}.pt', map_location=dev)
+        ck = torch.load(f'{WORK}/runs/{run}/{n}.pt', map_location=dev)
         cfgs[n] = ck['cfg']
         nets[n] = tr.build_model(ck['cfg']).to(dev)
         nets[n].load_state_dict(ck['state'])
         nets[n].eval()
 
-    have = {f[:-4] for f in os.listdir('/work/feats/oto')}
+    have = {f[:-4] for f in os.listdir(f'{WORK}/feats/oto')}
     items = ([('train', c) for c in split['train'] if c in have] + [('otodev', c) for c in split['dev'] if c in have]
              + [('tbdev', c) for c in sorted(tb_gold, key=int)])
 
     def load(item):
         sp, cid = item
         d = 'tbdev' if sp == 'tbdev' else 'oto'
-        X = np.load(f'/work/feats/{d}/{cid}.npy')
+        X = np.load(f'{WORK}/feats/{d}/{cid}.npy')
         if sp == 'tbdev':
             ev = make_events(sp, cid, tb_gold[cid], resid=per[cid])
         else:
-            z = np.load(f'/work/labels/oto/{cid}.npz')
-            ev = make_events(sp, cid, json.load(open(f'/work/gold/oto/{cid}.json')), fine=z['fine'])
+            z = np.load(f'{WORK}/labels/oto/{cid}.npz')
+            ev = make_events(sp, cid, json.load(open(f'{WORK}/gold/oto/{cid}.json')), fine=z['fine'])
         mtd = None
         if sp == 'tbdev' or cid in mtd_ids:
-            mtd = gather(np.load(f'/work/feats_mtd/{d}/{cid}.npy', mmap_mode='r'), ev)
+            mtd = gather(np.load(f'{WORK}/feats_mtd/{d}/{cid}.npy', mmap_mode='r'), ev)
         return sp, cid, X, ev, gather(X, ev), mtd
 
-    cache = f'/work/runs/diag/cache_{run}.npz'
+    cache = f'{WORK}/runs/diag/cache_{run}.npz'
     events, feats, mfeats, heads = [], [], [], {n: {} for n in models}
     if os.path.exists(cache):
         z = np.load(cache, allow_pickle=True)
@@ -244,7 +244,7 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
     F = np.concatenate(feats)
     M = np.concatenate(mfeats)
     if not os.path.exists(cache):
-        os.makedirs('/work/runs/diag', exist_ok=True)
+        os.makedirs(f'{WORK}/runs/diag', exist_ok=True)
         np.savez(cache, events=np.array(events, dtype=object), heads=np.array(heads, dtype=object), F=F, M=M)
         work.commit()
     print(f'{len(events)} events from {len(items)} conversations in {time.time() - t0:.0f}s; '
@@ -359,8 +359,8 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
                 results['mtd'][f'{task}/{name}/{kind}'] = dict(
                     wd=wd, **report(lambda sp: split_mask(sp, task) & ~np.isnan(full), full))
 
-    os.makedirs('/work/runs/diag', exist_ok=True)
-    json.dump(results, open('/work/runs/diag/diag.json', 'w'))
+    os.makedirs(f'{WORK}/runs/diag', exist_ok=True)
+    json.dump(results, open(f'{WORK}/runs/diag/diag.json', 'w'))
     work.commit()
     results['wall_s'] = time.time() - t0
     return results

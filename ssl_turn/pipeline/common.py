@@ -6,6 +6,7 @@ Volumes:
 
 TurnBench test audio is never opened by this pipeline.
 """
+import os
 from pathlib import Path
 
 import modal
@@ -17,8 +18,10 @@ datasets = modal.Volume.from_name('turnbench-datasets')
 work = modal.Volume.from_name('ssl-turn-work', create_if_missing=True)
 VOLUMES = {'/datasets': datasets, '/work': work}
 
-OTO = '/datasets/otoearth/otoSpeech-full-duplex-turn-104h'
-TB_DEV = '/datasets/mundo-ai/turn-benchmark-dev/data'
+# Paths default to the Modal volume mounts; ray_run.py points them at a local disk instead.
+WORK = os.environ.get('SSL_TURN_WORK', '/work')
+OTO = os.environ.get('SSL_TURN_OTO', '/datasets/otoearth/otoSpeech-full-duplex-turn-104h')
+TB_DEV = os.environ.get('SSL_TURN_TB_DEV', '/datasets/mundo-ai/turn-benchmark-dev/data')
 TURNBENCH_COMMIT = '38a6f874322430cb3ca71d8a52aa1e636e88bad8'
 
 
@@ -44,8 +47,9 @@ gpu_image = _code(
 
 def setup_path():
     import sys
-    if '/root/ssl_turn' not in sys.path:
-        sys.path.insert(0, '/root/ssl_turn')
+    src = os.environ.get('SSL_TURN_SRC', '/root/ssl_turn')
+    if src not in sys.path:
+        sys.path.insert(0, src)
 
 
 def gpu_monitor(log, stop):
