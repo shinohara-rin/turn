@@ -7,6 +7,7 @@ and calls the functions directly:
 
     python ray_run.py prep                       # labels + 24 kHz audio + gold (turnbench env)
     python ray_run.py encode_mtd [--train N]     # MTD features: oto dev, TB dev, then train (GPU env)
+    python ray_run.py encode_asr [--train N]     # streaming-ASR features (NeMo env; waits for an idle GPU)
     python ray_run.py train RUN CONFIGS.json [--n-train N] [--steps S]   # GPU env
     python ray_run.py score RUN [--variants a,b] [--refractories 0.5] [--recommits ,1.0]  # turnbench env
 
@@ -124,6 +125,28 @@ def cmd_encode_mtd(a):
         print(encode_mtd.encode(items[i:i + 4], a.step, a.batch), flush=True)
 
 
+def cmd_encode_asr(a):
+    """Streaming-ASR features (encode_asr.py): oto dev, TB dev, then train. Run with an
+    interpreter that has NeMo (ray_submit --python); waits for the shared GPU to go idle."""
+    import subprocess
+    import time
+    idle = 0
+    while idle < a.idle_min * 6:  # don't start on top of another job's GPU work
+        q = subprocess.run(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
+                           capture_output=True, text=True).stdout.split()
+        idle = idle + 1 if q and int(q[0]) < 2000 else 0
+        time.sleep(10)
+    import encode_asr
+    split = json.load(open(f'{WORK}/split.json'))['splits']
+    tb = sorted(json.load(open(f'{WORK}/gold/tbdev.json')), key=int)
+    order = ([('oto', c) for c in split['dev']] + [('tbdev', c) for c in tb]
+             + [('oto', c) for c in split['train'][:a.train]])
+    items = [(sp, c) for sp, c in order if os.path.exists(f'{WORK}/audio/{sp}/{c}.npy')
+             and not os.path.exists(f'{WORK}/feats_asr/{sp}/{c}.npy')]
+    print(f'{len(items)} conversations to encode', flush=True)
+    print(encode_asr.encode(items), flush=True)
+
+
 def cmd_train(a):
     gpu_deps()
     import train
@@ -165,6 +188,9 @@ def main():
     e.add_argument('--train', type=int, default=131)
     e.add_argument('--step', type=int, default=2)
     e.add_argument('--batch', type=int, default=48)
+    e = sub.add_parser('encode_asr')
+    e.add_argument('--train', type=int, default=131)
+    e.add_argument('--idle-min', type=float, default=5.0)
     t = sub.add_parser('train')
     t.add_argument('run')
     t.add_argument('configs')

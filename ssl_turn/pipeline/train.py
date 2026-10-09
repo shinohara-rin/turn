@@ -19,7 +19,8 @@ app = modal.App('ssl-turn-train')
 TAPS = (7, 15, 23, 31)  # layout of encode.py features: 4 x 1280 taps, then 768 final
 TAP_DIM, FINAL_DIM = 1280, 768
 LOADED = list(TAPS)  # taps actually kept in VRAM for this run (set by train/infer)
-FEAT_DIR = 'feats'   # 'feats' (Cat) or 'feats_mtd' (MOSS-Transcribe-Diarize, 4096-d, no taps)
+FEAT_DIR = 'feats'   # 'feats' (Cat), 'feats_mtd' (MOSS-Transcribe-Diarize, 4096-d) or 'feats_asr' (streaming ASR, 1024-d)
+NO_TAP_FEATS = {'mtd': ('feats_mtd', 4096), 'asr': ('feats_asr', 1024)}  # config feats -> (dir, dim); no taps
 FUSE_MTD = False     # Cat columns + MTD 4096-d appended (config feats='cat+mtd')
 WARM = 0             # context-only frames before each training crop (encoder-tuning runs: CatTop window)
 CAT_DIR = f'{WORK}/models/cat'
@@ -171,9 +172,9 @@ def infer(run, names, out_run=None, use_dev=True):
         models[n] = build_model(ck['cfg']).to(dev)
         models[n].load_state_dict(ck['state'], strict=not ck['cfg'].get('tune'))  # tuned: trainable params only
     # Restore the feature layout the checkpoints were trained on (as train() sets it).
-    mtd = any(c.get('feats') == 'mtd' for c in configs.values())
+    mtd = next((c['feats'] for c in configs.values() if c.get('feats') in NO_TAP_FEATS), None)
     FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
-    FEAT_DIR = 'feats_mtd' if mtd else 'feats'
+    FEAT_DIR = NO_TAP_FEATS[mtd][0] if mtd else 'feats'
     tb_ids = sorted(f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/tbdev') if not f.endswith('.tmp.npy'))
     need = {t for c in configs.values() for t in (c.get('taps') or [])
             if not c.get('tune') or t < c['tune'].get('first', 16)}
@@ -226,7 +227,7 @@ def build_model(cfg):
 def build_head(cfg):
     setup_path()
     import model as m
-    final_dim = {'mtd': 4096, 'cat+mtd': FINAL_DIM + 4096}.get(cfg.get('feats'), FINAL_DIM)
+    final_dim = {'mtd': 4096, 'asr': 1024, 'cat+mtd': FINAL_DIM + 4096}.get(cfg.get('feats'), FINAL_DIM)
     return m.TurnModel(tap_layers=len(cfg.get('taps') or []), tap_dim=TAP_DIM,
                        final_dim=final_dim if cfg.get('final', True) else 0,
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
@@ -249,7 +250,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     torch.backends.cuda.matmul.allow_tf32 = True
     dev = 'cuda'
     split = json.load(open(f'{WORK}/split.json'))['splits']
-    feat_dir = 'feats_mtd' if any(c.get('feats') == 'mtd' for c in configs.values()) else 'feats'
+    feat_dir = next((NO_TAP_FEATS[c['feats']][0] for c in configs.values() if c.get('feats') in NO_TAP_FEATS), 'feats')
     have = {f[:-4] for f in os.listdir(f'{WORK}/{feat_dir}/oto') if not f.endswith('.tmp.npy')}
     train_ids = [c for c in split['train'] if c in have][:n_train]
     if extra:  # labeled data-scaling ablation: gate-free cross-partition conversations
@@ -258,9 +259,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     setup_path()
     import cat_top
     WARM = cat_top.WINDOW if any(c.get('tune') for c in configs.values()) else 0
-    mtd = any(c.get('feats') == 'mtd' for c in configs.values())
+    mtd = next((c['feats'] for c in configs.values() if c.get('feats') in NO_TAP_FEATS), None)
     FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
-    FEAT_DIR = 'feats_mtd' if mtd else 'feats'
+    FEAT_DIR = NO_TAP_FEATS[mtd][0] if mtd else 'feats'
     have = {f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
     if train_from:  # pin the exact conversation list (e.g. to match another backbone's subset)
         train_ids = [c for c in json.load(open(train_from)) if c in have]
