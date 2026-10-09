@@ -97,7 +97,7 @@ def cmd_prep(a):
     cids = split['dev'] + split['train']
     ready = present_oto(cids)
     print(f'oto: {len(ready)}/{len(cids)} conversations downloaded', flush=True)
-    procs = max(1, (os.cpu_count() or 2) // 2)
+    procs = max(1, min(6, (os.cpu_count() or 2) // 2))  # ~2 GB each; the node is shared
     with Pool(procs) as pool:
         for r in pool.imap_unordered(_oto_item, ready):
             print('oto', r, flush=True)
