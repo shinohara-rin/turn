@@ -72,3 +72,29 @@ Augmentation generalizes to louder playback, TV with music and music alone, but 
 dry talker next to the mic. The model learned an acoustic cue (far-field, band-limited speech is not
 the user), not who the user is. A near talker is acoustically just like the user, so separating them
 needs speaker identity (an enrollment embedding) or spatial cues from a mic array.
+
+### Near-talker attempts (r016, r017): negative
+
+Both runs keep `bg_aug 0.5` but draw the augmentation from `feats_aug_near/oto` (a dry single
+talker at SNR -5..15 dB, `bgmix.encode_aug(style="near")`). r016 `aug2` uses only that; r016 `spk`
+and r017 `ecapa` also condition the head on a per-channel enrollment of the user's voice (FiLM plus
+a frame-vs-enrollment similarity; `model.TurnModel.condition`). `spk` enrolls with the mean Cat
+feature of 20 s of the speaker's active frames, `ecapa` with a SpeechBrain ECAPA speaker embedding
+of the same 20 s (`bgmix.enroll_ecapa`). Full clean TB dev (official dev rule, seeds s1 / s2):
+
+| model | EOT recall | INT recall |
+|---|---|---|
+| r015 bg_aug (far-field only) | 0.942 / 0.935 | 0.974 / 0.977 |
+| r016 aug2 (near aug) | 0.847 / 0.889 | 0.767 / 0.839 |
+| r016 spk (near aug + Cat-mean enrollment) | 0.868 / 0.818 | 0.853 / 0.810 |
+| r017 ecapa (near aug + ECAPA enrollment) | 0.800 / 0.861 | 0.648 / 0.744 |
+
+On the 12-conversation mixtures, user-channel false INT/min at near talker 0 dB drops from ~20
+(r015) to 2.9 / 4.6 (aug2), 2.5 / 2.5 (spk) and 3.5 / 5.9 (ecapa). But every near-aug model loses
+0.05-0.13 EOT and 0.1-0.3 INT recall on clean audio, and they score *better* on far-field mixtures
+than on clean (e.g. ecapa_s1 EOT 0.81 clean vs 0.87 at 0 dB): training on a voice that sounds
+exactly like the user but must be ignored teaches the head to distrust speech evidence in general.
+Neither enrollment fixes that; a real speaker-verification embedding (ECAPA) is no better than the
+Cat mean. Recommendation stays r015. A near talker likely needs either an explicit target-speaker
+front end (personalized VAD / TSE trained on separate data) or a mic-array spatial cue, not more of
+this augmentation.
