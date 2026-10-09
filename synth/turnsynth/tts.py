@@ -49,7 +49,6 @@ class Context:
 
     history: list[Speech] = field(default_factory=list)  # this speaker's earlier utterances, oldest first
     partner: Speech | None = None  # the other speaker's latest utterance
-    words_per_s: float | None = None  # the conversation's typical speaking rate
     emotion: dict[str, float] | None = None  # script-level emotion for this item (IndexTTS2's 8 axes)
 
 
@@ -143,8 +142,8 @@ class IndexTTS:
       continuation intonation); max_text_tokens_per_segment is raised so
       IndexTTS does not split the turn into independently generated pieces.
     - rolling speaker prompt: the speaker prompt is the bank clip (timbre
-      anchor) followed by that speaker's most recent rendered speech, so
-      speaking rate, energy and register carry from turn to turn, and the
+      anchor) followed by the last few seconds of that speaker's rendered
+      speech, so pitch, energy and pace carry from line to line, and the
       s2mel stage continues acoustically from the end of the prompt.
     - emotion: an item's `emotion` vector (written by the script LLM, which
       sees the whole dialogue) drives IndexTTS2's emotion control; without
@@ -159,8 +158,8 @@ class IndexTTS:
     EMOTIONS = EMOTIONS  # IndexTTS2's emotion-vector order
 
     def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
-                 half: bool = True, anchor_s: float = 5.0, prompt_s: float = 14.0, entrain: float = 0.0,
-                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "floor", pass_words: int = 110):
+                 half: bool = True, anchor_s: float = 8.0, history_s: float = 3.0, entrain: float = 0.0,
+                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "floor", pass_words: int = 60):
         import soundfile as sf
 
         from turnsynth.align import Aligner
@@ -184,14 +183,13 @@ class IndexTTS:
         self.pass_split = pass_mode
         self.pass_words = pass_words
         self.bank = load_bank(bank)
-        self.anchor_s, self.prompt_s = anchor_s, prompt_s
+        self.anchor_s, self.history_s = anchor_s, history_s
         self.entrain, self.emo_alpha = entrain, emo_alpha
         self.aligner = Aligner(device="cpu" if device in (None, "cpu") else device)
         self._sf = sf
         self._tmp = Path(tempfile.mkdtemp(prefix="turnsynth-itts-"))
         self._n = itertools.count()
         self._anchors: dict[str, np.ndarray] = {}
-        self._pace: dict[str, float] = {}
 
     def voices(self, gender: str) -> list[str]:
         names = [k for k, v in self.bank.items() if v.get("gender") == gender]
@@ -201,36 +199,17 @@ class IndexTTS:
         context = context if (context is not None and self.whole_turn) else Context()
         kwargs = dict(max_text_tokens_per_segment=600, interval_silence=0, verbose=False)
         if self.version == "2.5":
-            if not context.history:
-                self._pace[voice] = 1.0  # a new dialogue
-            kwargs.update(lang="en", duration_factor=self._pace.get(voice, 1.0) / speed)
+            kwargs.update(lang="en", duration_factor=1.0 / speed)
         if context.emotion:
             kwargs.update(emo_vector=[float(context.emotion.get(k, 0.0)) for k in self.EMOTIONS],
                           emo_alpha=self.emo_alpha)
         elif self.entrain > 0 and context.partner is not None and context.partner.duration > 1.0:
             kwargs.update(emo_audio_prompt=self._write(context.partner.audio), emo_alpha=self.entrain)
         try:
-            return self._synthesize(text, voice, speed, context, kwargs)
+            audio, words = self._infer(text, voice, context, kwargs)
         finally:
             for f in self._tmp.glob("*.wav"):
                 f.unlink()
-
-    def _synthesize(self, text: str, voice: str, speed: float, context: Context, kwargs: dict) -> Speech:
-        audio, words = self._infer(text, voice, context, kwargs)
-        if self.version != "2.5" or not self.whole_turn or not context.words_per_s or len(words) < 4:
-            return Speech(audio, self.sample_rate, words)
-        df = kwargs["duration_factor"] * speed
-        ratio = self._rate(words) / context.words_per_s
-        if len(words) >= 20 and abs(np.log(ratio)) > np.log(1.2):
-            # A long pass (speaker mode) is read at one pace from start to end, so a
-            # pace off by more than 20% is corrected by generating it once more.
-            df = float(np.clip(df * ratio, 0.7, 1.5))
-            kwargs["duration_factor"] = df / speed
-            audio, words = self._infer(text, voice, context, kwargs)
-            ratio = self._rate(words) / context.words_per_s
-        # Hearing its own slower turns in the prompt, the model drifts slower turn
-        # by turn; nudge the next duration toward the conversation's pace.
-        self._pace[voice] = float(np.clip(df * ratio ** 0.5, 0.7, 1.5))
         return Speech(audio, self.sample_rate, words)
 
     def _infer(self, text: str, voice: str, context: Context, kwargs: dict) -> tuple[np.ndarray, list[Word]]:
@@ -245,13 +224,6 @@ class IndexTTS:
         audio = np.asarray(wav, dtype=np.float32).reshape(len(wav), -1).mean(axis=1) / 32768.0
         return audio, self.aligner(audio, sr, text.split())
 
-    @staticmethod
-    def _rate(words: list[Word]) -> float:
-        """Words per second, counting each gap up to 0.3 s so silence between lines is not read as slow speech."""
-        span = sum(w.end - w.start for w in words) + sum(min(max(b.start - a.end, 0.0), 0.3)
-                                                       for a, b in zip(words, words[1:]))
-        return len(words) / max(span, 0.1)
-
     def _anchor(self, voice: str) -> np.ndarray:
         if voice not in self._anchors:
             import torch
@@ -265,24 +237,24 @@ class IndexTTS:
         return self._anchors[voice]
 
     def _prompt(self, voice: str, history: list[Speech]) -> np.ndarray:
-        """Bank clip, then as much of the speaker's latest speech as fits, ending on the latest.
+        """Bank clip, then the last `history_s` seconds of this speaker's own speech, silences squeezed.
 
-        IndexTTS keeps the first 15 s of a prompt, so the budget is enforced here.
+        A short tail carries the speaker's current pitch, energy and pace into
+        the next line at little cost: on 20 lines a 3 s tail kept estimated
+        PESQ at 3.5. Longer tails of generated speech fed the model's own
+        slowdowns and artifacts back into every later line.
         """
         sr = self.sample_rate
-        gap = np.zeros(int(0.15 * sr), np.float32)
-        anchor = self._anchor(voice)
-        budget = int(self.prompt_s * sr) - len(anchor)
+        parts, need = [self._anchor(voice)], int(self.history_s * sr)
         recent: list[np.ndarray] = []
         for sp in reversed(history):
-            if budget <= len(gap) + int(0.3 * sr):
+            if need <= 0:
                 break
-            clip = squeeze_silence(sp.audio, sr)[-(budget - len(gap)):]
+            clip = squeeze_silence(sp.audio, sr)[-need:]
             recent.insert(0, clip)
-            budget -= len(clip) + len(gap)
-        parts = [anchor]
-        for clip in recent:
-            parts += [gap, clip]
+            need -= len(clip)
+        if recent:
+            parts += [np.zeros(int(0.15 * sr), np.float32), *recent]
         return np.concatenate(parts)
 
     def _write(self, audio: np.ndarray) -> str:
