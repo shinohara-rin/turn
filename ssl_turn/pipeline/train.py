@@ -251,7 +251,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if train_from:  # pin the exact conversation list (e.g. to match another backbone's subset)
         train_ids = [c for c in json.load(open(train_from)) if c in have]
     train_ids = [c for c in train_ids if c in have]
-    need = {t for c in configs.values() for t in (c.get('taps') or [])}
+    # Cached columns actually read: a tuned config recomputes its taps >= first from tap (first - 1).
+    need = {t for c in configs.values() for t in (c.get('taps') or [])
+            if not c.get('tune') or t < c['tune'].get('first', 16)}
     need |= {c['tune'].get('first', 16) - 1 for c in configs.values() if c.get('tune')}
     LOADED = [t for t in TAPS if t in need]
     cols = None if mtd else columns(LOADED)
