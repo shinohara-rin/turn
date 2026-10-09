@@ -102,10 +102,13 @@ def cmd_render(args) -> None:
 
 
 def cmd_voices(args) -> None:
-    from turnsynth.voicebank import build_globe
+    from turnsynth.voicebank import build_globe, build_libritts
 
-    bank = build_globe(args.shards, args.out, per_gender=args.per_gender,
-                       accents=args.accents.split(",") if args.accents else None, seed=args.seed)
+    if args.source == "libritts":
+        bank = build_libritts(args.shards, args.out, per_gender=args.per_gender, seed=args.seed)
+    else:
+        bank = build_globe(args.shards, args.out, per_gender=args.per_gender,
+                           accents=args.accents.split(",") if args.accents else None, seed=args.seed)
     genders = [v["gender"] for v in bank.values()]
     print(f"{len(bank)} voices ({genders.count('female')} female, {genders.count('male')} male) -> {args.out}")
 
@@ -157,8 +160,10 @@ def main(argv=None) -> None:
     r.add_argument("--out", required=True)
     r.set_defaults(fn=cmd_render)
 
-    v = sub.add_parser("voices", help="build a voice-prompt bank from GLOBE_V2 parquet shards")
+    v = sub.add_parser("voices", help="build a voice-prompt bank from LibriTTS-R or GLOBE_V2 parquet shards")
     v.add_argument("shards", nargs="+")
+    v.add_argument("--source", default="libritts", choices=["libritts", "globe"],
+                   help="libritts: mythicinfinity/libritts_r shards (clean, default); globe: MushanW/GLOBE_V2 shards")
     v.add_argument("--out", required=True)
     v.add_argument("--per-gender", type=int, default=40)
     v.add_argument("--accents", default="", help="comma-separated substrings of GLOBE accent names to keep")

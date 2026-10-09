@@ -218,3 +218,19 @@ def test_speaker_pass_cuts_items_back_apart():
         assert [w.text for w in p.speech.words][: len(p.speech.words)] == p.item.words[: len(p.speech.words)]
         if not p.cut:
             assert len(p.speech.words) == len(p.item.words)
+
+
+def test_voice_clip_skips_utterances_too_long_to_fit():
+    import io
+
+    import soundfile as sf
+
+    from turnsynth.voicebank import _join
+
+    def utt(seconds):
+        buf = io.BytesIO()
+        sf.write(buf, 0.3 * np.sin(np.arange(int(seconds * 16000)) * 0.05).astype(np.float32), 16000, format="WAV")
+        return {"audio": {"bytes": buf.getvalue()}, "duration": seconds}
+
+    clip, sr = _join([utt(14.0), utt(5.0), utt(3.0)], max_s=10.0)
+    assert 7.5 <= len(clip) / sr <= 10.0

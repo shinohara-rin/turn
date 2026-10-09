@@ -40,13 +40,13 @@ if TTS == "indextts":
             "uv pip install --system --no-sources -e /root/index-tts 'torch==2.8.*' 'torchaudio==2.8.*'"
             " --extra-index-url https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match",
             "hf download IndexTeam/IndexTTS-2.5 --local-dir /root/ckpt/IndexTTS-2.5",
-            "hf download MushanW/GLOBE_V2 --repo-type dataset --local-dir /root/globe"
-            " --include 'data/test-*.parquet'",
+            "hf download mythicinfinity/libritts_r --repo-type dataset --local-dir /root/libritts"
+            " --include 'data/dev.clean/*.parquet' --include 'data/test.clean/*.parquet'",
         )
         .add_local_dir(HERE, **SYNTH)
         .run_commands(
             "uv pip install --system '/root/synth[llm,asr]'",
-            "turnsynth voices /root/globe/data/test-*.parquet --out /root/voices --per-gender 60",
+            "turnsynth voices /root/libritts/data/*/*.parquet --out /root/voices --per-gender 40",
             # Warm the auxiliary model caches (w2v-bert, campplus, BigVGAN, MMS_FA) into the image.
             "python -c \"from turnsynth.tts import IndexTTS; IndexTTS('/root/ckpt/IndexTTS-2.5', '/root/voices', device='cpu')\"",
             WARM_WHISPER,

@@ -189,13 +189,12 @@ def assign_voices(tts: TTS, script: Script, rng: np.random.Generator) -> dict[st
 def synthesize_by_item(tts: TTS, script: Script, voices: dict[str, str], timing: Timing,
                        rng: np.random.Generator) -> dict[int, Speech]:
     """One call per item in script order, so a contextual backend hears the dialogue as it unfolds."""
-    words_per_s = TYPES[script.conversation_type].words_per_min / 60
     speeches: dict[int, Speech] = {}
     history: dict[str, list[Speech]] = {"A": [], "B": []}
     for item in script.items:
         other = "B" if item.speaker == "A" else "A"
         ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
-                      emotion=item.emotion, words_per_s=words_per_s)
+                      emotion=item.emotion)
         speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx)
         history[item.speaker].append(speeches[item.id])
     return speeches
@@ -220,7 +219,6 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
     """
     max_words = max_words or getattr(tts, "pass_words", 110)
     by_floor = getattr(tts, "pass_split", "speaker") == "floor"
-    words_per_s = TYPES[script.conversation_type].words_per_min / 60
     speeches: dict[int, Speech] = {}
     for spk in ("A", "B"):
         blocks: list[list[Item]] = [[]]
@@ -244,13 +242,13 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                 texts.append(text)
                 cuts.append(c)
             sp = tts.synthesize(" ".join(texts), voices[spk],
-                                context=Context(history=list(history), words_per_s=words_per_s))
+                                context=Context(history=list(history)))
             history.append(sp)
             n_words = [len(it.words) for it in block]
             if len(sp.words) != sum(n_words):
                 for it in block:
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
-                                                      Context(history=list(history), words_per_s=words_per_s))
+                                                      Context(history=list(history)))
                 continue
             # Cut points: the middle of the silence between consecutive items.
             bounds, k = [0.0], 0
@@ -265,7 +263,7 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                 span = ws[-1].end - ws[0].start
                 if span < 0.07 * n or span > 1.2 * n + 0.5:
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
-                                                      Context(history=list(history), words_per_s=words_per_s))
+                                                      Context(history=list(history)))
                     continue
                 sr = sp.sample_rate
                 piece = Speech(sp.audio[int(t0 * sr): int(t1 * sr)].copy(), sr,

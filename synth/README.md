@@ -97,21 +97,49 @@ Without context a hold pause falls like a turn end; with it the voice stays
 up and the turn end still falls, which is the cue an EOT model should learn.
 Only 7 hold pauses and 16 turn ends, so read it as direction, not size.
 The first version fed the speaker's own pauses back into the prompt and
-slowed every speaker turn by turn (3.6 down to about 2 words/s); prompts now
-have silences squeezed to 0.15 s, and IndexTTS-2.5's `duration_factor`
-nudges each speaker toward the conversation type's TurnBench rate.
+slowed every speaker turn by turn (3.6 down to about 2 words/s). The prompt
+is now the 8 s bank clip plus at most the last 3 s of the speaker's own
+speech, with silences squeezed to 0.15 s; `duration_factor` is only set
+from a script line's `speed`.
+
+### Output quality (audit, 2026-10-09)
+
+IndexTTS copies the recording quality of its prompt, and anything fed back
+into the prompt compounds line by line. Our calls match the reference
+`infer` parameters and text handling; the quality loss came from three of
+our own choices, measured on the same casual lines with torchaudio SQUIM
+(reference-free PESQ / SI-SDR) and whisper WER:
+
+| setup | PESQ | SI-SDR | WER | words/s |
+|---|---|---|---|---|
+| reference usage, GLOBE prompt | 2.93 | 14.7 dB | | |
+| reference usage, LibriTTS-R prompt | 3.49 | 21.4 dB | | |
+| old per-line rolling prompt with pace controller | 2.54 | | | |
+| clean 8 s prompt + last 3 s of history | 3.51 | 22.4 dB | | |
+| 120-190 word pass, GLOBE prompt | | | 33% | 5.6 |
+| up to 60 word pass, clean prompt | 3.52 | | 6.5% | 3.14 |
+
+1. GLOBE (Common Voice) prompts carry phone-mic noise into every line;
+   the bank now defaults to LibriTTS-R.
+2. The pace controller pushed `duration_factor` toward 0.7 and the
+   compressed speech then went into the next prompt; it is removed.
+3. Passes over ~60 words rush and garble; `floor`/`speaker` passes are
+   capped at 60 words.
+
+Full casual render after the fixes vs the earlier `floor` render: PESQ
+3.46 vs 3.12, SI-SDR 20.0 vs 19.2 dB, 3.1 vs 3.2 words/s, WER 7.2% vs 9.8%
+(argumentative: WER 10.9%).
 
 ### Reading several lines in one pass
 
 Per-line calls still start every line from scratch. `--index-pass` (default `floor`) lets
 IndexTTS read several of a speaker's lines in one call; render aligns the
 pass and cuts it back into lines at the silences between them (a line the
-model garbled is re-synthesized alone, and a long pass more than 20% off
-the target pace is generated once more).
+model garbled is re-synthesized alone).
 
 | casual example | `turn` (one call per line) | `floor` | `speaker` |
 |---|---|---|---|
-| what one call reads | one line | a speaker's lines until the other takes the floor | up to 110 words of a speaker's lines |
+| what one call reads | one line | a speaker's lines until the other takes the floor | up to 60 words of a speaker's lines |
 | turn end: pitch level / slope | -1.5 st / -0.9 | -2.3 st / -1.4 | -0.9 st / +0.2 |
 | scripted hold pause: level / slope | +2.1 st / +0.8 | +1.2 st / +0.2 | +0.8 st / +0.4 |
 | pitch jump into the speaker's next line | 1.2 st | 1.1 st | 1.6 st |
@@ -123,9 +151,10 @@ falling, which removes the cue an EOT model needs; `floor` keeps it while
 joining a speaker's lines within one floor. Per-line emotion vectors are
 ignored inside a multi-line pass.
 
-Voice prompts come from GLOBE_V2 (CC0 Common Voice speakers with gender and
-accent labels): `turnsynth voices` joins a few utterances per speaker into
-a 6-10 s clip. Nothing from TurnBench is used as a voice.
+Voice prompts come from LibriTTS-R (CC BY 4.0, restored studio-quality
+audiobook speech; gender from median F0) by default, or GLOBE_V2 (CC0 Common
+Voice, more accents but noisy) with `--source globe`: `turnsynth voices`
+joins a few utterances per speaker into a 6-10 s clip. Nothing from TurnBench is used as a voice.
 
 ## Results so far
 
@@ -173,8 +202,8 @@ uv venv -p 3.11 itts && source itts/bin/activate
 uv pip install --no-sources -e ./index-tts "torch==2.8.*" "torchaudio==2.8.*" faster-whisper
 uv pip install -e "synth[llm,asr]"
 hf download IndexTeam/IndexTTS-2.5 --local-dir ckpt/IndexTTS-2.5
-hf download MushanW/GLOBE_V2 --repo-type dataset --include "data/test-*.parquet" --local-dir globe
-turnsynth voices globe/data/test-*.parquet --out voices
+hf download mythicinfinity/libritts_r --repo-type dataset --include "data/dev.clean/*.parquet" --local-dir libritts
+turnsynth voices libritts/data/dev.clean/*.parquet --out voices --per-gender 20
 turnsynth render synth/examples/scripts --tts indextts --index-model-dir ckpt/IndexTTS-2.5 --voice-bank voices \
     --asr base.en --wav --out out/indextts
 ```
@@ -207,7 +236,7 @@ landed, word by word, for dense training targets) and `render_report.jsonl`
 | `turnsynth/config.py` | TurnBench conversation types and the timing model |
 | `turnsynth/tts.py` | IndexTTS (contextual), Kokoro and dummy backends with word timings |
 | `turnsynth/align.py` | MMS_FA forced alignment of script words (IndexTTS reports no timings) |
-| `turnsynth/voicebank.py` | voice-prompt bank from GLOBE_V2 |
+| `turnsynth/voicebank.py` | voice-prompt bank from LibriTTS-R or GLOBE_V2 |
 | `turnsynth/render.py` | timeline placement, interruption cuts, mixing |
 | `turnsynth/vad.py`, `annotate.py` | VAD segments, annotators a and c |
 | `turnsynth/judge.py` | ASR + LLM judge (annotator b), lexical fallback |
