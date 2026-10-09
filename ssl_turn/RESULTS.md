@@ -309,7 +309,13 @@ tap 15. The setup:
 - **Dev loss:** floor+future improves slightly, 0.664 → 0.658. Both seeds were still
   improving at the last step.
 - **TB dev:** no consistent change; every difference is within seed noise.
-- **Next:** r014 trains 2000 steps with LoRA lr 2e-4.
+- **r014 (2000 steps, LoRA lr 2e-4, 2 seeds):** dev floor+future peaks at step 500
+  (0.657 / 0.661, same as r013), then overfits steadily (0.684 / 0.696 at step 1000,
+  still rising at 1250). Stopped at step ~1300 to save cost; there is nothing to score
+  beyond r013's level.
+- **Verdict:** with 131 training conversations, adapting the encoder top with LoRA buys at
+  most ~1% dev loss and no TurnBench gain. The frozen encoder is not the bottleneck at this
+  data scale.
 
 ## Cost
 
