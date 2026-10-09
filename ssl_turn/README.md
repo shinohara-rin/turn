@@ -1,5 +1,7 @@
 # Attempt 2: large-SSL causal backbone + stereo turn model
 
+> Continuing this work? Start with [`HANDOFF.md`](HANDOFF.md) (goals, rules, environment, state, next steps).
+
 A second TurnBench attempt, running in parallel with the Ooma-style recreation in
 `training/` (Parakeet 120M + VAP continuation + MLP head). The two attempts share the
 data protocol but are otherwise independent.
