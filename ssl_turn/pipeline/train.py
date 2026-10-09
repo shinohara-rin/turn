@@ -101,15 +101,33 @@ def select_inputs(x, cfg):
     return taps, final
 
 
-def run_net(net, cfg, x, warm=0):
-    """Forward one model on loaded features x [B, T, 2, D]; outputs cover frames [warm, T)."""
+def run_net(net, cfg, x, warm=0, enroll=None):
+    """Forward one model on loaded features x [B, T, 2, D]; outputs cover frames [warm, T).
+    `enroll` [B, 2, D]: per-channel enrollment vectors for speaker-conditioned configs."""
     tune = cfg.get('tune')
     if tune:
         first = tune.get('first', 16)
         i = LOADED.index(first - 1)
         return net(x[..., i * TAP_DIM:(i + 1) * TAP_DIM], warm)
     taps, final = select_inputs(x[:, warm:], cfg)
+    if cfg.get('enroll'):
+        return net(taps, final, enroll=enroll)
     return net(taps, final)
+
+
+ENROLL_FRAMES = 250  # 20 s of the speaker's own active speech
+
+
+def enroll_vector(x, active, frames=ENROLL_FRAMES):
+    """x [T, 2, D] clean features, active [T, 2] bool -> [2, D] float32: mean features over
+    each channel's first `frames` active frames (an enrollment clip of that speaker's voice)."""
+    import torch
+    out = torch.zeros(2, x.shape[-1], dtype=torch.float32, device=x.device)
+    for c in (0, 1):
+        idx = torch.nonzero(active[:, c]).flatten()[:frames]
+        if len(idx):
+            out[c] = x[idx, c].float().mean(0)
+    return out
 
 
 def model_context(cfg):
@@ -123,7 +141,7 @@ def model_context(cfg):
     return ctx
 
 
-def infer_all(models, configs, splits, dev):
+def infer_all(models, configs, splits, dev, enrolls=None):
     """Exact chunked causal inference: each 1000-frame chunk carries enough left context to
     cover the stacked attention windows (layers x window frames). Exports floor posteriors
     (now + projections) and per-speaker p(SILENT) from the act head."""
@@ -137,11 +155,14 @@ def infer_all(models, configs, splits, dev):
         for split, Xs, offs, ids in splits:
             for cid, a, b in zip(ids, offs[:-1], offs[1:]):
                 outs = []
+                e = None
+                if cfg.get('enroll') and enrolls is not None and (split, cid) in enrolls:
+                    e = enrolls[(split, cid)][None].to(Xs.device)
                 with torch.no_grad():
                     for s in range(a, b, 1000):
                         lo = max(a, s - ctx)
                         with torch.autocast('cuda', dtype=torch.bfloat16):
-                            o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None])
+                            o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None], enroll=e)
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items()
                                      if k in ('floor', 'future', 'act', 'fine')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
@@ -230,7 +251,8 @@ def build_head(cfg):
     return m.TurnModel(tap_layers=len(cfg.get('taps') or []), tap_dim=TAP_DIM,
                        final_dim=final_dim if cfg.get('final', True) else 0,
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
-                       window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1))
+                       window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1),
+                       enroll_dim=(len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0)
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
@@ -280,9 +302,39 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if aug_p > 0:  # background-speech augmented copies (bgmix.encode_aug), same frames as X
         assert LOADED == [15, 23, 31] and not mtd, 'feats_aug holds taps 15/23/31 + final only'
         Xa = X.clone()  # frames an augmented file lacks (if any) stay clean
+        near = any(c.get('near_aug') for c in configs.values())
+        n_near = 0
         for cid, a, b in zip(train_ids, off[:-1], off[1:]):
-            xa = np.load(f'/work/feats_aug/oto/{cid}.npy', mmap_mode='r')[:b - a]
+            # near_aug: conversations that have a near-talker copy (bgmix.encode_aug style='near') use it
+            # instead of the far-field playback copy.
+            path = f'/work/feats_aug_near/oto/{cid}.npy'
+            if not (near and os.path.exists(path)):
+                path = f'/work/feats_aug/oto/{cid}.npy'
+            else:
+                n_near += 1
+            xa = np.load(path, mmap_mode='r')[:b - a]
             Xa[a:a + len(xa)] = torch.from_numpy(np.ascontiguousarray(xa)).to(dev)
+        print(f'augmented copies: {n_near} near-talker, {len(train_ids) - n_near} far-field', flush=True)
+    # Speaker enrollment: per conversation and channel, K vectors, each the mean clean features over a
+    # random 20 s of that speaker's active frames (train), or over the first 20 s (dev / inference).
+    E = Ed = None
+    off_t = torch.tensor(off, device=dev)
+    if any(c.get('enroll') for c in configs.values()):
+        K = 8
+        E = torch.zeros(len(train_ids), 2, K, X.shape[-1], device=dev)
+        act = Y['activity'] > 0.5
+        for i, (a, b) in enumerate(zip(off[:-1], off[1:])):
+            for c in (0, 1):
+                idx = torch.nonzero(act[a:b, c]).flatten() + a
+                if len(idx) == 0:
+                    continue
+                for k in range(K):
+                    pick = idx[torch.randperm(len(idx), device=dev)[:ENROLL_FRAMES]]
+                    E[i, c, k] = X[pick, c].float().mean(0)
+        if dev_ids:
+            actd = Yd['activity'] > 0.5
+            Ed = torch.stack([enroll_vector(Xd[a:b], actd[a:b]) for a, b in zip(offd[:-1], offd[1:])])
+            offd_t = torch.tensor(offd, device=dev)
     print(f'loaded {len(train_ids)} train ({len(X)} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
           f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
 
@@ -392,13 +444,19 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         swap = torch.rand(batch, device=dev) < 0.5
         if xb_aug is not None:
             xb_aug = torch.where(swap[:, None, None, None], xb_aug.flip(2), xb_aug)
+        eb = None
+        if E is not None:  # enrollment of each channel's own speaker; 15% of rows get none (zeros)
+            conv = torch.searchsorted(off_t, idx, right=True) - 1
+            eb = E[conv, :, torch.randint(E.shape[2], (batch,), device=dev)]
+            eb = torch.where(swap[:, None, None], eb.flip(1), eb)
+            eb = eb * (torch.rand(batch, 1, 1, device=dev) >= 0.15)
         xb, yb = swap_speakers(xb, yb, swap)
         for name, net in models.items():
             net.train()
             cfg = configs[name]
             x_in = xb_aug if (xb_aug is not None and cfg.get('bg_aug')) else xb
             with torch.autocast('cuda', dtype=torch.bfloat16):
-                out = run_net(net, cfg, regularize(x_in, cfg), WARM)
+                out = run_net(net, cfg, regularize(x_in, cfg), WARM, enroll=eb)
             target = yb
             if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
                 target = dict(target, fine_w=yb['fine_w'] * fine_cw[name][yb['fine']])
@@ -432,8 +490,11 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
                 with torch.no_grad():
                     for i in range(0, len(dstarts), 128):
                         xb, yb = crops(Xd, Yd, dstarts[i:i + 128])
+                        ed = None
+                        if Ed is not None:
+                            ed = Ed[torch.searchsorted(offd_t, dstarts[i:i + 128], right=True) - 1]
                         with torch.autocast('cuda', dtype=torch.bfloat16):
-                            out = run_net(net, configs[name], xb, WARM)
+                            out = run_net(net, configs[name], xb, WARM, enroll=ed)
                         _, parts = m.loss({k: v.float() for k, v in out.items()}, yb)
                         for k, v in parts.items():
                             tot[k] = tot.get(k, 0) + v * len(xb)
@@ -457,12 +518,20 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         print(f'{name}: best step {best[name][2]} (floor+future {best[name][0]:.4f})', flush=True)
     torch.cuda.empty_cache()
 
-    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev) if dev_ids else {}
+    enrolls = None
+    if Ed is not None:
+        enrolls = {('oto', cid): Ed[i] for i, cid in enumerate(dev_ids)}
+    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev, enrolls) if dev_ids else {}
     if dev_ids:
         del Xd
     torch.cuda.empty_cache()
     Xt, offt, _ = load_split('tbdev', tb_ids, dev, cols)
-    probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
+    if E is not None:  # TB dev: enrollment from annotated activity (bgspeech tbdev_activity.npz, 12.5 Hz)
+        with np.load('/work/bg/tbdev_activity.npz') as z:
+            for cid, a, b in zip(tb_ids, offt[:-1], offt[1:]):
+                act_t = torch.from_numpy(z[cid][:b - a]).to(dev)
+                enrolls[('tbdev', cid)] = enroll_vector(Xt[a:a + len(act_t)], act_t)
+    probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev, enrolls))
     os.makedirs(f'/work/runs/{run}', exist_ok=True)
     np.savez_compressed(f'/work/runs/{run}/probs.npz', **probs)
     for name, net in models.items():

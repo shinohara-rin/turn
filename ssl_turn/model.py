@@ -112,7 +112,7 @@ class TurnModel(nn.Module):
     speaker) or C=1 (mixed mono), plus optional source ids [B] (default REAL_STEREO)."""
 
     def __init__(self, tap_layers=4, tap_dim=1280, final_dim=768, dim=256, heads=4, layers=4,
-                 window_s=20.0, dropout=0.1, sources=SOURCES, slots=2):
+                 window_s=20.0, dropout=0.1, sources=SOURCES, slots=2, enroll_dim=0):
         super().__init__()
         window = int(round(window_s / FRAME_S))
         self.context = context_frames(layers, window_s)
@@ -139,6 +139,15 @@ class TurnModel(nn.Module):
         self.slot_act = nn.Linear(dim, slots * len(ACTS))
         self.slot_fine = nn.Linear(dim, slots * len(FINE))
         self.slot_activity = nn.Linear(dim, slots)
+        if enroll_dim:  # speaker conditioning: an enrollment vector per channel (that speaker's voice)
+            self.enroll_proj = nn.Sequential(nn.LayerNorm(enroll_dim), nn.Linear(enroll_dim, dim))
+            self.enroll_film = nn.Linear(dim, 2 * dim)  # FiLM on the frame embeddings, starts as identity
+            nn.init.zeros_(self.enroll_film.weight)
+            nn.init.zeros_(self.enroll_film.bias)
+            self.enroll_q = nn.Linear(dim, dim)
+            self.enroll_k = nn.Linear(dim, dim)
+            self.enroll_sim = nn.Linear(1, dim)  # frame-vs-enrollment cosine similarity as an input feature
+        self.enroll_dim = enroll_dim
 
     def embed(self, taps=None, final=None, source=None):
         x = 0
@@ -154,8 +163,20 @@ class TurnModel(nn.Module):
             source = torch.full((x.shape[0],), REAL_STEREO, dtype=torch.long, device=x.device)
         return x + self.source(source)[:, None, None]
 
-    def forward(self, taps=None, final=None, source=None):
+    def condition(self, x, enroll):
+        """x [B, T, C, D] frame embeddings, enroll [B, C, enroll_dim] (zeros = no enrollment)."""
+        e = self.enroll_proj(enroll)                                        # [B, C, D]
+        gain, bias = self.enroll_film(e).chunk(2, -1)
+        x = x * (1 + gain[:, None]) + bias[:, None]
+        sim = F.cosine_similarity(self.enroll_q(x), self.enroll_k(e)[:, None], dim=-1)  # [B, T, C]
+        return x + self.enroll_sim(sim[..., None])
+
+    def forward(self, taps=None, final=None, source=None, enroll=None):
         x = self.embed(taps, final, source)
+        if self.enroll_dim:
+            if enroll is None:
+                enroll = x.new_zeros(x.shape[0], x.shape[2], self.enroll_dim)
+            x = self.condition(x, enroll.to(x.dtype))
         B, T, C, D = x.shape
         if C not in (1, 2):
             raise ValueError('expected 1 (mono) or 2 (stereo) channels')

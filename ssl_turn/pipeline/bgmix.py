@@ -122,6 +122,13 @@ def encode_infer(plan, masks, run, names, out_run, conds, batch_waves=16):
         models[nme] = tr.build_model(ck['cfg']).cuda()
         models[nme].load_state_dict(ck['state'])
     clean = {c: np.ascontiguousarray(np.load(f'/work/feats/tbdev/{c}.npy', mmap_mode='r')[..., cols]) for c in ids}
+    enrolls = None
+    if any(c.get('enroll') for c in configs.values()):  # enrollment clip: the speaker's clean first 20 s
+        enrolls = {}
+        with np.load('/work/bg/tbdev_activity.npz') as z:
+            for c in ids:
+                act = torch.from_numpy(z[c][:len(clean[c])]).cuda()
+                enrolls[('tbdev', c)] = tr.enroll_vector(torch.from_numpy(clean[c][:len(act)]).cuda(), act)
     probs = {}
     for cond in ['clean'] + list(conds):
         Xs, offs = [], [0]
@@ -135,7 +142,7 @@ def encode_infer(plan, masks, run, names, out_run, conds, batch_waves=16):
             Xs.append(x)
             offs.append(offs[-1] + len(x))
         X = torch.from_numpy(np.concatenate(Xs)).cuda()
-        out = tr.infer_all(models, configs, (('tbdev', X, offs, ids),), 'cuda')
+        out = tr.infer_all(models, configs, (('tbdev', X, offs, ids),), 'cuda', enrolls)
         for k, v in out.items():
             mdl, rest = k.split('/', 1)
             probs[f'{mdl}@{cond}/{rest}'] = v
@@ -151,7 +158,7 @@ AUG_TAPS = [15, 23, 31]  # feats_aug columns: these taps then final (train.colum
 
 
 @app.function(image=image, volumes=VOLUMES, gpu='L4', cpu=8, memory=32768, timeout=7200)
-def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16):
+def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16, style='far'):
     """Training-time background augmentation for otoSpeech conversations.
 
     For each conversation and each channel c, add a far-field 'podcast' made of 2
@@ -160,6 +167,9 @@ def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16):
     /work/feats_aug/oto/<cid>.npy, float16 [T, 2, 4608]: channel c = c with its own
     background (the other channel's clean features stay in /work/feats/oto). Labels
     are unchanged: background talkers never hold the floor.
+
+    style='near' instead adds one dry donor talker (no room, no loudspeaker: someone talking
+    right next to the mic) and writes /work/feats_aug_near/oto.
     """
     import hashlib
     import os
@@ -177,7 +187,8 @@ def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16):
     sr = ce.SAMPLE_RATE
     cols = tr.columns(AUG_TAPS)
     enc = ce.build('/work/models/cat', '/work/models/cat/cat_encoder.safetensors', device='cuda')
-    os.makedirs('/work/feats_aug/oto', exist_ok=True)
+    out_dir = '/work/feats_aug/oto' if style == 'far' else f'/work/feats_aug_{style}/oto'
+    os.makedirs(out_dir, exist_ok=True)
     meta, t0, done = {}, time.time(), 0.0
     for g in range(0, len(cids), batch_waves // 2):
         group = cids[g:g + batch_waves // 2]
@@ -185,14 +196,18 @@ def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16):
         for cid in group:
             a = np.load(f'/work/audio/oto/{cid}.npy').astype(np.float32)
             act = np.load(f'/work/labels/oto/{cid}.npz')['activity']  # [T, 2] on the 80 ms grid
-            rng = np.random.default_rng(int(hashlib.sha256(f'aug:{cid}'.encode()).hexdigest()[:8], 16))
+            tag = 'aug' if style == 'far' else f'aug-{style}'
+            rng = np.random.default_rng(int(hashlib.sha256(f'{tag}:{cid}'.encode()).hexdigest()[:8], 16))
             for c in (0, 1):
                 picks = rng.choice([d for d in donor_ids if d != cid], 2, replace=False)
                 dons = []
                 for d in picks:
                     x = np.load(f'/work/audio/oto/{d}.npy').astype(np.float32)
-                    dons.append(x[:, 0] + x[:, 1])
-                bg = mixing.background_track(dons, len(a), sr, rng)
+                    dons.append(x[:, 0] + x[:, 1] if style == 'far' else x[:, int(rng.integers(2))])
+                if style == 'far':
+                    bg = mixing.background_track(dons, len(a), sr, rng)
+                else:
+                    bg = mixing.concat_offset(dons, len(a), sr, rng)
                 mask = np.repeat(act[:, c] > 0.5, 8)  # 12.5 Hz -> 100 Hz
                 snr = float(rng.uniform(*snr_range))
                 waves.append(((cid, c), mixing.mix(a[:, c], sr, bg, snr, mask)))
@@ -210,36 +225,39 @@ def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16):
             done += len(w) / sr
         for cid, ch in per.items():
             T = min(len(ch[0]), len(ch[1]))
-            np.save(f'/work/feats_aug/oto/{cid}.npy', np.stack([ch[0][:T], ch[1][:T]], 1))
+            np.save(f'{out_dir}/{cid}.npy', np.stack([ch[0][:T], ch[1][:T]], 1))
         work.commit()
         print(f'{g + len(group)}/{len(cids)}: {done / (time.time() - t0):.0f} channel-s/s', flush=True)
     return meta
 
 
 @app.local_entrypoint()
-def aug(groups: int = 3):
-    """modal run bgmix.py::aug  (encode background-augmented train features)"""
-    print(aug_plan.remote(groups))
+def aug(groups: int = 3, style: str = 'far', every: int = 1):
+    """modal run bgmix.py::aug [--style near --every 2]  (encode background-augmented train features)"""
+    print(aug_plan.remote(groups, style, every))
 
 
 @app.function(image=image, volumes=VOLUMES, cpu=2, memory=4096, timeout=10800)
-def aug_plan(groups):
-    """Augment every train conversation; donors are prepped conversations outside train/dev."""
+def aug_plan(groups, style='far', every=1):
+    """Augment every `every`-th train conversation; donors are prepped conversations outside train/dev."""
     import os
     split = json.load(open('/work/split.json'))['splits']
+    root = '/work/feats_aug' if style == 'far' else f'/work/feats_aug_{style}'
     have = sorted(f[:-4] for f in os.listdir('/work/audio/oto') if f.endswith('.npy'))
-    done = {f[:-4] for f in os.listdir('/work/feats_aug/oto')} if os.path.isdir('/work/feats_aug/oto') else set()
-    train = [c for c in split['train'] if c in have and c not in done]
+    done = {f[:-4] for f in os.listdir(f'{root}/oto')} if os.path.isdir(f'{root}/oto') else set()
+    train = [c for c in split['train'] if c in have][::every]
+    train = [c for c in train if c not in done]
     donors = [c for c in have if c not in set(split['train']) | set(split['dev'])]
     chunks = [train[i::groups] for i in range(groups)]
     meta = {}
-    for m in encode_aug.map(chunks, kwargs=dict(donor_ids=donors)):
+    for m in encode_aug.map(chunks, kwargs=dict(donor_ids=donors, style=style,
+                                                 snr_range=(-5.0, 20.0) if style == 'far' else (-5.0, 15.0))):
         meta.update(m)
     work.reload()
-    os.makedirs('/work/feats_aug', exist_ok=True)
-    old = json.load(open('/work/feats_aug/meta.json')) if os.path.exists('/work/feats_aug/meta.json') else {}
+    os.makedirs(root, exist_ok=True)
+    old = json.load(open(f'{root}/meta.json')) if os.path.exists(f'{root}/meta.json') else {}
     old.update(meta)
-    json.dump(old, open('/work/feats_aug/meta.json', 'w'))
+    json.dump(old, open(f'{root}/meta.json', 'w'))
     work.commit()
     return dict(encoded=len(meta), donors=len(donors), train=len(train))
 
