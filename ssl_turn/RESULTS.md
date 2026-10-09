@@ -288,6 +288,29 @@ point) is scored against the same leave-one-out golds.
   yet hear what a human hears with hindsight. Headroom there is real, but it is a
   latency/evidence trade-off, not a labeling one.
 
+## Encoder fine-tuning: LoRA on Cat top layers 16-31 (r013)
+
+`cat_top.py` re-runs Cat's top-stage layers 16-31 and its output projection from cached
+tap 15. The setup:
+- **Exactness:** RoPE is relative, and each crop gets 125 frames (10 s) of context, so
+  outputs match the full encode. At init the re-run matches the cache (cosine 1.000 mean,
+  0.98 min, bf16).
+- **Adaptation:** LoRA rank 16 on every linear map (8.4M trainable params). Frozen weights
+  are stored in bf16. The head is fine1_bal1, lr 1e-4 for LoRA.
+- **Run:** 131 conversations, 1000 steps × 64 crops, 2 seeds trained in lockstep.
+- **Cost:** H100 at 1.38 s/step with 99% utilization, 71 GB peak (tap 15 + final only in
+  VRAM, 12.7 GB). About $1.9 for training and inference.
+
+| TB dev | EOT (`eot_q@r0.5+rc1.0`) FP@R0.92 | EOT FP@R0.94 | INT (`int_nobc@r0.5`) FP@R0.95 | INT FP@R0.97 |
+|---|---|---|---|---|
+| head only (r012, s1 / s2) | 0.054 / 0.061 | 0.127 / 0.132 | 0.014 / 0.018 | 0.048 / 0.044 |
+| LoRA top (r013, s1 / s2) | 0.073 / 0.067 | 0.160 / 0.097 | 0.016 / 0.016 | 0.033 / 0.045 |
+
+- **Dev loss:** floor+future improves slightly, 0.664 → 0.658. Both seeds were still
+  improving at the last step.
+- **TB dev:** no consistent change; every difference is within seed noise.
+- **Next:** r014 trains 2000 steps with LoRA lr 2e-4.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
