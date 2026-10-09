@@ -212,6 +212,8 @@ def aug_plan(groups):
     meta = {}
     for m in encode_aug.map(chunks, kwargs=dict(donor_ids=donors)):
         meta.update(m)
+    work.reload()
+    os.makedirs('/work/feats_aug', exist_ok=True)
     old = json.load(open('/work/feats_aug/meta.json')) if os.path.exists('/work/feats_aug/meta.json') else {}
     old.update(meta)
     json.dump(old, open('/work/feats_aug/meta.json', 'w'))
