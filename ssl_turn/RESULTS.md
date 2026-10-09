@@ -317,6 +317,34 @@ tap 15. The setup:
   most ~1% dev loss and no TurnBench gain. The frozen encoder is not the bottleneck at this
   data scale.
 
+## Confirmation window: trading latency for precision (`score.hold_sweep`)
+
+The score must persist before a fire. The window is causal over frames [t-n, t], 80 ms per
+frame: `min` requires the score to stay high, `mean` averages it. Applied to r012
+fine1_bal1 (2 seeds), scored with the official sweep (0.5 s refractory; EOT re-commit 1 s).
+
+**Full TB dev:**
+- **INT:** a mean window of n=4-5 (320-400 ms) cuts FP@R0.97 from 0.049 / 0.044 to
+  0.030-0.031 in both seeds, for about +100 ms latency.
+- **EOT:** a min window of n=2-3 raises recall at the official FP ≤ 0.10 operating point
+  from 0.930 / 0.926 to about 0.945, with p50 latency about 300-350 ms (vs 331 / 249 ms).
+
+**Robustness checks:**
+
+| | INT gain | EOT op-recall gain |
+|---|---|---|
+| TB dev even half | none (FP@0.97 0.020 → 0.023, 0.016 → 0.018 at n=4) | +0.015-0.02 (both seeds) |
+| TB dev odd half | small, noisy (0.058 → 0.053, 0.081 → 0.062 at n=5) | +0.005-0.015 (both seeds) |
+| oto dev (selection split) | none / worse | none (0.931 → 0.925, 0.933 → 0.932) |
+
+**Verdict:**
+- **INT:** the full-set INT gain does not survive the split; it was sweep granularity, not
+  a real effect. Backchannel false fires last as long as the window, so persistence does
+  not separate them from real bids.
+- **EOT:** a 160 ms hold gives a small, consistent TB dev gain (+~0.015 recall at the
+  operating point; it suppresses isolated score spikes). It does not transfer to oto dev,
+  so adopting it would mean tuning on TB dev. It remains a latency knob, not a default.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`

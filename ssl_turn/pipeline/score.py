@@ -837,3 +837,47 @@ def human_ceiling(model='fine1_bal1_s1', budget='0.1'):
     json.dump(out, open('/work/human_ceiling.json', 'w'), indent=1)
     work.commit()
     return out
+
+
+def _hold(p, n, agg='min'):
+    """Causal confirmation window over frames [t - n, t]: 'min' fires only once the score has
+    stayed high for n extra frames (80 ms each); 'mean' averages them."""
+    import numpy as np
+    if n <= 0:
+        return p
+    pad = np.concatenate([np.repeat(p[:1] * 0, n, 0), p], 0)
+    win = np.lib.stride_tricks.sliding_window_view(pad, n + 1, axis=0)  # [T, 2, n + 1]
+    return win.min(-1) if agg == 'min' else win.mean(-1)
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=8, memory=32768, timeout=3600)
+def hold_sweep(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2'), holds=(0, 1, 2, 3, 4, 5, 6, 8),
+               aggs=('min', 'mean'), split='tbdev', half=None):
+    """Latency-for-precision trade: require the INT (and EOT) score to persist before firing.
+    Reports FP at fixed recall with its p50 latency, and the official operating point.
+    half=0/1 keeps every other conversation (sorted ids), for a split-half check."""
+    from concurrent.futures import ProcessPoolExecutor
+    tasks = {'int': ('int_nobc', None, (0.95, 0.97)), 'eot': ('eot_q', 1.0, (0.90, 0.92))}
+    out, jobs = {}, {}
+    with ProcessPoolExecutor(8) as pool:
+        for model in models:
+            for task, (variant, rc, _) in tasks.items():
+                tracks = load_tracks(run, model, variant, split)
+                if half is not None:
+                    tracks = {c: tracks[c] for i, c in enumerate(sorted(tracks)) if i % 2 == int(half)}
+                gold = load_gold(split, list(tracks))
+                for agg in aggs:
+                    for n in holds:
+                        if n == 0 and agg != aggs[0]:
+                            continue
+                        probs = {c: _hold(p.astype('float32'), n, agg) for c, p in tracks.items()}
+                        jobs[(model, task, agg, n)] = pool.submit(sweep_task, probs, gold, task, None, 12.5, 0.5, rc)
+        for (model, task, agg, n), f in jobs.items():
+            rows = f.result()
+            op = operating_point(rows)
+            out[f'{model}|{task}|{agg}|{n}'] = dict(
+                op=dict(recall=round(op['recall'], 4), fp=round(op['fp'], 4), p50=round(op['p50'])) if op else None,
+                **{f'fp@{t}': _fp_at(rows, t) for t in tasks[task][2]})
+    json.dump(out, open(f'/work/runs/{run}/hold_sweep_{split}{"" if half is None else f"_h{half}"}.json', 'w'), indent=1)
+    work.commit()
+    return out
