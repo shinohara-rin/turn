@@ -23,8 +23,15 @@ if modal.is_local():  # in the container this module lives at /root/bgmix.py
     image = gpu_image.add_local_file(str(Path(__file__).resolve().parents[2] / 'bgspeech' / 'mixing.py'),
                                      '/root/bgspeech/mixing.py')
 app = modal.App('ssl-turn-bgmix')
-CONDITIONS = {'snr10': (10.0, False), 'snr5': (5.0, False), 'snr0': (0.0, False),
-              'gate5': (5.0, True), 'gate0': (0.0, True)}
+# name: (SNR dB, gated to user activity, background style)
+#   far:   another conversation (both speakers) played through a far-field room + loudspeaker
+#   near:  one other talker, dry (no room, no loudspeaker): someone talking right by the mic
+#   tv:    far-field dialogue with a music bed 5 dB below it
+#   music: far-field music only (MUSAN fma, some with vocals)
+CONDITIONS = {'snr10': (10.0, False, 'far'), 'snr5': (5.0, False, 'far'), 'snr0': (0.0, False, 'far'),
+              'gate5': (5.0, True, 'far'), 'gate0': (0.0, True, 'far'), 'snrm5': (-5.0, False, 'far'),
+              'near5': (5.0, False, 'near'), 'near0': (0.0, False, 'near'),
+              'tv5': (5.0, False, 'tv'), 'tv0': (0.0, False, 'tv'), 'music0': (0.0, False, 'music')}
 
 
 @app.function(image=image, volumes=VOLUMES, gpu='L4', cpu=8, memory=32768, timeout=7200)
@@ -52,20 +59,36 @@ def encode_infer(plan, masks, run, names, out_run, conds, batch_waves=16):
     for c in ids:
         for d in plan['items'][c]['donors']:
             if d not in donors:
-                a = np.load(f'/work/audio/tbdev/{d}.npy').astype(np.float32)
-                donors[d] = a[:, 0] + a[:, 1]
+                donors[d] = np.load(f'/work/audio/tbdev/{d}.npy').astype(np.float32)
+    styles = {CONDITIONS[c][2] for c in conds}
+    music = np.load('/work/musan/fma_24k.npy').astype(np.float32) if styles & {'tv', 'music'} else None
+    seed = lambda c, tag: np.random.default_rng(int(hashlib.sha256((c + tag).encode()).hexdigest()[:8], 16))
     waves = []
     for c in ids:
         user = plan['items'][c]['user']
         x = audio[c][:, user - 1]
-        rng = np.random.default_rng(int(hashlib.sha256(c.encode()).hexdigest()[:8], 16))
-        bg = mixing.background_track([donors[d] for d in plan['items'][c]['donors']], len(x), sr, rng)
+        dons = [donors[d] for d in plan['items'][c]['donors']]
+        bgs = {}
+        if 'far' in styles:  # same rng stream as the VAP run and the first ssl_turn run
+            bgs['far'] = mixing.background_track([d[:, 0] + d[:, 1] for d in dons], len(x), sr, seed(c, ''))
+        if 'near' in styles:
+            bgs['near'] = mixing.concat_offset([d[:, 0] for d in dons], len(x), sr, seed(c, ':near'))
+        if 'tv' in styles:
+            rng = seed(c, ':tv')
+            talk = mixing.concat_offset([d[:, 0] + d[:, 1] for d in dons], len(x), sr, rng)
+            bed = mixing.concat_offset([music], len(x), sr, rng)
+            bed *= mixing.active_rms(talk, sr) / (mixing.active_rms(bed, sr) + 1e-9) * 10 ** (-5 / 20)
+            bgs['tv'] = mixing.playback(talk + bed, sr, rng)
+        if 'music' in styles:
+            rng = seed(c, ':music')
+            bgs['music'] = mixing.playback(mixing.concat_offset([music], len(x), sr, rng), sr, rng)
         mask = masks[c]
         for cond in conds:
-            snr, gated = CONDITIONS[cond]
+            snr, gated, style = CONDITIONS[cond]
+            bg = bgs[style]
             b = bg * mixing.smooth_gate(mask, 100.0, len(x), sr) if gated else bg
             waves.append(((c, cond), mixing.mix(x, sr, b, snr, mask, bg_level=bg)))
-    del donors
+    del donors, music
     print(f'mixed {len(waves)} channels in {time.time() - t0:.0f}s', flush=True)
 
     # 2. Cat-encode only the mixed channels.

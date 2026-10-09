@@ -30,7 +30,7 @@ from turnbench.data import DEV_DATASET, conversation, resolve_dataset  # noqa: E
 from turnbench.gold import events_for_conversation  # noqa: E402
 from turnbench.score import TaskScore, merge, score_task  # noqa: E402
 
-CONDS = ("clean", "snr10", "snr5", "snr0", "gate5", "gate0")
+CONDS = ("clean", "snr10", "snr5", "snr0", "gate5", "gate0", "snrm5", "near5", "near0", "tv5", "tv0", "music0")
 FP_BUDGET = 0.10
 
 

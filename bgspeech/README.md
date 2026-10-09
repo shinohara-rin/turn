@@ -47,5 +47,28 @@ ssl_turn on the 12-conversation subset, at clean thresholds (mean of 2 seeds):
 - VAP (official oto checkpoint, 2 s refractory) on the same mixtures: user EOT 0.84 → 0.62 and
   false INT 0.2 → 7/min at 0 dB. It degrades less than the un-augmented ssl_turn head.
 - Caveat: test background uses the same recipe as training (far-field dialogue playback), so this
-  is in-distribution. Not yet tested: a near-field second talker (dry, loud), music or TV mixes,
-  and real recordings.
+  is in-distribution. See the harder conditions below.
+
+### Harder conditions (out of the augmentation's distribution)
+
+`snrm5`: far-field playback at -5 dB. `near5` / `near0`: one other talker, dry (no room, no
+loudspeaker), like someone talking right next to the mic. `tv5` / `tv0`: far-field dialogue with a
+music bed 5 dB under it (MUSAN fma). `music0`: far-field music only. Mean of 2 seeds:
+
+| condition | model | EOT recall / FP | user EOT recall | INT FP (user) | false INT/min (user) |
+|---|---|---|---|---|---|
+| -5 dB far | baseline | 0.80 / 0.33 | 0.66 | 0.44 | 26.6 |
+| -5 dB far | bg_aug | 0.90 / 0.08 | 0.91 | 0.09 | 0.7 |
+| TV 0 dB | baseline | 0.70 / 0.25 | 0.43 | 0.38 | 19.6 |
+| TV 0 dB | bg_aug | 0.93 / 0.07 | 0.92 | 0.15 | 1.1 |
+| music 0 dB | baseline | 0.75 / 0.11 | 0.53 | 0.13 | 2.5 |
+| music 0 dB | bg_aug | 0.91 / 0.10 | 0.90 | 0.09 | 0.2 |
+| near talker 5 dB | baseline | 0.87 / 0.20 | 0.82 | 0.29 | 16.2 |
+| near talker 5 dB | bg_aug | 0.87 / 0.19 | 0.80 | 0.37 | 20.6 |
+| near talker 0 dB | baseline | 0.85 / 0.23 | 0.77 | 0.33 | 18.7 |
+| near talker 0 dB | bg_aug | 0.85 / 0.23 | 0.76 | 0.38 | 20.1 |
+
+Augmentation generalizes to louder playback, TV with music and music alone, but does nothing for a
+dry talker next to the mic. The model learned an acoustic cue (far-field, band-limited speech is not
+the user), not who the user is. A near talker is acoustically just like the user, so separating them
+needs speaker identity (an enrollment embedding) or spatial cues from a mic array.

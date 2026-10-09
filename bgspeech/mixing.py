@@ -121,9 +121,8 @@ def donor_dialogue(row: dict, sr: int) -> np.ndarray:
     return w1[:m] + w2[:m]
 
 
-def background_track(donors: list[np.ndarray], n: int, sr: int, rng: np.random.Generator) -> np.ndarray:
-    """A far-field 'podcast playing' track of length n: donor dialogues (from
-    `donor_dialogue`), concatenated until long enough, from a random offset."""
+def concat_offset(donors: list[np.ndarray], n: int, sr: int, rng: np.random.Generator) -> np.ndarray:
+    """Donor tracks concatenated until long enough, cut to n samples at a random offset."""
     parts, total = [], 0
     for d in donors:
         parts.append(d)
@@ -134,9 +133,18 @@ def background_track(donors: list[np.ndarray], n: int, sr: int, rng: np.random.G
     while len(bg) < n:
         bg = np.concatenate([bg, bg])
     off = int(rng.integers(0, max(1, len(bg) - n)))
-    bg = bg[off: off + n]
-    bg = signal.fftconvolve(bg, far_field_rir(sr, rng))[:n].astype(np.float32)
-    return loudspeaker(bg, sr)
+    return bg[off: off + n]
+
+
+def playback(x: np.ndarray, sr: int, rng: np.random.Generator) -> np.ndarray:
+    """Through a far-field room and a small loudspeaker."""
+    return loudspeaker(signal.fftconvolve(x, far_field_rir(sr, rng))[:len(x)].astype(np.float32), sr)
+
+
+def background_track(donors: list[np.ndarray], n: int, sr: int, rng: np.random.Generator) -> np.ndarray:
+    """A far-field 'podcast playing' track of length n: donor dialogues (from
+    `donor_dialogue`), concatenated until long enough, from a random offset."""
+    return playback(concat_offset(donors, n, sr, rng), sr, rng)
 
 
 def mix(user: np.ndarray, sr: int, bg: np.ndarray, snr_db: float, user_mask: np.ndarray,
