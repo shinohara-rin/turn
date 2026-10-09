@@ -276,6 +276,13 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if dev_ids:
         Xd, offd, labd = load_split('oto', dev_ids, dev, cols)
         Yd = stack_labels(labd, dev)
+    Xa, aug_p = None, max(c.get('bg_aug', 0.0) for c in configs.values())
+    if aug_p > 0:  # background-speech augmented copies (bgmix.encode_aug), same frames as X
+        assert LOADED == [15, 23, 31] and not mtd, 'feats_aug holds taps 15/23/31 + final only'
+        Xa = X.clone()  # frames an augmented file lacks (if any) stay clean
+        for cid, a, b in zip(train_ids, off[:-1], off[1:]):
+            xa = np.load(f'/work/feats_aug/oto/{cid}.npy', mmap_mode='r')[:b - a]
+            Xa[a:a + len(xa)] = torch.from_numpy(np.ascontiguousarray(xa)).to(dev)
     print(f'loaded {len(train_ids)} train ({len(X)} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
           f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
 
@@ -375,12 +382,23 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     for step in range(1, steps + 1):
         idx = starts[torch.randint(len(starts), (batch,), device=dev)]
         xb, yb = crops(X, Y, idx)
-        xb, yb = swap_speakers(xb, yb, torch.rand(batch, device=dev) < 0.5)
+        xb_aug = None
+        if Xa is not None:  # background speech on one random channel of a random subset of crops
+            span = idx[:, None] + torch.arange(-WARM, crop, device=dev)
+            rows = torch.rand(batch, device=dev) < aug_p
+            ch = torch.randint(2, (batch,), device=dev)
+            pick = (rows[:, None] & (torch.arange(2, device=dev)[None] == ch[:, None]))[:, None, :, None]
+            xb_aug = torch.where(pick, Xa[span], xb)
+        swap = torch.rand(batch, device=dev) < 0.5
+        if xb_aug is not None:
+            xb_aug = torch.where(swap[:, None, None, None], xb_aug.flip(2), xb_aug)
+        xb, yb = swap_speakers(xb, yb, swap)
         for name, net in models.items():
             net.train()
             cfg = configs[name]
+            x_in = xb_aug if (xb_aug is not None and cfg.get('bg_aug')) else xb
             with torch.autocast('cuda', dtype=torch.bfloat16):
-                out = run_net(net, cfg, regularize(xb, cfg), WARM)
+                out = run_net(net, cfg, regularize(x_in, cfg), WARM)
             target = yb
             if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
                 target = dict(target, fine_w=yb['fine_w'] * fine_cw[name][yb['fine']])
@@ -429,7 +447,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             print(f'  {(time.time() - tstep) / step * 1000:.0f} ms/step for {len(models)} models; '
                   f'GPU util {np.mean(util) if util else -1:.0f}% mem {max(mm for _, mm in stats) if stats else -1} MiB',
                   flush=True)
-    del X, Y
+    del X, Y, Xa
     if not infer:  # pilot: timing/memory/numerics only
         stop.set()
         return {n: dict(best_step=best[n][2], best=best[n][0], ms_per_step=(time.time() - tstep) / steps * 1000,

@@ -124,6 +124,101 @@ def encode_infer(plan, masks, run, names, out_run, conds, batch_waves=16):
     return len(probs)
 
 
+AUG_TAPS = [15, 23, 31]  # feats_aug columns: these taps then final (train.columns(AUG_TAPS))
+
+
+@app.function(image=image, volumes=VOLUMES, gpu='L4', cpu=8, memory=32768, timeout=7200)
+def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16):
+    """Training-time background augmentation for otoSpeech conversations.
+
+    For each conversation and each channel c, add a far-field 'podcast' made of 2
+    random donor conversations (both speakers) to channel c only, at an SNR drawn
+    from `snr_range` against c's active speech, and Cat-encode that channel. Saves
+    /work/feats_aug/oto/<cid>.npy, float16 [T, 2, 4608]: channel c = c with its own
+    background (the other channel's clean features stay in /work/feats/oto). Labels
+    are unchanged: background talkers never hold the floor.
+    """
+    import hashlib
+    import os
+    import sys
+    import numpy as np
+    import torch
+    setup_path()
+    sys.path.insert(0, '/root/bgspeech')
+    sys.path.insert(0, '/root/ssl_turn/pipeline')
+    import cat_encoder as ce
+    import mixing
+    import train as tr
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    sr = ce.SAMPLE_RATE
+    cols = tr.columns(AUG_TAPS)
+    enc = ce.build('/work/models/cat', '/work/models/cat/cat_encoder.safetensors', device='cuda')
+    os.makedirs('/work/feats_aug/oto', exist_ok=True)
+    meta, t0, done = {}, time.time(), 0.0
+    for g in range(0, len(cids), batch_waves // 2):
+        group = cids[g:g + batch_waves // 2]
+        waves = []
+        for cid in group:
+            a = np.load(f'/work/audio/oto/{cid}.npy').astype(np.float32)
+            act = np.load(f'/work/labels/oto/{cid}.npz')['activity']  # [T, 2] on the 80 ms grid
+            rng = np.random.default_rng(int(hashlib.sha256(f'aug:{cid}'.encode()).hexdigest()[:8], 16))
+            for c in (0, 1):
+                picks = rng.choice([d for d in donor_ids if d != cid], 2, replace=False)
+                dons = []
+                for d in picks:
+                    x = np.load(f'/work/audio/oto/{d}.npy').astype(np.float32)
+                    dons.append(x[:, 0] + x[:, 1])
+                bg = mixing.background_track(dons, len(a), sr, rng)
+                mask = np.repeat(act[:, c] > 0.5, 8)  # 12.5 Hz -> 100 Hz
+                snr = float(rng.uniform(*snr_range))
+                waves.append(((cid, c), mixing.mix(a[:, c], sr, bg, snr, mask)))
+                meta.setdefault(cid, {})[c] = dict(snr=snr, donors=[str(d) for d in picks])
+        n = (max(len(w) for _, w in waves) + ce.HOP - 1) // ce.HOP * ce.HOP
+        x = np.zeros((len(waves), n), np.float32)
+        for i, (_, w) in enumerate(waves):
+            x[i, :len(w)] = w
+        with torch.no_grad():
+            out = enc.stream(torch.from_numpy(x).cuda(), 50, out_device='cpu', out_dtype=torch.float16)
+        f = torch.cat([out['taps'].flatten(2), out['final']], -1).numpy()
+        per = {}
+        for i, ((cid, c), w) in enumerate(waves):
+            per.setdefault(cid, {})[c] = f[i, :len(w) // ce.HOP][:, cols]
+            done += len(w) / sr
+        for cid, ch in per.items():
+            T = min(len(ch[0]), len(ch[1]))
+            np.save(f'/work/feats_aug/oto/{cid}.npy', np.stack([ch[0][:T], ch[1][:T]], 1))
+        work.commit()
+        print(f'{g + len(group)}/{len(cids)}: {done / (time.time() - t0):.0f} channel-s/s', flush=True)
+    return meta
+
+
+@app.local_entrypoint()
+def aug(groups: int = 3):
+    """modal run bgmix.py::aug  (encode background-augmented train features)"""
+    print(aug_plan.remote(groups))
+
+
+@app.function(image=image, volumes=VOLUMES, cpu=2, memory=4096, timeout=10800)
+def aug_plan(groups):
+    """Augment every train conversation; donors are prepped conversations outside train/dev."""
+    import os
+    split = json.load(open('/work/split.json'))['splits']
+    have = sorted(f[:-4] for f in os.listdir('/work/audio/oto') if f.endswith('.npy'))
+    done = {f[:-4] for f in os.listdir('/work/feats_aug/oto')} if os.path.isdir('/work/feats_aug/oto') else set()
+    train = [c for c in split['train'] if c in have and c not in done]
+    donors = [c for c in have if c not in set(split['train']) | set(split['dev'])]
+    chunks = [train[i::groups] for i in range(groups)]
+    meta = {}
+    for m in encode_aug.map(chunks, kwargs=dict(donor_ids=donors)):
+        meta.update(m)
+    old = json.load(open('/work/feats_aug/meta.json')) if os.path.exists('/work/feats_aug/meta.json') else {}
+    old.update(meta)
+    json.dump(old, open('/work/feats_aug/meta.json', 'w'))
+    work.commit()
+    return dict(encoded=len(meta), donors=len(donors), train=len(train))
+
+
 @app.local_entrypoint()
 def main(plan: str, masks: str, run: str = 'r012_fine', models: str = 'fine1_bal1_s1,fine1_bal1_s2',
          out_run: str = 'bg_r012', conds: str = 'snr10,snr5,snr0,gate5,gate0'):
