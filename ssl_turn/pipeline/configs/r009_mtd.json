@@ -1,0 +1,4 @@
+{
+  "small": {"feats": "mtd", "taps": [], "final": true, "dim": 128, "layers": 2, "feat_dropout": 0.2, "time_mask": 2},
+  "mid":   {"feats": "mtd", "taps": [], "final": true, "dim": 192, "layers": 3, "dropout": 0.2, "feat_dropout": 0.1, "time_mask": 2}
+}
