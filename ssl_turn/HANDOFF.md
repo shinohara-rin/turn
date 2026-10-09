@@ -36,8 +36,8 @@ current state, and the open threads. Last updated 2026-10-09.
 
 ## Hard rules
 
-- **Git:** develop on branch `claude/zen-knuth-2ni5ia` and push there. No PR unless the user
-  asks.
+- **Git:** develop on branch `claude/zen-knuth-2ni5ia` and push there. Its open PR is
+  https://github.com/shinohara-rin/turn/pull/3, and pushes update it; don't open another.
   - Commit trailers: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and
     `Claude-Session: https://claude.ai/code/session_011gP2Q44dDcHhM4ZGMrsnAM`.
   - No model IDs in commits.
