@@ -16,7 +16,7 @@ from pathlib import Path
 
 import modal
 
-from common import VOLUMES, gpu_image, setup_path, work
+from common import VOLUMES, _code, gpu_image, setup_path, work
 
 image = gpu_image
 if modal.is_local():  # in the container this module lives at /root/bgmix.py
@@ -123,7 +123,10 @@ def encode_infer(plan, masks, run, names, out_run, conds, batch_waves=16):
         models[nme].load_state_dict(ck['state'])
     clean = {c: np.ascontiguousarray(np.load(f'/work/feats/tbdev/{c}.npy', mmap_mode='r')[..., cols]) for c in ids}
     enrolls = None
-    if any(c.get('enroll') for c in configs.values()):  # enrollment clip: the speaker's clean first 20 s
+    if any(c.get('enroll') == 'ecapa' for c in configs.values()):
+        with np.load('/work/enroll_ecapa/tbdev.npz') as z:
+            enrolls = {('tbdev', c): torch.from_numpy(z[c][:, 0]).cuda() for c in ids}
+    elif any(c.get('enroll') for c in configs.values()):  # enrollment clip: the speaker's clean first 20 s
         enrolls = {}
         with np.load('/work/bg/tbdev_activity.npz') as z:
             for c in ids:
@@ -229,6 +232,80 @@ def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16, style='f
         work.commit()
         print(f'{g + len(group)}/{len(cids)}: {done / (time.time() - t0):.0f} channel-s/s', flush=True)
     return meta
+
+
+ecapa_image = _code(modal.Image.debian_slim(python_version='3.12').pip_install(
+    'torch==2.8.0', 'torchaudio==2.8.0', 'speechbrain==1.0.3', 'numpy', 'scipy', 'huggingface_hub<0.26', 'requests'))
+K_ENROLL = 8
+
+
+@app.function(image=ecapa_image, volumes=VOLUMES, gpu='L4', cpu=8, memory=32768, timeout=3600)
+def enroll_ecapa():
+    """Speaker-verification enrollment vectors (SpeechBrain ECAPA, 192-d) from clean audio.
+
+    For every channel: otoSpeech train conversations get K_ENROLL vectors, each from a random
+    20 s run of that speaker's active frames (labels activity); oto dev and TB dev get one,
+    from the first 20 s of active speech (TB dev: bgspeech annotation activity).
+    Writes /work/enroll_ecapa/{oto,tbdev}.npz: cid -> float32 [2, K, 192].
+    """
+    import os
+    import numpy as np
+    import torch
+    from scipy.signal import resample_poly
+    from speechbrain.inference.speaker import EncoderClassifier
+    enc = EncoderClassifier.from_hparams('speechbrain/spkrec-ecapa-voxceleb', run_opts={'device': 'cuda'},
+                                         savedir='/tmp/ecapa')
+    split = json.load(open('/work/split.json'))['splits']
+    hop16 = 1280  # one 80 ms frame at 16 kHz
+    rng = np.random.default_rng(0)
+
+    def clip(a16, idx):
+        return np.concatenate([a16[i * hop16:(i + 1) * hop16] for i in idx])
+
+    def embed(clips):
+        n = max(len(c) for c in clips)
+        x = torch.zeros(len(clips), n)
+        lens = torch.tensor([len(c) / n for c in clips])
+        for i, c in enumerate(clips):
+            x[i, :len(c)] = torch.from_numpy(c)
+        with torch.no_grad():
+            return enc.encode_batch(x.cuda(), lens.cuda())[:, 0].float().cpu().numpy()
+
+    def one(audio24, act, k):
+        a = audio24.astype(np.float32)
+        out = np.zeros((2, k, 192), np.float32)
+        for c in (0, 1):
+            a16 = resample_poly(a[:, c], 2, 3).astype(np.float32)
+            idx = np.flatnonzero(act[:len(a16) // hop16, c])
+            if len(idx) < 25:
+                continue
+            clips = []
+            for j in range(k):
+                start = 0 if k == 1 else int(rng.integers(0, max(1, len(idx) - 250)))
+                clips.append(clip(a16, idx[start:start + 250]))
+            out[c] = embed(clips)
+        return out
+
+    os.makedirs('/work/enroll_ecapa', exist_ok=True)
+    oto = {}
+    for cid in split['train'] + split['dev']:
+        if not os.path.exists(f'/work/labels/oto/{cid}.npz') or not os.path.exists(f'/work/audio/oto/{cid}.npy'):
+            continue
+        act = np.load(f'/work/labels/oto/{cid}.npz')['activity'] > 0.5
+        oto[cid] = one(np.load(f'/work/audio/oto/{cid}.npy'), act, K_ENROLL if cid in split['train'] else 1)
+    np.savez('/work/enroll_ecapa/oto.npz', **oto)
+    tb = {}
+    with np.load('/work/bg/tbdev_activity.npz') as z:
+        for cid in z.files:
+            tb[cid] = one(np.load(f'/work/audio/tbdev/{cid}.npy'), z[cid], 1)
+    np.savez('/work/enroll_ecapa/tbdev.npz', **tb)
+    work.commit()
+    return dict(oto=len(oto), tbdev=len(tb))
+
+
+@app.local_entrypoint()
+def ecapa():
+    print(enroll_ecapa.remote())
 
 
 @app.local_entrypoint()

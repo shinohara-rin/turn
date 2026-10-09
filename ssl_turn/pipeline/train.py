@@ -252,7 +252,8 @@ def build_head(cfg):
                        final_dim=final_dim if cfg.get('final', True) else 0,
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
                        window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1),
-                       enroll_dim=(len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0)
+                       enroll_dim=(192 if cfg.get('enroll') == 'ecapa' else
+                                   (len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0))
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
@@ -319,7 +320,14 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     # random 20 s of that speaker's active frames (train), or over the first 20 s (dev / inference).
     E = Ed = None
     off_t = torch.tensor(off, device=dev)
-    if any(c.get('enroll') for c in configs.values()):
+    ecapa = any(c.get('enroll') == 'ecapa' for c in configs.values())
+    if ecapa:  # SpeechBrain ECAPA speaker vectors from bgmix.enroll_ecapa (same K / 20 s recipe)
+        with np.load('/work/enroll_ecapa/oto.npz') as z:
+            E = torch.from_numpy(np.stack([z[c] for c in train_ids])).to(dev)
+            if dev_ids:
+                Ed = torch.from_numpy(np.stack([z[c][:, 0] for c in dev_ids])).to(dev)
+                offd_t = torch.tensor(offd, device=dev)
+    elif any(c.get('enroll') for c in configs.values()):
         K = 8
         E = torch.zeros(len(train_ids), 2, K, X.shape[-1], device=dev)
         act = Y['activity'] > 0.5
@@ -526,7 +534,11 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         del Xd
     torch.cuda.empty_cache()
     Xt, offt, _ = load_split('tbdev', tb_ids, dev, cols)
-    if E is not None:  # TB dev: enrollment from annotated activity (bgspeech tbdev_activity.npz, 12.5 Hz)
+    if E is not None and ecapa:
+        with np.load('/work/enroll_ecapa/tbdev.npz') as z:
+            for cid in tb_ids:
+                enrolls[('tbdev', cid)] = torch.from_numpy(z[cid][:, 0]).to(dev)
+    elif E is not None:  # TB dev: enrollment from annotated activity (bgspeech tbdev_activity.npz, 12.5 Hz)
         with np.load('/work/bg/tbdev_activity.npz') as z:
             for cid, a, b in zip(tb_ids, offt[:-1], offt[1:]):
                 act_t = torch.from_numpy(z[cid][:b - a]).to(dev)
