@@ -69,7 +69,7 @@ def encode(items, step=2, batch=96):
         log_spec = torch.clamp(mel_filters.T @ mag, min=1e-10).log10()
         peak = log_spec.max(dim=2, keepdim=True)[0].max(dim=1, keepdim=True)[0]
         return (torch.maximum(log_spec, peak - 8.0) + 4.0) / 4.0
-    t0, done_s = time.time(), 0.0
+    t0, done_s, n_saved = time.time(), 0.0, 0
     for split, cid in items:
         a24 = np.load(f'/work/audio/{split}/{cid}.npy').astype(np.float32)
         chans = [to16k(a24[:, c]) for c in (0, 1)]
@@ -107,9 +107,9 @@ def encode(items, step=2, batch=96):
         util = [u for u, _ in stats[-20:]]
         print(f'{split}/{cid}: {T} frames; {done_s / (time.time() - t0):.1f} channel-s/s; '
               f'GPU {np.mean(util) if util else -1:.0f}%', flush=True)
-        if len(done_items := locals().setdefault('_done', [])) % 5 == 4:
+        n_saved += 1
+        if n_saved % 5 == 0:  # bounded loss on timeout; per-item commits idle the GPU
             work.commit()
-        done_items.append(cid)
     work.commit()
     stop.set()
     util = [u for u, _ in stats]

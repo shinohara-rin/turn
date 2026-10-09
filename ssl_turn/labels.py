@@ -124,27 +124,27 @@ def floor_targets(times, segments, events):
             hard[i] = F['OPEN'] if yielded else holder
     floor = np.eye(len(FLOOR), dtype=np.float32)[hard]
 
-    # Overlap runs without an interruption or attempt: a hand-off or plain co-talk.
-    both = claiming.all(1)
+    # Overlap frames without an interruption or attempt in progress: a hand-off or plain
+    # co-talk. Runs split where a bid starts or ends, so co-talk before a bid is not a contest.
+    calm = claiming.all(1) & ~bidding.any(1)
     i = 0
     while i < T:
-        if not both[i]:
+        if not calm[i]:
             i += 1
             continue
         j = i
-        while j < T and both[j]:
+        while j < T and calm[j]:
             j += 1
-        if not bidding[i:j].any():
-            before = hard[i - 1] if i and hard[i - 1] < 2 else None
-            after = hard[j] if j < T and hard[j] < 2 else None
-            if before is not None and after is not None and before != after:
-                alpha = (np.arange(j - i) + 0.5) / (j - i)  # linear hand-off
-                floor[i:j] = 0
-                floor[i:j, before] = 1 - alpha
-                floor[i:j, after] = alpha
-            elif before is not None or after is not None:
-                keep = before if before is not None else after  # co-talk that took nothing
-                floor[i:j] = np.eye(len(FLOOR), dtype=np.float32)[keep]
+        before = hard[i - 1] if i and hard[i - 1] < 2 else None
+        after = hard[j] if j < T and hard[j] < 2 else None
+        if before is not None and after is not None and before != after:
+            alpha = (np.arange(j - i) + 0.5) / (j - i)  # linear hand-off
+            floor[i:j] = 0
+            floor[i:j, before] = 1 - alpha
+            floor[i:j, after] = alpha
+        elif before is not None or after is not None:
+            keep = before if before is not None else after  # co-talk that took nothing
+            floor[i:j] = np.eye(len(FLOOR), dtype=np.float32)[keep]
         i = j
 
     floor_w = np.ones(T, np.float32)
@@ -226,6 +226,9 @@ def to_slots(targets):
     columns = np.r_[order, 2, 3]  # slot k takes channel order[k]'s HELD column
     out = dict(targets, floor=targets['floor'][..., columns], act=targets['act'][:, order],
                act_w=targets['act_w'][:, order])
+    for k in ('fine', 'fine_w'):  # every speaker-indexed field follows the slot order
+        if k in targets:
+            out[k] = targets[k][:, order]
     if 'future' in targets:
         out['future'] = targets['future'][..., columns]
     out['slot_activity'] = activity(out['act'])

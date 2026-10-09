@@ -61,8 +61,8 @@ class TurnModelContracts(unittest.TestCase):
                 self.assertGreater((a[k][:, cut:] - b[k][:, cut:]).abs().max().item(), 1e-4)
 
     def test_speaker_swap_swaps_floor_holder(self):
-        with torch.no_grad():
-            self.model.channel.zero_()
+        with torch.no_grad():  # trained, unequal channel parameters must not break equivariance
+            self.model.channel.normal_(0, 1.0)
         a = self.model(self.taps, self.final)
         b = self.model(self.taps.flip(2), self.final.flip(2))
         swap = [lb.F['HELD_1'], lb.F['HELD_0'], lb.F['OPEN'], lb.F['CONTESTED']]
@@ -70,6 +70,22 @@ class TurnModelContracts(unittest.TestCase):
         torch.testing.assert_close(a['future'], b['future'][..., swap], rtol=1e-5, atol=1e-5)
         torch.testing.assert_close(a['act'], b['act'].flip(2), rtol=1e-5, atol=1e-5)
         torch.testing.assert_close(a['fine'], b['fine'].flip(2), rtol=1e-5, atol=1e-5)
+
+    def test_chunk_with_context_matches_full_sequence(self):
+        model = m.TurnModel(tap_layers=2, tap_dim=32, final_dim=16, dim=32, heads=4, layers=2,
+                            window_s=0.4, dropout=0.0).eval()  # 5-frame window: context 16 < 50
+        with torch.no_grad():
+            for p in model.parameters():
+                p.add_(0.1 * torch.randn_like(p))
+            full = model(self.taps, self.final)
+            for s in (model.context, 40):
+                lo = s - model.context
+                part = model(self.taps[:, lo:], self.final[:, lo:])
+                for k in ('floor', 'future', 'act', 'fine'):
+                    torch.testing.assert_close(part[k][:, s - lo:], full[k][:, s:], rtol=1e-4, atol=1e-5)
+            short = model(self.taps[:, 40 - model.context // 2:], self.final[:, 40 - model.context // 2:])
+            self.assertGreater((short['floor'][:, model.context // 2:] - full['floor'][:, 40:]).abs().max().item(),
+                               1e-5)  # half the context is not enough: the bound is tight-ish
 
     def test_source_conditioning(self):
         default = self.model(self.taps, self.final)

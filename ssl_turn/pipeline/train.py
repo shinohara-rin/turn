@@ -114,9 +114,10 @@ def run_net(net, cfg, x, warm=0):
 
 def model_context(cfg):
     """Left context (frames) for exact chunked inference: head windows (+ CatTop windows)."""
-    ctx = cfg.get('layers', 4) * int(round(cfg.get('window_s', 20.0) / 0.08))
+    setup_path()
+    import model as m
+    ctx = m.context_frames(cfg.get('layers', 4), cfg.get('window_s', 20.0))
     if cfg.get('tune'):
-        setup_path()
         import cat_top
         ctx += (32 - cfg['tune'].get('first', 16)) * (cat_top.WINDOW - 1)
     return ctx
@@ -155,30 +156,39 @@ def infer_all(models, configs, splits, dev):
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='L4', cpu=4, memory=16384, timeout=3600)
-def infer(run, names, out_run=None):
+def infer(run, names, out_run=None, use_dev=True):
     """Re-run inference from saved checkpoints (no training) and write probs.npz."""
     import os
     import numpy as np
     import torch
     dev = 'cuda'
     split = json.load(open('/work/split.json'))['splits']
-    have = {f[:-4] for f in os.listdir('/work/feats/oto')}
-    dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
     tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
-    global LOADED, FEAT_DIR
+    global LOADED, FEAT_DIR, FUSE_MTD
     models, configs = {}, {}
     for n in names:
         ck = torch.load(f'/work/runs/{run}/{n}.pt', map_location=dev)
         configs[n] = ck['cfg']
         models[n] = build_model(ck['cfg']).to(dev)
         models[n].load_state_dict(ck['state'], strict=not ck['cfg'].get('tune'))  # tuned: trainable params only
+    # Restore the feature layout the checkpoints were trained on (as train() sets it).
     mtd = any(c.get('feats') == 'mtd' for c in configs.values())
+    FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
     FEAT_DIR = 'feats_mtd' if mtd else 'feats'
-    LOADED = [t for t in TAPS if any(t in (c.get('taps') or []) for c in configs.values())]
+    need = {t for c in configs.values() for t in (c.get('taps') or [])
+            if not c.get('tune') or t < c['tune'].get('first', 16)}
+    need |= {c['tune'].get('first', 16) - 1 for c in configs.values() if c.get('tune')}
+    LOADED = [t for t in TAPS if t in need]
     cols = None if mtd else columns(LOADED)
-    Xd, offd, _ = load_split('oto', dev_ids, dev, cols)
-    probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev)
-    del Xd
+    have = {f[:-4] for f in os.listdir(f'/work/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
+    if FUSE_MTD:
+        have &= {f[:-4] for f in os.listdir('/work/feats_mtd/oto') if not f.endswith('.tmp.npy')}
+    dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
+    probs = {}
+    if dev_ids:
+        Xd, offd, _ = load_split('oto', dev_ids, dev, cols)
+        probs = infer_all(models, configs, (('oto', Xd, offd, dev_ids),), dev)
+        del Xd
     Xt, offt, _ = load_split('tbdev', tb_ids, dev, cols)
     probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
     out_run = out_run or run

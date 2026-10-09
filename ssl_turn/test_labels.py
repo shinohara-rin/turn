@@ -69,6 +69,17 @@ class AgreesWithGold(unittest.TestCase):
             mid = np.searchsorted(self.times, (span['start'] + span['end']) / 2)
             self.assertIn(lb.ACTS[self.y['act'][mid, span['speaker'] - 1]], ('BACKCHANNEL', 'NONCONTENT'))
 
+    def test_cotalk_before_a_bid_is_not_contested(self):
+        segs = [(1, 0.0, 3.0, 'Turn'), (2, 1.0, 1.6, 'Turn'), (2, 1.6, 2.4, 'Interruption')]
+        turn = [ConsensusEvent(s, a, b, 'Turn') for s, a, b, l in segs if l in TURN_VIEW]
+        fine = [ConsensusEvent(s, a, b, l) for s, a, b, l in segs]
+        ev = asdict(build_conversation_events(ConsensusViews(turn, [], fine, [])))
+        t = (np.arange(40) + 1) * 0.08
+        f = lb.floor_targets(t, segs, ev)['floor']
+        at = lambda x: lb.FLOOR[f[np.searchsorted(t, x)].argmax()]
+        self.assertEqual(at(1.3), 'HELD_0')      # co-talk before the bid keeps the holder
+        self.assertEqual(at(2.0), 'CONTESTED')   # the bid itself is a contest
+
     def test_handoff_overlap_is_soft_not_contested(self):
         run = (self.times >= 9.6) & (self.times < 10.0)
         f = self.y['floor'][run]
@@ -126,6 +137,14 @@ class Slots(unittest.TestCase):
         np.testing.assert_allclose(s['floor'][3], [0.75, 0.25, 0, 0])
         np.testing.assert_array_equal(s['slot_activity'][3], [1, 1])
         np.testing.assert_array_equal(s['act'][:, 0], y['act'][:, 1])
+
+    def test_fine_labels_follow_slot_order(self):
+        y = dict(floor=np.eye(4, dtype=np.float32)[[2, 1, 1]], floor_w=np.ones(3, np.float32),
+                 act=np.array([[0, 0], [0, 1], [1, 1]]), act_w=np.ones((3, 2), np.float32),
+                 fine=np.array([[0, 0], [0, 5], [7, 5]]), fine_w=np.array([[1, 1], [1, 1], [0, 1]], np.float32))
+        s = lb.to_slots(y)  # channel 1 speaks first -> slot 0
+        np.testing.assert_array_equal(s['fine'], y['fine'][:, ::-1])
+        np.testing.assert_array_equal(s['fine_w'], y['fine_w'][:, ::-1])
 
     def test_diarization_segments_in_arrival_order(self):
         segs = [(1.0, 2.0, 'SPEAKER_04'), (0.2, 0.8, 'SPEAKER_02'), (1.5, 1.9, 'SPEAKER_02')]

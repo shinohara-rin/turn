@@ -150,4 +150,18 @@ current state, and the open threads. Last updated 2026-10-09.
   Compare with FP at fixed recall over ≥2 seeds; check split halves before claiming a gain.
 - **LLM oracle:** any query timed on annotated boundaries leaks gold timing; always include a
   shuffled-answer control. ASR lag (0.3 s) exceeds the audio model's EOT latency (~150 ms).
-- **`train.py::infer`** references an undefined `use_dev`. Fix it before using it.
+- **Review fixes (PR #3, 2026-10-09) change behavior relative to the logged runs (r001–r014).**
+  The logged numbers predate them; retrain or re-infer before comparing new runs to old ones.
+  - Exact chunked inference now uses `model.context_frames` = 2 × layers × (window − 1).
+    Cross-attention doubles the reach. The old context (layers × window) truncated
+    history at 1000-frame chunk boundaries.
+  - Stereo adds one shared channel embedding (the mean of `channel`), so trained models
+    stay speaker-swap equivariant. Old checkpoints still load, but their outputs shift
+    slightly.
+  - `floor_targets` no longer marks co-talk *before* a bid starts as CONTESTED. Label
+    files on the volume were built with the old rule; rerun `prep.oto_item` to rebuild
+    them.
+  - `to_slots` reorders `fine` / `fine_w` too (mono path; not trained yet).
+  - `infer` takes `use_dev` and restores the fused / MTD feature layout from the checkpoints.
+    `encode` saves each conversation as soon as it is done, with bounded RAM.
+    `encode_mtd` commits every 5 items.

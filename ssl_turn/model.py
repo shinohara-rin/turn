@@ -100,6 +100,13 @@ REAL_STEREO, GATED_PODCAST, SEPARATED_PODCAST = 0, 1, 2
 SOURCES = 3
 
 
+def context_frames(layers, window_s):
+    """Left context (frames) after which a TurnModel output equals the full-sequence one.
+    Each layer reaches back window - 1 frames twice: self-attention, then cross-attention to
+    the other channel's self-attended state."""
+    return 2 * layers * (int(round(window_s / FRAME_S)) - 1)
+
+
 class TurnModel(nn.Module):
     """inputs: taps [B, T, C, L, 1280] and/or final [B, T, C, 768], with C=2 (channel =
     speaker) or C=1 (mixed mono), plus optional source ids [B] (default REAL_STEREO)."""
@@ -108,6 +115,7 @@ class TurnModel(nn.Module):
                  window_s=20.0, dropout=0.1, sources=SOURCES, slots=2):
         super().__init__()
         window = int(round(window_s / FRAME_S))
+        self.context = context_frames(layers, window_s)
         self.tap_weights = nn.Parameter(torch.zeros(tap_layers)) if tap_layers else None
         self.tap_proj = nn.Sequential(nn.LayerNorm(tap_dim), nn.Linear(tap_dim, dim)) if tap_layers else None
         self.final_proj = nn.Sequential(nn.LayerNorm(final_dim), nn.Linear(final_dim, dim)) if final_dim else None
@@ -139,7 +147,9 @@ class TurnModel(nn.Module):
             x = x + self.tap_proj((taps * w[:, None]).sum(-2))
         if self.final_proj is not None:
             x = x + self.final_proj(final)
-        x = x + (self.channel if x.shape[2] == 2 else self.mono)  # [B, T, C, dim]
+        # Stereo adds one shared vector to both channels: a per-channel embedding would break
+        # speaker-swap equivariance. (`channel` keeps its [2, dim] shape so checkpoints load.)
+        x = x + (self.channel.mean(0) if x.shape[2] == 2 else self.mono)  # [B, T, C, dim]
         if source is None:
             source = torch.full((x.shape[0],), REAL_STEREO, dtype=torch.long, device=x.device)
         return x + self.source(source)[:, None, None]

@@ -66,8 +66,9 @@ def encode(items, batch_waves=32, chunk_frames=50, dtype='fp32'):
     del ref
     torch.cuda.empty_cache()
 
-    waves = [(item, ch, a[:, ch]) for item, a in loaded for ch in (0, 1)]
-    results = {}
+    waves = [(item, ch, a[:, ch].copy()) for item, a in loaded for ch in (0, 1)]
+    del loaded
+    results, saved = {}, 0
     t0, audio_s = time.time(), 0.0
     for b in range(0, len(waves), batch_waves):
         group = waves[b:b + batch_waves]
@@ -82,13 +83,20 @@ def encode(items, batch_waves=32, chunk_frames=50, dtype='fp32'):
         feats = torch.cat([out['taps'].flatten(2), out['final']], -1).numpy()
         for i, (item, ch, w) in enumerate(group):
             T = len(w) // ce.HOP
-            results.setdefault(item, {})[ch] = feats[i, :T]
+            results.setdefault(item, {})[ch] = feats[i, :T].copy()  # copy: free the batch buffer
             audio_s += len(w) / ce.SAMPLE_RATE
+            if len(results[item]) == 2:  # both channels done: save and release (bounded RAM)
+                chans = results.pop(item)
+                split, cid = item
+                T = min(len(chans[0]), len(chans[1]))
+                os.makedirs(f'/work/feats/{split}', exist_ok=True)
+                np.save(f'/work/feats/{split}/{cid}.npy', np.stack([chans[0][:T], chans[1][:T]], 1))
+                saved += 1
+                if saved % 10 == 0:
+                    work.commit()
+        for j in range(b, b + len(group)):  # release source audio once encoded
+            waves[j] = None
         print(f'batch {b // batch_waves}: {len(group)} waves, {audio_s / (time.time() - t0):.0f} channel-s/s', flush=True)
-    for (split, cid), chans in results.items():
-        T = min(len(chans[0]), len(chans[1]))
-        os.makedirs(f'/work/feats/{split}', exist_ok=True)
-        np.save(f'/work/feats/{split}/{cid}.npy', np.stack([chans[0][:T], chans[1][:T]], 1))
     work.commit()
     stop.set()
     util = [u for u, _ in stats]
