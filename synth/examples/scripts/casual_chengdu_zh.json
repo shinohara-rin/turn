@@ -1,0 +1,35 @@
+{
+ "language": "zh",
+ "conversation_type": "Casual",
+ "scenario": "Xiaoyu and Haoran are flatmates in Shanghai. Haoran has just come back from a weekend trip to Chengdu that did not go to plan; Xiaoyu spent hers struggling with a flat-pack bookshelf. They swap stories and Haoran offers to fix the shelf in exchange for a meal.",
+ "speakers": {
+  "A": {"name": "小雨", "gender": "female", "summary": "Direct and curious.", "speaking_style": "quick, cuts in when excited"},
+  "B": {"name": "浩然", "gender": "male", "summary": "Relaxed storyteller.", "speaking_style": "pauses to recall details, casual Mandarin"}
+ },
+ "turns": [
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "哎， 你 回来 了！ 成都 玩 得 怎么样？", "id": 1},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "别 提 了。 <pause 0.6> 我们 本来 想 去 吃 火锅 嘛， 结果 那 家 店 要 排 三 个 小时 的 队， <pause 0.8> 最后 只 能 随便 找 了 个 地方。", "id": 2},
+  {"speaker": "A", "type": "backchannel", "kind": "reaction", "text": "啊？", "id": 3, "host": 2, "after": "三 个 小时 的 队，"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "三 个 小时？ 那 也 太 夸张 了 吧。", "id": 4},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "对 啊。 然后 第二 天 去 看 熊猫， 那个 <pause 0.7> 早上 六 点 就 得 起床， 因为 去 晚 了 熊猫 都 睡觉 了。", "id": 5},
+  {"speaker": "A", "type": "backchannel", "kind": "continuer", "text": "嗯嗯", "id": 6, "host": 5, "after": "就 得 起床，"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "那 你 看到 了 吗？", "id": 7},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "看到 了， 看到 了。 特别 可爱， 有 一 只 小 的 一直 在 树 上 爬 来 爬 去， 然后 啪 一 下 掉 下来， <pause 0.6> 大家 都 笑 疯 了。 我 到 现在 想 起来 还 想 笑。", "id": 8},
+  {"speaker": "A", "type": "interruption", "floor_taking": true, "stance": "competitive", "text": "等 一下， 你 拍 视频 了 没有？ 快 给 我 看 看！", "id": 9, "host": 8, "after": "啪 一 下 掉 下来，"},
+  {"speaker": "B", "type": "turn", "style": "bounded_response", "text": "拍 了 拍 了， 你 别 急 嘛。 <pause 0.8> 我 找 一下 啊。", "id": 10},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "你 不 知道， 我 这 周末 过 得 可 惨 了。 我 买 了 个 书架， 想 着 自己 装 一下 应该 挺 简单 的， <pause 0.9> 结果 装 了 一 整 天。", "id": 11},
+  {"speaker": "B", "type": "backchannel", "kind": "continuer", "text": "哦", "id": 12, "host": 11, "after": "应该 挺 简单 的，"},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "哈哈， 是 不 是 最后 还 多 出来 几 个 螺丝？", "id": 13},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "你 怎么 知道！ 多 了 六 个。 而且 那个 书架 现在 有点 歪。", "id": 14},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "往 哪边 歪？", "id": 15},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "往 墙 那边。 所以 <pause 0.7> 应该 不 会 倒 吧。", "id": 16},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "这 可 不 好 说。 要不 下 周 我 帮 你 看看？ 我 家 里 工具 挺 全 的， 弄 这个 很 快。", "id": 17},
+  {"speaker": "A", "type": "backchannel", "kind": "reaction", "text": "真的 吗", "id": 18, "host": 17, "after": "我 帮 你 看看？"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "太 好 了！ 那 下 周六 怎么样？", "id": 19},
+  {"speaker": "B", "type": "turn", "style": "bounded_response", "text": "周六 <pause 0.5> 可以。 不过 你 得 请 我 吃饭。", "id": 20},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "没 问题， 不过 火锅 就 算 了， 我 可 不 想 排 三 个 小时。", "id": 21},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "哈哈， 行， 那 就 楼下 那 家 面馆 吧， 便宜 又 好吃。", "id": 22},
+  {"speaker": "A", "type": "backchannel", "kind": "acknowledgement", "text": "好", "id": 23, "host": 22, "after": "面馆 吧，"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "就 这么 定 了。", "id": 24}
+ ]
+}

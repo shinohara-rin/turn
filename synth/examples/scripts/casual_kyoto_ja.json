@@ -1,0 +1,36 @@
+{
+ "language": "ja",
+ "conversation_type": "Casual",
+ "scenario": "Yui and Kenta are old university friends who share a flat in Tokyo. Kenta has just come back from a rainy weekend in Kyoto; Yui spent hers failing to assemble a bookshelf. They compare notes, and Kenta offers to fix the shelf in exchange for lunch.",
+ "speakers": {
+  "A": {"name": "結衣", "gender": "female", "summary": "Lively and curious.", "speaking_style": "quick, frequent aizuchi, jumps in when interested"},
+  "B": {"name": "健太", "gender": "male", "summary": "Easygoing, tells things slowly.", "speaking_style": "pauses to recall details, plain casual Japanese"}
+ },
+ "turns": [
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "あ、 おかえり！ 京都 どう だっ た？", "id": 1},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "いや ー、 それ が さ <pause 0.7> 初日 から ずっと 雨 で さ、 もう 全然 観光 どころ じゃ なく て。", "id": 2},
+  {"speaker": "A", "type": "backchannel", "kind": "reaction", "text": "えー", "id": 3, "host": 2, "after": "雨 で さ、"},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "清水寺 も 行っ た ん だ けど、 傘 さし て 人 だらけ で、 <pause 0.8> 写真 も なんか 全部 ぼやけ て て。", "id": 4},
+  {"speaker": "A", "type": "backchannel", "kind": "continuer", "text": "うんうん", "id": 5, "host": 4, "after": "行っ た ん だ けど、"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "うわ ー、 それ は きつい ね。 で も、 ご飯 は おいしかっ た でしょ？", "id": 6},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "ご飯 は ね、 まあ <pause 0.6> よかっ た。 湯豆腐 食べ た ん だ けど、 あれ は 本当 に うまかっ た な。 寒かっ た から 余計 に しみ た っていう か、 あったかい の が もう 最高 で さ。", "id": 7},
+  {"speaker": "A", "type": "backchannel", "kind": "reaction", "text": "いい なあ", "id": 8, "host": 7, "after": "湯豆腐 食べ た ん だ けど、"},
+  {"speaker": "A", "type": "interruption", "floor_taking": true, "stance": "cooperative", "text": "え、 待っ て、 湯豆腐 って どこ の お店？ 私 も 行き たい！", "id": 9, "host": 7, "after": "本当 に うまかっ た な。"},
+  {"speaker": "B", "type": "turn", "style": "bounded_response", "text": "南禅寺 の 近く の、 えーと <pause 0.9> 名前 忘れ ちゃっ た。 あと で 調べ とく よ。", "id": 10},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "やっ た。 あ、 そう いえ ば、 私 は 週末 ずっと 家 で 本棚 組み立て て た ん だ けど、", "id": 11},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "説明書 が さ、 絵 だけ で、 <pause 0.8> 何 が 何 だ か 全然 わから なく て。", "id": 12},
+  {"speaker": "B", "type": "backchannel", "kind": "acknowledgement", "text": "あー", "id": 13, "host": 12, "after": "説明書 が さ、"},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "あれ ね、 わかる。 ネジ 余る やつ でしょ？", "id": 14},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "そう！ 六 本 も 余っ た の。 で、 なんか ちょっと 傾い てる し。", "id": 15},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "傾い てる って <pause 0.5> どっち に？", "id": 16},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "壁 の 方 に。 だから まあ <pause 0.7> 倒れ ない とは 思う ん だ けど。", "id": 17},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "それ 大丈夫 な の か なあ。 今度 見 て あげ よう か？ 俺 わりと そういう の 得意 だ し、 工具 も 一通り 持っ てる から。", "id": 18},
+  {"speaker": "A", "type": "backchannel", "kind": "reaction", "text": "ほんと？", "id": 19, "host": 18, "after": "見 て あげ よう か？"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "ほんと に？ 助かる！ じゃあ 来週 の 土曜 と か どう？", "id": 20},
+  {"speaker": "B", "type": "turn", "style": "bounded_response", "text": "土曜 は <pause 0.6> 大丈夫。 その 代わり、 お昼 おごっ て ね。", "id": 21},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "いい よ。 湯豆腐 は 無理 だ けど ね。", "id": 22},
+  {"speaker": "B", "type": "turn", "style": "normal", "text": "ははっ、 そりゃ そう だ。 じゃあ、 なんか 適当 に、 近所 の ラーメン 屋 と か で いい よ。", "id": 23},
+  {"speaker": "A", "type": "backchannel", "kind": "acknowledgement", "text": "うん", "id": 24, "host": 23, "after": "適当 に、"},
+  {"speaker": "A", "type": "turn", "style": "normal", "text": "オッケー。 楽しみ に し てる。", "id": 25}
+ ]
+}
