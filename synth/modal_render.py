@@ -70,7 +70,7 @@ app = modal.App("turnsynth-render", image=image)
 
 @app.function(gpu="L4", timeout=4 * 3600, secrets=[modal.Secret.from_name("anthropic", required_keys=[])])
 def render_chunk(scripts: list[tuple[str, str]], id_offset: int, seed: int, judge: str, asr: str,
-                 bleed_db: float | None, entrain: float) -> dict:
+                 bleed_db: float | None, entrain: float, text_emotion: bool = False) -> dict:
     import io
 
     import pyarrow as pa
@@ -85,7 +85,7 @@ def render_chunk(scripts: list[tuple[str, str]], id_offset: int, seed: int, judg
 
     if TTS == "indextts":
         tts = make_tts("indextts", model_dir="/root/ckpt/IndexTTS-2.5", bank="/root/voices", device="cuda",
-                       entrain=entrain)
+                       entrain=entrain, text_emotion=text_emotion)
     else:
         tts = make_tts("kokoro", device="cuda")
     transcriber = Transcriber(asr, device="cuda", compute_type="float16") if asr else None
@@ -125,12 +125,14 @@ def render_chunk(scripts: list[tuple[str, str]], id_offset: int, seed: int, judg
 
 @app.local_entrypoint()
 def main(scripts: str, out: str, chunk: int = 20, judge: str = "llm", asr: str = "small.en",
-         bleed_db: float = 0.0, id_offset: int = 900000, seed: int = 0, entrain: float = 0.0):
+         bleed_db: float = 0.0, id_offset: int = 900000, seed: int = 0, entrain: float = 0.0,
+         text_emotion: bool = False):
     paths = sorted(Path(scripts).glob("*.json"))
     paths = [p for p in paths if p.name != "generation_log.jsonl"]
     items = [(p.name, p.read_text()) for p in paths]
     chunks = [items[i: i + chunk] for i in range(0, len(items), chunk)]
-    args = [(c, id_offset + i * chunk, seed, judge, asr, bleed_db or None, entrain) for i, c in enumerate(chunks)]
+    args = [(c, id_offset + i * chunk, seed, judge, asr, bleed_db or None, entrain, text_emotion)
+            for i, c in enumerate(chunks)]
     out_dir = Path(out)
     (out_dir / "parquet").mkdir(parents=True, exist_ok=True)
     (out_dir / "intent").mkdir(parents=True, exist_ok=True)

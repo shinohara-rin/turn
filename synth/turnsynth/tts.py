@@ -152,8 +152,12 @@ class IndexTTS:
       s2mel stage continues acoustically from the end of the prompt.
     - emotion: an item's `emotion` vector (written by the script LLM, which
       sees the whole dialogue) drives IndexTTS2's emotion control; without
-      one, `entrain` > 0 uses the partner's last utterance as the emotion
-      reference at that strength, otherwise the rolling prompt sets it.
+      one, `text_emotion` has IndexTTS's QwenEmotion model read a vector off
+      the text, `entrain` > 0 uses the partner's last utterance as the
+      emotion reference at that strength, otherwise the rolling prompt (an
+      audiobook reader, so a neutral read) sets it.
+    - pace: `speed` (the item's `speed` times the speaker's `pace`) scales
+      the length IndexTTS-2.5 renders (`duration_factor`).
     Word timings come from forced alignment (align.py). context=False turns
     all of this off (chunk-by-chunk calls from the bank clip), for comparison.
     """
@@ -164,7 +168,8 @@ class IndexTTS:
 
     def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
                  half: bool = True, anchor_s: float = 8.0, history_s: float = 3.0, entrain: float = 0.0,
-                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "floor", pass_words: int = 60):
+                 emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "floor", pass_words: int = 60,
+                 text_emotion: bool = False):
         import soundfile as sf
 
         from turnsynth.align import Aligner
@@ -174,12 +179,12 @@ class IndexTTS:
         if version == "2.5":
             from indextts.infer_v2_5 import IndexTTS2
             self.model = IndexTTS2(cfg_path=f"{model_dir}/config.yaml", model_dir=model_dir, device=device,
-                                   use_bf16=half)
+                                   use_bf16=half, use_qwen_emo=text_emotion)
             self.model.low_vram = False  # it would split turns at 40 characters
         else:
             from indextts.infer_v2 import IndexTTS2
             self.model = IndexTTS2(cfg_path=f"{model_dir}/config.yaml", model_dir=model_dir, device=device,
-                                   use_fp16=half)
+                                   use_fp16=half, use_qwen_emo=text_emotion)
         self.version = version
         # context=False is the MultiTalk-style ablation: chunk by chunk, fixed bank prompt, no emotion.
         self.whole_turn = context
@@ -189,7 +194,7 @@ class IndexTTS:
         self.pass_words = pass_words
         self.bank = load_bank(bank)
         self.anchor_s, self.history_s = anchor_s, history_s
-        self.entrain, self.emo_alpha = entrain, emo_alpha
+        self.entrain, self.emo_alpha, self.text_emotion = entrain, emo_alpha, text_emotion
         self.aligner = Aligner(device="cpu" if device in (None, "cpu") else device)
         self._sf = sf
         self._tmp = Path(tempfile.mkdtemp(prefix="turnsynth-itts-"))
@@ -213,6 +218,9 @@ class IndexTTS:
         if context.emotion:
             kwargs.update(emo_vector=[float(context.emotion.get(k, 0.0)) for k in self.EMOTIONS],
                           emo_alpha=self.emo_alpha)
+        elif self.text_emotion and self.whole_turn:
+            # IndexTTS's QwenEmotion reads an emotion vector off the text itself.
+            kwargs.update(use_emo_text=True, emo_text=spoken(text.split(), language), emo_alpha=self.emo_alpha)
         elif self.entrain > 0 and context.partner is not None and context.partner.duration > 1.0:
             kwargs.update(emo_audio_prompt=self._write(context.partner.audio), emo_alpha=self.entrain)
         try:

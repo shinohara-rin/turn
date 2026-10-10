@@ -22,7 +22,7 @@ import numpy as np
 
 from turnsynth.config import TYPES, ConversationType
 from turnsynth.llm import LLM, extract_json
-from turnsynth.script import Script, ScriptError, check, parse
+from turnsynth.script import SPEED_RANGE, Script, ScriptError, check, parse
 
 TOPIC_SEEDS = {
     "Argumentative": ["whether remote work is better than office work", "if tipping culture should be abolished",
@@ -48,7 +48,7 @@ Starting topic: {topic}. Topics may drift naturally.{setting}
 Return a ```json block with:
 {{"scenario": "<4-6 sentences: setting, relationship, what is at stake, how the talk will develop>",
   "speakers": {{
-    "A": {{"name": "...", "gender": "female|male", "summary": "...", "background": "...", "personality": "...", "speaking_style": "<pace, verbal habits, how often they backchannel or interrupt>"}},
+    "A": {{"name": "...", "gender": "female|male", "summary": "...", "background": "...", "personality": "...", "speaking_style": "<pace, verbal habits, how often they backchannel or interrupt>", "pace": <usual speaking rate, 0.85 (slow, deliberate) to 1.2 (fast talker), 1.0 typical>}},
     "B": {{ same fields }}
   }}}}
 Every person named in the scenario must be A or B."""
@@ -58,20 +58,23 @@ DIALOGUE_SYSTEM = """You write spoken two-person dialogue scripts that will be r
 Output format: a ```json block {"turns": [item, ...]} where each item is one of
 
   {"id": int, "speaker": "A"|"B", "type": "turn", "style": "normal"|"bounded_response"|"strong_floor_hold"|"filler", "text": str}
-  {"id": int, "speaker": "A"|"B", "type": "backchannel", "kind": "acknowledgement"|"continuer"|"reaction", "text": str, "host": int, "after_word": int}
-  {"id": int, "speaker": "A"|"B", "type": "interruption", "floor_taking": bool, "stance": "competitive"|"cooperative", "text": str, "host": int, "after_word": int}
+  {"id": int, "speaker": "A"|"B", "type": "backchannel", "kind": "acknowledgement"|"continuer"|"reaction", "text": str, "host": int, "after": str}
+  {"id": int, "speaker": "A"|"B", "type": "interruption", "floor_taking": bool, "stance": "competitive"|"cooperative", "text": str, "host": int, "after": str}
 
 Rules:
 - ids increase by 1 from 1. Items are in temporal order of onset.
 - turn: one stretch of floor-holding speech. Consecutive turns by the same speaker mean they paused and resumed with no handover.
 - Inside a turn, write <pause X> (X in seconds, 0.3-2.0) where the speaker pauses but keeps the floor. Use them often, as people do: mid-sentence while thinking ("I think we should <pause 0.8> probably leave early"), after a filler ("so, um <pause 0.6> where was I"), and sometimes after a complete sentence before adding more ("That's the plan. <pause 0.9> Unless it rains."). These within-turn pauses are the hard cases, so roughly one turn in three should have at least one.
-- backchannel: a 1-3 word listener response ("mhm", "yeah", "right", "oh wow") that does NOT take the floor. host is the id of the other speaker's turn it lands in; after_word is how many words of the host have been spoken when it starts (1 <= after_word < host word count). Place them at natural phrase boundaries inside long host turns.
-- interruption with floor_taking=true: the listener barges in mid-turn and takes the floor. host must be the floor item right before it. Write the host's full intended sentence, with at least 8 more words after after_word; it will be cut off automatically a second or two after the interruption starts, so those words are only partly heard. The interruption itself is at least 5 words, so the interrupter is still talking after the host gives up. The next items should follow on from the interruption.
+- backchannel: a 1-3 word listener response ("mhm", "yeah", "right", "oh wow") that does NOT take the floor. host is the id of the other speaker's turn it lands in; after copies, exactly, the 2-5 host words spoken right before it starts (they must appear verbatim in the host text and not be its last words). Place backchannels at the end of a phrase or clause inside long host turns, after what they respond to has been said: "Oh no" goes after the bad news, not before it.
+- Timing is about what the listener has heard: anything a backchannel or interruption reacts to, refers to or answers must come before its after quote. The renderer adds the listener's reaction time on top.
+- interruption with floor_taking=true: the listener barges in mid-turn and takes the floor. host must be the floor item right before it. Write the host's full intended sentence, with at least 8 more words after the after quote; it will be cut off automatically a second or two after the interruption starts, so those words are only partly heard. The interruption itself is at least 5 words, so the interrupter is still talking after the host gives up. The next items should follow on from the interruption.
 - interruption with floor_taking=false: the listener tries to come in (or makes a short supportive remark longer than a backchannel), but the host keeps talking; it is a listener overlay like a backchannel.
 - style: bounded_response = a short complete answer; filler = a turn that is only a filled pause; strong_floor_hold = the speaker pushes on to keep the floor.
 - Turn lengths: about 60% short (1-15 words), 30% medium (15-40), 10% long (40-90); no two long turns in a row.
 - Punctuate for the voice: the TTS reads each item in one go, so a comma or "..." before a <pause X> where the thought continues keeps the voice up, and a full stop or "?" ends it. Questions get "?".
-- Optional on any item: "emotion": {name: weight} with names from happy, angry, sad, afraid, disgusted, melancholic, surprised, calm and weights summing to at most 0.8, for how the line should sound given what was just said (a sharp "angry": 0.4 retort, a "surprised": 0.5 "oh wow"). Leave it out for neutral lines; use it where the delivery matters, and keep each speaker consistent from line to line.
+- Delivery: the TTS cannot tell from the words alone how a line is said, so tell it. Every item may carry
+  "emotion": {name: weight}, names from happy, angry, sad, afraid, disgusted, melancholic, surprised, calm, weights summing to 0.3-0.9: how the line sounds given what was just said ({"happy": 0.5} for an amused story, {"angry": 0.4, "disgusted": 0.2} for a sharp retort, {"surprised": 0.6} for "oh wow", {"calm": 0.5} for a plain relaxed line). People in conversation are rarely flat: give most items one, follow the mood as it moves, and keep a speaker's mood steady across consecutive lines unless something changes it.
+  "speed": a number, the line's speaking rate relative to the speaker's usual pace (1.0 = usual; 0.75-0.9 slow, 1.1-1.3 fast). Real talk is not evenly paced: rush through excited asides, asides you want over with, lists and familiar phrases; slow down for careful explanations, hesitation, reluctant admissions, emphasis and sad news. Vary it on about half the items.
 - Text is spoken English exactly as it should be pronounced: disfluencies ("uh", "um", "I mean"), contractions and self-repairs are welcome. No stage directions, brackets, parentheses, asterisks, emoji or speaker names in the text.
 - Never break character or mention being an AI."""
 
@@ -90,7 +93,7 @@ LANGUAGE_RULES = {
     "ja": """
 
 Language: the dialogue is spoken Japanese. These rules replace the English-specific ones above:
-- Write in ordinary Japanese script (kanji and kana) and put one space between words, splitting off particles and auxiliaries, because after_word and the turn-length targets count these words: "昨日 さ、 駅 前 の カフェ に 行っ た ん だ けど <pause 0.7> もう 閉まっ て て。". Punctuation attaches to the word before it, with no space; use 、 。 ？ ！ and … (never ASCII , . ? !).
+- Write in ordinary Japanese script (kanji and kana) and put one space between words, splitting off particles and auxiliaries, because the turn-length targets count these words and after quotes must match them: "昨日 さ、 駅 前 の カフェ に 行っ た ん だ けど <pause 0.7> もう 閉まっ て て。". Punctuation attaches to the word before it, with no space; use 、 。 ？ ！ and … (never ASCII , . ? !).
 - Register follows the relationship in the design: plain form between friends and family, です/ます where it would be used. Use natural spoken forms: contractions (てる, ちゃう, じゃん), sentence-final particles (ね, よ, よね, な), fillers (えーと, あの, まあ, なんか, その), self-repairs.
 - Aizuchi are far more frequent than English backchannels: うん, うんうん, はい, ええ, そう, そうそう, へえ, なるほど, ほんと？, まじで, たしかに, そっか. Place them at phrase boundaries inside the host turn (after a bunsetsu ending in particles like ね, さ, けど, て, から), not only at sentence ends; several in one long host turn is normal.
 - A turn ending in けど, から, し, て or a trailing … keeps the floor open; mark a pause there with <pause X> when the speaker goes on. A completed sentence ending in です, ます, よ, ね or ？ usually yields.
@@ -98,7 +101,7 @@ Language: the dialogue is spoken Japanese. These rules replace the English-speci
     "zh": """
 
 Language: the dialogue is spoken Mandarin Chinese (Simplified characters). These rules replace the English-specific ones above:
-- Put one space between words, because after_word and the turn-length targets count these words: "我 昨天 去 那个 咖啡馆， <pause 0.7> 结果 它 关门 了。". Punctuation attaches to the word before it, with no space; use ， 。 ？ ！ and …… (never ASCII , . ? !).
+- Put one space between words, because the turn-length targets count these words and after quotes must match them: "我 昨天 去 那个 咖啡馆， <pause 0.7> 结果 它 关门 了。". Punctuation attaches to the word before it, with no space; use ， 。 ？ ！ and …… (never ASCII , . ? !).
 - Use natural spoken forms: sentence-final particles (吧, 呢, 啊, 嘛, 了), fillers (那个, 就是, 然后, 嗯, 呃), repetition and self-repairs.
 - Backchannels: 嗯, 嗯嗯, 对, 对对对, 是, 是吗, 哦, 啊, 真的吗, 好, 没错. They are somewhat less frequent than in English; place them at phrase boundaries inside the host turn.
 - Write numbers as Chinese words when they would be read that way (三点半, 两百块).""",
@@ -136,6 +139,7 @@ def generate_script(llm: LLM, conversation_type: str, *, topic: str | None = Non
             minutes=minutes, **counts))
         try:
             obj = extract_json(reply)
+            _clamp_delivery(design["speakers"], obj["turns"])
             obj = {"language": language, "conversation_type": ctype.name, "scenario": design.get("scenario", ""),
                    "speakers": design["speakers"], "turns": obj["turns"],
                    "meta": {"topic": topic, "seed": seed, "attempt": attempt, "targets": counts}}
@@ -148,3 +152,21 @@ def generate_script(llm: LLM, conversation_type: str, *, topic: str | None = Non
         if not reasons:
             return script, log
     return None, log
+
+
+def _clamp_delivery(speakers: dict, turns: list) -> None:
+    """Pull an LLM's out-of-range pace or speed numbers into range, rather than reject the script for them."""
+    lo, hi = SPEED_RANGE
+
+    def clamp(x):
+        try:
+            return min(hi, max(lo, float(x)))
+        except (TypeError, ValueError):
+            return None
+
+    for info in speakers.values():
+        if isinstance(info, dict) and "pace" in info:
+            info["pace"] = clamp(info["pace"]) or 1.0
+    for t in turns:
+        if isinstance(t, dict) and "speed" in t:
+            t["speed"] = clamp(t["speed"])

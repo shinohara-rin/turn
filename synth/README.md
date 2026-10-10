@@ -72,7 +72,8 @@ IndexTTS backend (`--tts indextts`, IndexTTS-2.5 by default, IndexTTS2 with
 |---|---|---|
 | whole turns | one call per item; `<pause X>` becomes a comma, then the pause is cut back in at the forced-aligned word boundary at its sampled length; IndexTTS's 120-token segment split is turned off | a hold pause keeps continuation intonation instead of turn-final falling pitch, which is exactly the EOT hard negative TurnBench scores |
 | rolling speaker prompt | the prompt is the speaker's bank clip (timbre anchor, 5 s) followed by their most recent rendered speech, up to 14 s; items are synthesized in script order | rate, energy and register carry from turn to turn, and IndexTTS's mel stage continues from the end of the prompt, i.e. from what this speaker just said |
-| script emotion | optional per-item `"emotion": {"surprised": 0.5}` written by the script LLM, which sees the whole dialogue; mapped onto IndexTTS2's 8 emotion axes | delivery follows what was just said (a sharp retort, a surprised "oh wow") |
+| script delivery | per-item `"emotion": {"surprised": 0.5}` (IndexTTS2's 8 emotion axes) and `"speed": 1.2` (rate relative to the speaker's `"pace"`, set per speaker in the design), written by the script LLM, which sees the whole dialogue; speed becomes IndexTTS-2.5's `duration_factor` | delivery follows what was just said (a sharp retort, a surprised "oh wow"), and pace varies line to line instead of being guessed from the words |
+| text emotion (opt-in) | `--text-emotion`: lines without a script emotion get one from IndexTTS's QwenEmotion text classifier | some emotion even for scripts written without delivery |
 | entrainment (opt-in) | `--entrain 0.3`: lines without a script emotion use the partner's last line as emotion reference at that strength | listeners match the energy of who they answer |
 
 What it cannot do: IndexTTS conditions on audio and an emotion vector, not
@@ -139,6 +140,23 @@ Full casual render after the quality fixes vs the earlier `floor` render: PESQ
 3.46 vs 3.12, SI-SDR 20.0 vs 19.2 dB, 3.1 vs 3.2 words/s, WER 7.2% vs 9.8%
 (argumentative: WER 10.9%).
 
+Delivery A/B (casual example, same voices and seed, IndexTTS-2.5 floor
+passes on a Modal L4, whisper `small.en`; per speaker A / B, 12-13 lines each):
+
+| | none (audiobook prompt sets it) | script emotion + speed | `--text-emotion` | script speed + `--text-emotion` |
+|---|---|---|---|---|
+| line-to-line pitch spread (SD of line median F0) | 0.9 / 0.9 st | 2.2 / 2.6 st | 2.6 / 4.3 st | 2.6 / 4.9 st |
+| pitch range within a line (p90-p10) | 7.2 / 6.8 st | 9.0 / 8.5 st | 10.9 / 10.8 st | 10.6 / 10.9 st |
+| speaking rate, median (A pace 1.1, B 0.92) | 3.1 / 3.3 words/s | 4.0 / 3.0 | 3.4 / 3.6 | 4.0 / 3.5 |
+| rate variation across lines (CV) | 0.16 / 0.14 | 0.19 / 0.22 | 0.18 / 0.22 | 0.12 / 0.19 |
+| estimated PESQ (SQUIM) | 3.43 | 3.44 | 3.55 | 3.47 |
+| ASR WER | 7.4% | 7.5% | 6.1% | 10.3% |
+
+Any explicit emotion vector moves the read away from the prompt's flat
+audiobook delivery; QwenEmotion's vectors (mostly "calm" with some happy or
+surprised) move pitch more than the hand-written ones, at no quality cost.
+One conversation, so this is direction, not size; listen before choosing.
+
 ### Reading several lines in one pass
 
 Per-line calls still start every line from scratch. `--index-pass` (default `floor`) lets
@@ -157,13 +175,28 @@ model garbled is re-synthesized alone).
 
 `speaker` turns real turn ends into mid-reading sentence ends, so they stop
 falling, which removes the cue an EOT model needs; `floor` keeps it while
-joining a speaker's lines within one floor. Per-line emotion vectors are
-ignored inside a multi-line pass.
+joining a speaker's lines within one floor. IndexTTS takes one emotion and
+one rate per call, so a pass also ends where a line's speed differs from
+the pass so far by more than 0.1 or its emotion by more than 0.3 (L1); the
+pass is read with its lines' mean emotion and word-weighted mean speed.
 
 Voice prompts come from LibriTTS-R (CC BY 4.0, restored studio-quality
 audiobook speech; gender from median F0) by default, or GLOBE_V2 (CC0 Common
 Voice, more accents but noisy) with `--source globe`: `turnsynth voices`
 joins a few utterances per speaker into a 6-10 s clip. Nothing from TurnBench is used as a voice.
+
+### When overlays start
+
+A backchannel or interruption names the host words it follows by quoting
+them (`"after": "it's basically a swamp."`); parse resolves the quote to a
+word count. LLMs miscount words but copy text reliably, and hand-counted
+anchors had put an "Oh no." before the bad news. The prompt asks that
+anything an overlay reacts to come before the quote. The renderer then adds
+a listener's reaction time after the anchor word's aligned end: 100-350 ms
+for backchannels, which also move to the next phrase end (punctuation or a
+150 ms gap) within four words, and a lognormal around 300 ms (120-800 ms)
+for interruptions. A floor-taking interruption's host trails off at its
+own next pause after the minimum yield time, not mid-word.
 
 ## Japanese and Chinese
 
