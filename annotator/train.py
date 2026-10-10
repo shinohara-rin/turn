@@ -2,9 +2,13 @@
 
 Data layout (see README): <dir>/<cid>.npz with `silero_u8_32ms` [N, 2] (Silero speech
 probability x 255 per channel, 32 ms) and <dir>/<cid>.gold.json with TurnBench-style events.
+With --feats, <featdir>/<cid>.npy holds encoder frames from content.py ([T, 2, 1024] for a
+stereo model, [T, 1, 1024] for a mono one); they are pooled around each candidate, reduced by
+PCA (fit on all candidates, unsupervised) and appended to the timing features.
 
     python -m annotator.train --data tbdev=/path/tbdev oto=/path/oto --out model.joblib
-    python -m annotator.train --data tbdev=... oto=... --eval   # leave-one-dataset-out + 2-fold
+    python -m annotator.train --data tbdev=... oto=... --eval   # 2-fold per set + cross-set
+    python -m annotator.train --data ... --feats tbdev=/feats/tbdev oto=/feats/oto --out m.joblib
 """
 from __future__ import annotations
 
@@ -18,13 +22,15 @@ import numpy as np
 from . import features as F
 
 
-def load_dir(path):
+def load_dir(path, feats=None):
     convs = {}
     for f in sorted(glob.glob(os.path.join(path, '*.npz'))):
         cid = os.path.basename(f)[:-4]
         p = np.load(f)['silero_u8_32ms'] / 255.0
         convs[cid] = dict(activity=F.smooth(F.resample_probs(p, 0.032)),
                           gold=json.load(open(os.path.join(path, f'{cid}.gold.json'))))
+        if feats:
+            convs[cid]['feats'] = os.path.join(feats, f'{cid}.npy')
     return convs
 
 
@@ -36,6 +42,41 @@ def build(convs, task):
         X.append(x)
         y += [F.label(c['gold'], task, s, t) for s, t, _ in r]
     return rows, np.concatenate(X), np.array(y)
+
+
+def content_table(convs, rows):
+    """Pooled encoder vectors for rows (cid, speaker, time_s), reading each conversation's frames once."""
+    from . import content as C
+    by, Z = {}, None
+    for i, r in enumerate(rows):
+        by.setdefault(r[0], []).append(i)
+    for cid, idx in by.items():
+        z = C.table(np.load(convs[cid]['feats'], mmap_mode='r'), [rows[i][1:] for i in idx])
+        if Z is None:
+            Z = np.zeros((len(rows), z.shape[1]), np.float32)
+        Z[idx] = z
+    return Z
+
+
+def design(convs, task, n_pca=0):
+    """rows, X, y for all candidates; with n_pca, X gets PCA-reduced content columns too."""
+    rows, X, y = build(convs, task)
+    pca = None
+    if n_pca:
+        from sklearn.decomposition import PCA
+        Z = content_table(convs, rows)
+        pca = PCA(n_pca, random_state=0, svd_solver='randomized').fit(Z)
+        X = np.concatenate([X, pca.transform(Z)], 1)
+    return rows, X, y, pca
+
+
+def cross_fit(rows, X, y):
+    """Scores from 2-fold cross-fitting by conversation."""
+    cids = sorted({r[0] for r in rows}); half = set(cids[0::2]); sc = np.zeros(len(y))
+    for k in (0, 1):
+        tr = np.array([(r[0] in half) == (k == 0) for r in rows])
+        sc[~tr] = fit(X[tr], y[tr]).predict_proba(X[~tr])[:, 1]
+    return sc
 
 
 def model():
@@ -90,8 +131,9 @@ def precision_recall(convs, task, rows, scores, labels, targets=(0.7, 0.8, 0.9))
     for target in targets:
         ok = np.flatnonzero(prec >= target)
         if not len(ok):
-            res[f'recall@P{target}'] = 0.0; continue
+            res[f'recall@P{target}'] = 0.0; res[f'threshold@P{target}'] = None; continue
         th = scores[order][ok[-1]]
+        res[f'threshold@P{target}'] = float(th)
         fired = {}
         for (cid, s, t), v in zip(rows, scores):
             if v >= th:
@@ -108,39 +150,48 @@ def precision_recall(convs, task, rows, scores, labels, targets=(0.7, 0.8, 0.9))
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data', nargs='+', required=True, help='name=dir pairs')
-    ap.add_argument('--out', help='joblib path for {task: model}')
+    ap.add_argument('--feats', nargs='*', default=[], help='name=dir pairs of encoder frames (content.py)')
+    ap.add_argument('--pca', type=int, default=32, help='content dimensions kept (with --feats)')
+    ap.add_argument('--out', help='joblib path for the model bundle')
     ap.add_argument('--eval', action='store_true')
+    ap.add_argument('--calibrate', nargs='*', help='sets whose labels pick the stored thresholds (default: all)')
     a = ap.parse_args()
-    sets = {k: load_dir(v) for k, v in (d.split('=', 1) for d in a.data)}
-    if a.eval:
-        for task in F.TASKS:
-            built = {k: build(v, task) for k, v in sets.items()}
-            for test, (rows, X, y) in built.items():
-                cids = sorted(sets[test]); half = set(cids[0::2]); sc = np.zeros(len(y))
-                for k in (0, 1):
-                    tr = np.array([(r[0] in half) == (k == 0) for r in rows])
-                    sc[~tr] = fit(X[tr], y[tr]).predict_proba(X[~tr])[:, 1]
-                print(task, test, '2-fold', evaluate(sets[test], task, rows, sc, y), flush=True)
-                others = [b for k, b in built.items() if k != test]
-                if others:
-                    m = fit(np.concatenate([b[1] for b in others]), np.concatenate([b[2] for b in others]))
-                    print(task, test, 'trained on the rest', evaluate(sets[test], task, rows, m.predict_proba(X)[:, 1], y), flush=True)
-    if a.out:
-        import joblib
-        models, thresholds, dev = {}, {}, {}
-        allc = {f'{k}/{c}': v for k, cs in sets.items() for c, v in cs.items()}
-        for task in F.TASKS:
-            rows, X, y = build(allc, task)
+    feats = dict(d.split('=', 1) for d in a.feats)
+    sets = {k: load_dir(v, feats.get(k)) for k, v in (d.split('=', 1) for d in a.data)}
+    if feats and set(feats) != set(sets):
+        ap.error('--feats needs a directory for every --data set')
+    n_pca = a.pca if feats else 0
+    cal = set(a.calibrate or sets)
+    allc = {f'{k}/{c}': v for k, cs in sets.items() for c, v in cs.items()}
+    models, thresholds, dev, pcas = {}, {}, {}, {}
+    for task in F.TASKS:
+        rows, X, y, pcas[task] = design(allc, task, n_pca)
+        of = {k: np.array([r[0].startswith(k + '/') for r in rows]) for k in sets}
+        if a.eval:
+            for test, m in of.items():
+                rr = [r for r, k in zip(rows, m) if k]
+                conv = {c: v for c, v in allc.items() if c.startswith(test + '/')}
+                print(task, test, '2-fold', evaluate(conv, task, rr, cross_fit(rr, X[m], y[m]), y[m]), flush=True)
+                rest = ~m
+                if rest.any():
+                    sc = fit(X[rest], y[rest]).predict_proba(X[m])[:, 1]
+                    print(task, test, 'trained on the rest', evaluate(conv, task, rr, sc, y[m]), flush=True)
+        if a.out:
             models[task] = fit(X, y)
-            # operating point: max recall at FP <= 0.10 on cross-fitted (2-fold) scores
-            cids = sorted(allc); half = set(cids[0::2]); sc = np.zeros(len(y))
-            for k in (0, 1):
-                tr = np.array([(r[0] in half) == (k == 0) for r in rows])
-                sc[~tr] = fit(X[tr], y[tr]).predict_proba(X[~tr])[:, 1]
-            dev[task] = evaluate(allc, task, rows, sc, y)
+            # thresholds from cross-fitted (2-fold) scores on the --calibrate sets: max recall at
+            # TurnBench FP <= 0.10, and the precision targets of precision_recall
+            sc, m = cross_fit(rows, X, y), np.array([r[0].split('/')[0] in cal for r in rows])
+            dev[task] = evaluate({c: v for c, v in allc.items() if c.split('/')[0] in cal}, task,
+                                 [r for r, k in zip(rows, m) if k], sc[m], y[m])
             thresholds[task] = dev[task]['threshold']
             print(task, 'cross-fitted operating point', dev[task], flush=True)
-        joblib.dump(dict(models=models, thresholds=thresholds, dev=dev, data=sorted(sets)), a.out)
+    if a.out:
+        import joblib
+        content = None
+        if n_pca:
+            first = next(iter(allc.values()))['feats']
+            content = dict(pca=pcas, channels=int(np.load(first, mmap_mode='r').shape[1]))
+        joblib.dump(dict(models=models, thresholds=thresholds, dev=dev, data=sorted(sets), content=content), a.out)
         print('saved', a.out)
 
 

@@ -49,6 +49,15 @@ class FeaturesTest(unittest.TestCase):
                    int_positive_events=[dict(speaker=1, time_s=1.5, score=0.71)])
         self.assertEqual(audacity_labels(res), '1.50\t1.50\tINT spk1 0.71\n5.00\t5.00\tEOT spk2 0.90\n')
 
+    def test_content_pooling(self):
+        from annotator import content as C
+        E = np.zeros((100, 2, 4), np.float16); E[:, 0] = 1  # channel 0 = speaker 1
+        v = C.pooled(E, 2, 2.0)  # own channel (speaker 2) first, then the other
+        self.assertEqual(v.shape, (len(C.WINDOWS) * 2 * 4,))
+        self.assertEqual(v[:4].tolist(), [0] * 4); self.assertEqual(v[4:8].tolist(), [1] * 4)
+        self.assertEqual(C.table(E[:, :1], [(1, 0.5, 0), (2, 7.9, 1)]).shape, (2, len(C.WINDOWS) * 4))
+        self.assertEqual(C.table(E, []).shape, (0, len(C.WINDOWS) * 2 * 4))
+
 
 if __name__ == '__main__':
     unittest.main()

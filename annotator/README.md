@@ -3,7 +3,10 @@
 An offline labeler for two-speaker audio. It finds candidate points from per-speaker voice
 activity, describes each by the timing of both speakers in a window from 3 s before to 4 s
 after, and scores it with a gradient-boosted classifier trained on human labels
-(TurnBench dev and otoSpeech).
+(TurnBench dev and otoSpeech). Content models also see what is said around each candidate:
+streaming FastConformer encoder frames (`content.py`, the same encoder setup as
+`ssl_turn/pipeline/encode_asr.py`) averaged over 1 s before to 1.5 s after, reduced by PCA.
+Content matters most for interruptions; timing alone cannot tell them from other overlaps.
 
 - Stereo input (one speaker per channel): Silero VAD per channel.
 - Mono input (two speakers mixed): NVIDIA Sortformer 4spk v1 (offline, **CC-BY-NC-4.0**, so
@@ -15,10 +18,17 @@ after, and scores it with a gradient-boosted classifier trained on human labels
   + 0.1 s (INT).
 
 ```
-python -m annotator.train --data tbdev=DIR oto=DIR --eval          # cross-checks below
+python -m annotator.annotate --model labeler-content-stereo.joblib --mode stereo conv.wav --out labels/
+python -m annotator.annotate --model labeler-content-mono.joblib --mode mono a.wav --precision 0.7 --out labels/
+python -m annotator.train --data tbdev=DIR oto=DIR --eval          # timing-only cross-checks
 python -m annotator.train --data tbdev=DIR oto=DIR --out model.joblib
-python -m annotator.annotate --model model.joblib --mode mono a.wav --out labels/
+modal run annotator/modal_content.py --data DIR --calibrate tbdev  # content models (Modal)
 ```
+A content model needs the matching mode (stereo encodes each channel, mono the mix).
+`--precision 0.7|0.8|0.9` uses thresholds where proposals reached that precision on held-out
+TurnBench dev; the default threshold is TurnBench's FP <= 0.10 operating point, which proposes
+far more interruptions than are real. The encoder takes about 2 min per 3 min of stereo audio
+on 4 CPU cores (`--device cuda` for a GPU).
 `annotate` writes `<stem>.json` (every candidate with its score, plus positive events) and
 `<stem>.labels.txt`, an Audacity label track of the positive events (File > Import > Labels).
 Using the track as a preprocessor for human labeling works well: at the stored thresholds a
@@ -32,7 +42,9 @@ committed; this project keeps them in the shared folder (`audio-llm/annotator-da
 `audio-llm/annotator-model/`).
 
 Needs: numpy, scipy, scikit-learn, joblib, soundfile; onnxruntime + silero-vad (stereo);
-nemo_toolkit[asr] (mono); turnbench (pinned scorer, for `--eval`).
+nemo_toolkit[asr] (mono diarizer, and the encoder for content models); turnbench (pinned
+scorer, for `--eval`). Content models are trained on Modal (`modal_content.py`) because the
+encoder frames for the training data (`feats_asr` from ssl_turn) live on its volume.
 
 ## Results
 
@@ -52,6 +64,26 @@ window. It reports event recall at the threshold where fired-candidate precision
 | INT | TB dev | otoSpeech | 0.991 / 0.099 | 0.023 | 0.000 |
 | INT | otoSpeech | otoSpeech (2-fold) | 0.846 / 0.098 | 0.002 | 0.002 |
 | INT | otoSpeech | TB dev | 0.801 / 0.099 | 0.007 | 0.007 |
+
+Content features (stereo content model, same held-out protocol; mono = encoder on the mix):
+
+| task | test set | trained on | timing only R@P0.7 / R@P0.8 | + content (stereo) | + content (mono mix) |
+|---|---|---|---|---|---|
+| INT | TB dev | TB dev (2-fold) | 0.383 / 0.228 | **0.709 / 0.524** | 0.646 / 0.427 |
+| INT | TB dev | otoSpeech | 0.026 / 0.026 | **0.608 / 0.300** | 0.372 / 0.098 |
+| EOT | TB dev | TB dev (2-fold) | 0.789 / 0.647 | 0.819 / 0.685 | 0.803 / 0.633 |
+
+The shipped content models (`labeler-content-{stereo,mono}.joblib`) are trained on TB dev +
+otoSpeech; their `--precision` thresholds come from cross-fitted scores on TB dev. There,
+stereo reaches INT recall 0.778 at P0.7 and 0.548 at P0.8 (EOT 0.817 / 0.646); mono 0.651 /
+0.406 (EOT 0.800 / 0.654).
+
+On otoSpeech, interruption precision stays near zero with or without content. That looks like
+its labels rather than the model: 38 of 119 conversations have no interruption labels at all,
+and most top-scoring "false" interruptions are takeovers within 1 s of the other speaker's
+turn end (inferred from the gold, not listened to). So interruption thresholds are calibrated
+on TurnBench dev only (`--calibrate tbdev`). The mono numbers use stereo Silero timing; with
+Sortformer timing on real mono audio expect somewhat lower.
 
 **Timing alone does not give precise interruption labels.** On TurnBench's metric the labeler
 looks excellent (INT recall 0.97-0.99 on TB dev). But most of its interruption fires land in
