@@ -44,6 +44,8 @@ class Timing:
 
     fto_sd: float = 0.40
     fto_min: float = -0.8
+    projection_lead: float = 0.1  # an early reply starts at least this far into the other's last word
+    question_overlap: float = 0.1  # ... and overlaps a question by at most this much
     fto_max: float = 2.0
     pause_median: float = 0.51
     pause_sigma: float = 0.45
