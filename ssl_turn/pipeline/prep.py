@@ -89,7 +89,7 @@ def oto_item(cid):
     setup_path()
     from turnbench.gold import CANONICAL, TURN_CANONICAL, ConsensusEvent, ConsensusViews, build_conversation_events
     import labels as lb
-    if os.path.exists(f'{WORK}/labels/oto/{cid}.npz') and os.path.exists(f'{WORK}/audio/oto/{cid}.npy'):
+    if all(os.path.exists(f'{WORK}/{p}') for p in (f'labels/oto/{cid}.npz', f'audio/oto/{cid}.npy', f'gold/oto/{cid}.json')):
         return cid, 'cached'
     src = f'{OTO}/{cid}'
     chans, sr = [], None

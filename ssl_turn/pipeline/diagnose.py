@@ -171,7 +171,9 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
     split = json.load(open(f'{WORK}/split.json'))['splits']
     tb_gold = json.load(open(f'{WORK}/gold/tbdev.json'))
     resid = json.load(open(f'{WORK}/runs/{run}/residuals.json'))
-    mtd_ids = set(json.load(open(f'{WORK}/mtd_train_ids.json')))
+    manifest = f'{WORK}/mtd_train_ids.json'  # pins the probe subset; else every encoded train conversation
+    mtd_ids = set(json.load(open(manifest)) if os.path.exists(manifest) else
+                  [c for c in split['train'] if os.path.exists(f'{WORK}/feats_mtd/oto/{c}.npy')])
     # Split TurnBench dev residual rows per conversation in the order residuals() emitted them.
     per = {cid: {'eot_neg': [], 'int_neg': []} for cid in tb_gold}
     for key in ('eot_neg', 'int_neg'):
@@ -212,11 +214,16 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
         return sp, cid, X, ev, gather(X, ev), mtd
 
     cache = f'{WORK}/runs/diag/cache_{run}.npz'
+    # The cache is valid only for the same models, checkpoints, conversations and MTD subset.
+    key = json.dumps([list(models), [os.path.getmtime(f'{WORK}/runs/{run}/{n}.pt') for n in models],
+                      [list(i) for i in items], sorted(mtd_ids)])
     events, feats, mfeats, heads = [], [], [], {n: {} for n in models}
+    fresh = True
     if os.path.exists(cache):
         z = np.load(cache, allow_pickle=True)
-        events, heads = list(z['events']), z['heads'].item()
-        feats, mfeats, items = [z['F']], [z['M']], []
+        if 'key' in z.files and str(z['key']) == key:
+            events, heads = list(z['events']), z['heads'].item()
+            feats, mfeats, items, fresh = [z['F']], [z['M']], [], False
     def loaded():  # bounded prefetch: map() would queue every conversation's features in RAM
         with ThreadPoolExecutor(4) as pool:
             for a in range(0, len(items), 8):
@@ -243,9 +250,10 @@ def diagnose(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2', 'nofine_
             mfeats.append(mtd)
     F = np.concatenate(feats)
     M = np.concatenate(mfeats)
-    if not os.path.exists(cache):
+    if fresh:
         os.makedirs(f'{WORK}/runs/diag', exist_ok=True)
-        np.savez(cache, events=np.array(events, dtype=object), heads=np.array(heads, dtype=object), F=F, M=M)
+        np.savez(cache, events=np.array(events, dtype=object), heads=np.array(heads, dtype=object), F=F, M=M,
+                 key=key)
         work.commit()
     print(f'{len(events)} events from {len(items)} conversations in {time.time() - t0:.0f}s; '
           f'Cat {F.shape} MTD {M.shape}', flush=True)

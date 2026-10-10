@@ -375,7 +375,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         if cfg.get('tune'):
             net, first = models[name], cfg['tune'].get('first', 16)
             n = min(1500, off[1] - off[0])  # conversation start: the cache had no more left context either
-            x = X[:n][None]
+            x = X[:n][None].to(dev)  # X may live on the CPU (feats_on='cpu')
             i = LOADED.index(first - 1)
             with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16):
                 o = net.top(x[0, :, :, i * TAP_DIM:(i + 1) * TAP_DIM].transpose(0, 1).float())
