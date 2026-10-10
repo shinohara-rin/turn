@@ -190,7 +190,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--plan', required=True)
     ap.add_argument('--vap')
-    ap.add_argument('--ssl', action='append', default=[], help='RUN=path.npz (repeatable)')
+    ap.add_argument('--ssl', action='append', default=[],
+                    help='LABEL=path.npz[:member,member] (repeatable; members default to --members)')
     ap.add_argument('--members', default='fine1_bal1_s1,fine1_bal1_s2')
     ap.add_argument('--out', required=True, help='output prefix: writes OUT.json and OUT.md')
     a = ap.parse_args()
@@ -209,8 +210,9 @@ def main():
         groups['VAP (oto)'] = [results[m.name]]
     for spec in a.ssl:
         run, path = spec.split('=', 1)
+        path, _, members = path.partition(':')
         groups[run] = []
-        for member in a.members.split(','):
+        for member in (members or a.members).split(','):
             m = load_ssl(path, ids, run, member)
             results[m.name] = evaluate(m, ids, gold, convs, plan)
             groups[run].append(results[m.name])

@@ -271,7 +271,9 @@ def extra():
 
 
 @app.local_entrypoint()
-def main(train: int = 32, dev: int = 16, tbdev: bool = True):
+def main(train: int = 32, dev: int = 16, tbdev: bool = True, extra: int = 0):
+    """--extra N also preps the first N cross-partition conversations with no gate speaker
+    (extra_ids): background donors for bgmix augmentation, never trained on."""
     counts = make_split.remote()
     print('split', counts)
     import io
@@ -280,6 +282,8 @@ def main(train: int = 32, dev: int = 16, tbdev: bool = True):
         buf.write(chunk)
     split = json.loads(buf.getvalue())
     cids = split['splits']['train'][:train] + split['splits']['dev'][:dev]
+    if extra:
+        cids += extra_ids.remote()[:extra]
     for r in oto_item.map(cids):
         print('oto', r)
     if not tbdev:

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import modal
 
-from common import VOLUMES, _code, gpu_image, setup_path, work
+from common import VOLUMES, WORK, _code, gpu_image, setup_path, work
 
 image = gpu_image
 if modal.is_local():  # in the container this module lives at /root/bgmix.py
@@ -232,6 +232,101 @@ def encode_aug(cids, donor_ids, snr_range=(-5.0, 20.0), batch_waves=16, style='f
         work.commit()
         print(f'{g + len(group)}/{len(cids)}: {done / (time.time() - t0):.0f} channel-s/s', flush=True)
     return meta
+
+
+# ---- background augmentation on streaming-ASR features (feats: asr) ----------------------
+# Styles from bgspeech/bench.py, drawn per conversation channel. No near talker: r016 showed
+# that teaching the head to ignore a voice like the user's costs clean accuracy.
+ASR_AUG_STYLES = {'far': 0.5, 'tv': 0.2, 'babble': 0.2, 'music': 0.1}
+
+
+def _asr_aug_image():
+    if not modal.is_local():  # the container already runs on the built image
+        return gpu_image
+    from encode_asr_modal import asr_image
+    bg = Path(__file__).resolve().parents[2] / 'bgspeech'
+    return asr_image.add_local_dir(str(bg), '/root/bgspeech', ignore=['**/__pycache__', '*.pyc'])
+
+
+@app.function(image=_asr_aug_image(), volumes=VOLUMES, gpu='L4', cpu=8, memory=49152, timeout=7200)
+def encode_aug_asr(cids, donor_ids, snr_range=(-5.0, 20.0)):
+    """Like encode_aug, for the streaming FastConformer: each channel of each conversation gets
+    its own background (style drawn from ASR_AUG_STYLES, 4 random donor conversations, music
+    from the training half of MUSAN fma, SNR ~ U(snr_range) against that channel's active
+    speech) and is re-encoded. Writes /work/feats_asr_aug/oto/<cid>.npy, float16 [T, 2, 1024],
+    frame-aligned with /work/feats_asr/oto. Labels are unchanged."""
+    import hashlib
+    import os
+    import sys
+    import numpy as np
+    import soundfile as sf
+    sys.path.insert(0, '/root/bgspeech')
+    import bench
+    import encode_asr as ea
+    import mixing
+    sr = bench.SR
+    enc = ea.load_model()
+    mdir = f'{WORK}/musan/fma_train'
+    music = []
+    for f in sorted(os.listdir(mdir)):
+        x, s = sf.read(f'{mdir}/{f}', dtype='float32', always_2d=True)
+        music.append(mixing.resample_to(x.mean(1), s, sr))
+    out_dir = f'{WORK}/feats_asr_aug/oto'
+    os.makedirs(out_dir, exist_ok=True)
+    styles, probs = list(ASR_AUG_STYLES), np.array(list(ASR_AUG_STYLES.values()))
+    meta, t0, done = {}, time.time(), 0.0
+    for cid in cids:
+        a = np.load(f'{WORK}/audio/oto/{cid}.npy').astype(np.float32)
+        act = np.load(f'{WORK}/labels/oto/{cid}.npz')['activity']  # [T, 2] on the 80 ms grid
+        T = np.load(f'{WORK}/feats_asr/oto/{cid}.npy', mmap_mode='r').shape[0]
+        rng = np.random.default_rng(int(hashlib.sha256(f'aug-asr:{cid}'.encode()).hexdigest()[:8], 16))
+        feats = []
+        for c in (0, 1):
+            style = styles[int(rng.choice(len(styles), p=probs))]
+            picks = rng.choice([d for d in donor_ids if d != cid], 4, replace=False)
+            dons = [np.load(f'{WORK}/audio/oto/{d}.npy').astype(np.float32) for d in picks]
+            bg = bench.backgrounds(f'train:{cid}:{c}', len(a), dons, music, styles=(style,))[style]
+            mask = np.repeat(act[:, c] > 0.5, 8)  # 12.5 Hz -> 100 Hz
+            snr = float(rng.uniform(*snr_range))
+            w16 = ea.to16k(mixing.mix(a[:, c], sr, bg, snr, mask))
+            feats.append(ea.encode_channel(enc, w16[:T * ea.FRAME], T))
+            meta.setdefault(cid, {})[c] = dict(style=style, snr=snr, donors=[str(d) for d in picks])
+            done += len(a) / sr
+        np.save(f'{out_dir}/{cid}.tmp.npy', np.stack(feats, 1))
+        os.replace(f'{out_dir}/{cid}.tmp.npy', f'{out_dir}/{cid}.npy')
+        work.commit()
+        print(f'{cid}: {meta[cid]}; {done / (time.time() - t0):.0f} channel-s/s', flush=True)
+    return meta
+
+
+@app.local_entrypoint()
+def aug_asr(groups: int = 8, donors: int = 24):
+    """modal run bgmix.py::aug_asr  (background-augmented FastConformer train features)"""
+    print(aug_asr_plan.remote(groups, donors))
+
+
+@app.function(image=image, volumes=VOLUMES, cpu=2, memory=4096, timeout=10800)
+def aug_asr_plan(groups, n_donors):
+    import os
+    work.reload()
+    split = json.load(open(f'{WORK}/split.json'))['splits']
+    have = sorted(f[:-4] for f in os.listdir(f'{WORK}/audio/oto') if f.endswith('.npy'))
+    root = f'{WORK}/feats_asr_aug'
+    done = {f[:-4] for f in os.listdir(f'{root}/oto')} if os.path.isdir(f'{root}/oto') else set()
+    train = [c for c in split['train'] if c in have and c not in done]
+    donors = [c for c in have if c not in set(split['train']) | set(split['dev'])][:n_donors]
+    assert len(donors) >= 8, donors
+    meta = {}
+    for m in encode_aug_asr.map([g for g in (train[i::groups] for i in range(groups)) if g],
+                                kwargs=dict(donor_ids=donors)):
+        meta.update(m)
+    work.reload()
+    os.makedirs(root, exist_ok=True)
+    old = json.load(open(f'{root}/meta.json')) if os.path.exists(f'{root}/meta.json') else {}
+    old.update(meta)
+    json.dump(old, open(f'{root}/meta.json', 'w'))
+    work.commit()
+    return dict(encoded=len(meta), donors=len(donors), train=len(train))
 
 
 ecapa_image = _code(modal.Image.debian_slim(python_version='3.12').pip_install(

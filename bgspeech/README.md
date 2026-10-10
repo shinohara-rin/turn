@@ -41,6 +41,29 @@ runner. The FastConformer head breaks under background speech just like the Cat 
 (far0: about 21 false INT/min, user EOT 0.95 to 0.62), and worse than VAP on false
 interruptions. Music alone barely matters. Full table: `/mnt/project-files/bg-speech/bgbench/report-v1.md`.
 
+### r019: background augmentation on FastConformer (2026-10-10)
+
+Rebuilt the training data in the new Modal workspace (`ssl_turn/pipeline/stage.py`, prep,
+`encode_asr_modal.py`), then `bgmix.encode_aug_asr`: each channel of each of the 131 train
+conversations gets one background (style drawn per channel: far 0.5, tv 0.2, babble 0.2,
+music 0.1, recipes from `bench.py`; donors are 24 otoSpeech conversations outside train/dev;
+music from the training half of MUSAN fma; SNR U(-5, 20) dB). No near-talker augmentation.
+`configs/r019_asr_bgaug.json` trains the r016 head with and without `bg_aug: 0.5`, 2 seeds,
+1000 steps on an H100. bgbench, user channel, seed means:
+
+| model | clean EOT / INT | playback EOT / false INT/min | near talker | babble | music |
+|---|---|---|---|---|---|
+| r019 baseline (no aug) | 0.932 / 0.977 | 0.706 / 14.6 | 0.799 / 13.4 | 0.625 / 7.0 | 0.882 / 0.1 |
+| r019 bg_aug | 0.934 / 0.983 | 0.911 / 1.1 | 0.856 / 8.2 | 0.886 / 1.7 | 0.916 / 0.4 |
+
+- Augmentation fixes playback, TV and babble at no clean cost (clean EOT 0.934 vs 0.932,
+  INT 0.983 vs 0.977). At far0: user EOT 0.63 to 0.91, false INT 21.7 to 1.4/min.
+- The near talker is still the open case: about 8/min (0 dB: 14.6 to 10.0), better than
+  before but well above the ~1/min of the other backgrounds.
+- The rebuilt baseline matches r016_asr from the Ray box (clean EOT 0.932 vs 0.939, within seed noise).
+- Cost: about $4.3 on Modal for staging, prep, encodes, augmentation, training and bgbench.
+  Full table: `/mnt/project-files/bg-speech/bgbench/report-v1-r019.md`.
+
 ## Test (`mixing.py`, `run_vap.py`, `score_all.py`; ssl_turn side in `ssl_turn/pipeline/bgmix.py`)
 - 12 TurnBench dev conversations (seed 0, 2.17 h). One random channel per conversation is the
   "user". Its background is another TB dev conversation (both speakers, like a podcast playing),

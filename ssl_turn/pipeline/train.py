@@ -321,16 +321,19 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         Yd = stack_labels(labd, dev)
     Xa, aug_p = None, max(c.get('bg_aug', 0.0) for c in configs.values())
     if aug_p > 0:  # background-speech augmented copies (bgmix.encode_aug), same frames as X
-        assert LOADED == [15, 23, 31] and not mtd, 'feats_aug holds taps 15/23/31 + final only'
+        if mtd == 'asr':  # bgmix.encode_aug_asr: 1024-d streaming-ASR copies
+            aug_dir, near = f'{WORK}/feats_asr_aug/oto', False
+        else:
+            assert LOADED == [15, 23, 31] and not mtd, 'feats_aug holds taps 15/23/31 + final only'
+            aug_dir, near = f'{WORK}/feats_aug/oto', any(c.get('near_aug') for c in configs.values())
         Xa = X.clone()  # frames an augmented file lacks (if any) stay clean
-        near = any(c.get('near_aug') for c in configs.values())
         n_near = 0
         for cid, a, b in zip(train_ids, off[:-1], off[1:]):
             # near_aug: conversations that have a near-talker copy (bgmix.encode_aug style='near') use it
             # instead of the far-field playback copy.
-            path = f'/work/feats_aug_near/oto/{cid}.npy'
+            path = f'{WORK}/feats_aug_near/oto/{cid}.npy'
             if not (near and os.path.exists(path)):
-                path = f'/work/feats_aug/oto/{cid}.npy'
+                path = f'{aug_dir}/{cid}.npy'
             else:
                 n_near += 1
             xa = np.load(path, mmap_mode='r')[:b - a]
