@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><title>turn bench</title><pre id="log"></pre>
+<!-- Streams sample.f32 (make_ref.py) through TurnStream and checks every frame against ref.json.
+     Query: ep=webgpu|wasm, enc=<encoder file in models/>, k=<frames per call, must match enc>,
+     steps=<80 ms blocks>, threads=<wasm threads>. Serve this directory with serve.py (COOP/COEP
+     for WASM threads), with node_modules/onnxruntime-web, models/ and turn_stream.js next to it. -->
+<script type="module">
+import * as ort from './node_modules/onnxruntime-web/dist/ort.all.min.mjs';
+import { TurnStream, FRAME } from './turn_stream.js';
+const q = new URLSearchParams(location.search);
+const ep = q.get('ep') || 'webgpu', enc = q.get('enc') || 'encoder_k1_w16.onnx', steps = +(q.get('steps') || 100), K = +(q.get('k') || 1);
+const log = (s) => { document.getElementById('log').textContent += s + '\n'; console.log(s); };
+ort.env.wasm.wasmPaths = new URL('./node_modules/onnxruntime-web/dist/', location.href).href;
+ort.env.wasm.numThreads = +(q.get('threads') || navigator.hardwareConcurrency);
+try {
+  const t0 = performance.now();
+  const ts = await TurnStream.create(ort, { encoder: 'models/' + enc, frames: K, head: 'models/head.onnx', ep, headEp: q.get('headEp') || 'wasm' });
+  const load = performance.now() - t0;
+  const raw = new Float32Array(await (await fetch('sample.f32')).arrayBuffer());
+  const ref = await (await fetch('ref.json')).json();
+  const N = raw.length / 2, ch0 = raw.subarray(0, N), ch1 = raw.subarray(N);
+  const times = [], encT = [], headT = []; let errE = 0, errI = 0, frames = 0;
+  for (let b = 0; b < Math.min(steps, N / FRAME); b++) {
+    const s = performance.now();
+    const outs = await ts.push(ch0.subarray(b * FRAME, (b + 1) * FRAME), ch1.subarray(b * FRAME, (b + 1) * FRAME));
+    const dt = performance.now() - s;
+    if ((b + 1) % K === 0) { times.push(dt); encT.push(ts.timing.enc); headT.push(ts.timing.head); }
+    for (const o of outs) {
+      for (const c of [0, 1]) {
+        errE = Math.max(errE, Math.abs(o.eot[c] - ref.eot[o.t][c]));
+        errI = Math.max(errI, Math.abs(o.int[c] - ref.int[o.t][c]));
+      }
+      frames++;
+    }
+  }
+  const med = (a, p = 0.5) => { const w = a.slice(3).sort((x, y) => x - y); return +w[Math.min(w.length - 1, Math.floor(p * w.length))].toFixed(1); };
+  const r = { ep, enc, K, threads: ort.env.wasm.numThreads, load_ms: Math.round(load), calls: times.length, first_ms: Math.round(times[0]),
+              call_ms: med(times), call_p95_ms: med(times, 0.95), enc_ms: med(encT), head_ms: med(headT),
+              rtf: +(med(times) / (80 * K)).toFixed(3), max_err_eot: errE, max_err_int: errI, frames };
+  log(JSON.stringify(r)); window.__result = r;
+} catch (e) { log('ERROR ' + (e.stack || e)); window.__result = { error: String(e) }; }
+</script>
