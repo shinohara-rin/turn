@@ -120,30 +120,29 @@ def spoken_text(item: Item) -> tuple[str, list[tuple[int, float]]]:
     return " ".join(parts), cuts
 
 
-def _retime(speech: Speech, cuts: list[tuple[int, float]], pad: float = 0.03) -> Speech:
-    """Set the silence after word k to `gap` seconds for each (k, gap)."""
+def _retime(speech: Speech, cuts: list[tuple[int, float]]) -> Speech:
+    """Set the silence after word k to `gap` seconds for each (k, gap).
+
+    The silence runs from where word k has died away to where word k+1's
+    sound begins, not between the aligned word times (see _trim).
+    """
     if not cuts:
         return speech
     sr, ws = speech.sample_rate, speech.words
-    fade = int(0.01 * sr)
+    db = _frame_db(speech.audio, sr)
     pieces, shifts, pos, shift = [], [], 0, 0.0
     for k, gap in cuts:
         a, b = ws[k - 1].end, ws[k].start
         if b < a:
             a = b = (a + b) / 2
-        p = min(pad, (b - a) / 2)
-        i0, i1 = int((a + p) * sr), int((b - p) * sr)
-        seg = speech.audio[pos:i0].copy()
-        if len(seg) > fade:
-            seg[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
-        pieces += [seg, np.zeros(int(max(gap - 2 * p, 0.0) * sr), np.float32)]
-        shift += max(gap, 2 * p) - (b - a)
+        a = _decay_end(db, a, b)
+        b = _onset_start(db, b, a)
+        i0, i1 = int(a * sr), int(b * sr)
+        pieces += [_fade(speech.audio[pos:i0].copy(), sr, out=True), np.zeros(int(gap * sr), np.float32)]
+        shift += gap - (b - a)
         shifts.append((k, shift))
         pos = i1
-    tail = speech.audio[pos:].copy()
-    if len(tail) > fade:
-        tail[:fade] *= np.linspace(0.0, 1.0, fade, dtype=np.float32)
-    pieces.append(tail)
+    pieces.append(_fade(speech.audio[pos:].copy(), sr, out=False))
     words, j, cur = [], 0, 0.0
     for i, w in enumerate(ws):
         while j < len(shifts) and i >= shifts[j][0]:
@@ -153,15 +152,78 @@ def _retime(speech: Speech, cuts: list[tuple[int, float]], pad: float = 0.03) ->
     return Speech(np.concatenate(pieces), sr, words)
 
 
-def _trim(speech: Speech, pad: float = 0.02) -> Speech:
+def _trim(speech: Speech, max_head: float = 0.2, max_tail: float = 0.5) -> Speech:
+    """Cut a line from its first sound to where its last word has died away.
+
+    Forced-alignment word ends land before the voice and breath decay, and
+    cutting there sounds like airflow stopping dead. The cut goes where the
+    level falls DECAY_DB under the line's peak (at most max_tail past the
+    aligned end), with a fade. Word times keep marking the words, so
+    placement and labels still use the aligned speech end.
+    """
     if not speech.words:
         return speech
     sr = speech.sample_rate
-    t0 = max(0.0, speech.words[0].start - pad)
-    t1 = min(speech.duration, speech.words[-1].end + pad)
-    audio = speech.audio[int(t0 * sr): int(t1 * sr)]
+    db = _frame_db(speech.audio, sr)
+    first, last = speech.words[0].start, speech.words[-1].end
+    # No quiet frame before the first word: the previous line runs into it, so start near the word.
+    t0 = _onset_start(db, first, max(0.0, first - max_head), fallback=first - 0.03)
+    t1 = _decay_end(db, last, min(speech.duration, last + max_tail))
+    audio = speech.audio[int(t0 * sr): int(t1 * sr)].copy()
+    audio = _fade(_fade(audio, sr, out=False, length=0.01), sr, out=True, length=0.05)
     words = [Word(w.text, w.start - t0, w.end - t0) for w in speech.words]
     return Speech(audio, sr, words)
+
+
+DECAY_DB = 45.0  # a sound has ended once it is this far under the line's peak
+HOP_S = 0.005
+
+
+def _frame_db(audio: np.ndarray, sr: int) -> np.ndarray:
+    """Level of each HOP_S frame relative to the loudest frame, in dB."""
+    hop = max(1, int(HOP_S * sr))
+    n = len(audio) // hop
+    if n == 0:
+        return np.zeros(1)
+    db = 10 * np.log10(np.mean(audio[: n * hop].reshape(n, hop) ** 2, axis=1) + 1e-12)
+    return db - db.max()
+
+
+QUIET_S = 0.08  # longer than a stop closure, so a final "t" or "k" release is kept
+
+
+def _quiet(db: np.ndarray, i: int, j: int) -> np.ndarray:
+    """Frames in [i, j) that start a run of QUIET_S under -DECAY_DB (runs may end at j)."""
+    m = max(1, int(QUIET_S / HOP_S))
+    loud = np.concatenate([db[i:j] >= -DECAY_DB, np.zeros(m - 1, bool)])
+    if len(loud) < m:
+        return np.zeros(0, int)
+    run_loud = np.lib.stride_tricks.sliding_window_view(loud, m).any(axis=1)
+    return np.flatnonzero(~run_loud)
+
+
+def _decay_end(db: np.ndarray, t: float, limit: float) -> float:
+    """Start of the first quiet run in [t, limit], or limit if the sound never dies away."""
+    i, j = int(t / HOP_S), int(limit / HOP_S)
+    quiet = _quiet(db, i, j)
+    return (i + quiet[0]) * HOP_S if len(quiet) else max(t, limit)
+
+
+def _onset_start(db: np.ndarray, t: float, limit: float, fallback: float | None = None) -> float:
+    """End of the last quiet run in [limit, t]; if there is none, fallback (default limit)."""
+    i, j = int(limit / HOP_S), int(t / HOP_S)
+    quiet = _quiet(db[::-1], len(db) - j, len(db) - i)
+    if len(quiet):
+        return (j - quiet[0]) * HOP_S
+    return min(t, limit if fallback is None else max(limit, fallback))
+
+
+def _fade(audio: np.ndarray, sr: int, out: bool, length: float = FADE_S) -> np.ndarray:
+    n = min(len(audio), int(length * sr))
+    if n:
+        ramp = np.sin(np.linspace(0.0, np.pi / 2, n, dtype=np.float32)) ** 2
+        audio[-n:] *= ramp[::-1] if out else ramp
+    return audio
 
 
 def _cut(speech: Speech, at: float) -> Speech:
@@ -213,7 +275,7 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
     other speaker takes the floor: a speaker's lines within one floor are
     read together, but a real turn end stays the end of a reading, so it
     keeps its final fall.
-    Items are cut apart in the aligned silence between them and their
+    Items are cut apart where each one's sound starts and dies away, and their
     within-item pauses re-timed as usual. An item whose aligned length is
     implausible (the model skipped or slurred it) is re-synthesized alone.
     """
@@ -250,14 +312,16 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
                                                       Context(history=list(history)))
                 continue
-            # Cut points: the middle of the silence between consecutive items.
-            bounds, k = [0.0], 0
+            # Each item's piece runs from the previous item's last word to the
+            # next item's first, so _trim can find where its sound starts and ends.
+            starts, ends, k = [0.0], [], 0
             for n in n_words[:-1]:
                 k += n
-                bounds.append((sp.words[k - 1].end + sp.words[k].start) / 2)
-            bounds.append(sp.duration)
+                ends.append(sp.words[k].start)
+                starts.append(sp.words[k - 1].end)
+            ends.append(sp.duration)
             k = 0
-            for it, n, c, t0, t1 in zip(block, n_words, cuts, bounds, bounds[1:]):
+            for it, n, c, t0, t1 in zip(block, n_words, cuts, starts, ends):
                 ws = sp.words[k: k + n]
                 k += n
                 span = ws[-1].end - ws[0].start
