@@ -203,6 +203,11 @@ turnsynth render scripts-ja --tts indextts --voice-bank voices-ja,voices-zh,voic
 
 Examples: `examples/scripts/casual_kyoto_ja.json`, `casual_chengdu_zh.json`
 (hand-written in the pass-2 format, like the English ones).
+Rendered on a 3090 with `--asr small`: both accepted, agreement 0.98;
+CER 12% (ja, on the kana reading) and 13% (zh). Prompt banks (SQUIM, per
+clip): AISHELL-3 PESQ 3.41 / SI-SDR 21.9 dB, Emilia-YODAS JA 3.38 / 21.2 dB,
+against LibriTTS-R 4.09 / 26.7 dB, so the ja/zh voices are a little less
+clean than the English ones.
 
 ## Results so far
 
