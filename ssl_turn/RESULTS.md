@@ -345,6 +345,105 @@ fine1_bal1 (2 seeds), scored with the official sweep (0.5 s refractory; EOT re-c
   operating point; it suppresses isolated score spikes). It does not transfer to oto dev,
   so adopting it would mean tuning on TB dev. It remains a latency knob, not a default.
 
+## Encoder vs head: event-level diagnosis (`pipeline/diagnose.py`)
+
+Question: is the plateau in the frozen features or in the floor head? Decision events
+come from the gold events (oto single-annotator, TB dev three-annotator):
+- **EOT:** turn ends vs holds, read at boundary + 0.24 s and + 0.48 s. Holds that end
+  before the readout are dropped.
+- **INT:** floor-taking onsets vs backchannel/non-content spans, read at onset + 0.40 s.
+  Spans that end before the readout are dropped.
+
+Every readout is causal (the frame whose features end at that time). The metric is ROC AUC
+(threshold-free, no commit policy). Two kinds of system are scored on the same events:
+- **Heads:** the r012 checkpoints, re-inferred with the post-review code.
+- **Probes:** linear and 512-unit MLP probes on frozen features (own/other channel, now plus
+  a 1 s trailing mean). They are trained on oto train events and selected on oto dev.
+
+The MTD rows use the 23 conversations that have MTD features (19 train / 4 selection),
+with Cat on the same conversations. One L4 run, about $0.9.
+
+AUC (train / oto dev / TB dev):
+
+| | EOT +0.24 s | EOT +0.48 s | INT +0.40 s |
+|---|---|---|---|
+| head fine1_bal1 s1 (`eot` / `int_nobc`) | 0.841 / 0.813 / 0.884 | 0.854 / 0.804 / 0.896 | 0.844 / 0.725 / 0.850 |
+| head nofine s1 (`eot` / `int_spk`) | 0.847 / 0.818 / 0.890 | 0.858 / 0.807 / 0.903 | 0.738 / 0.636 / 0.839 |
+| Cat tap 15 linear probe (131 conv) | 0.859 / 0.807 / 0.851 | 0.873 / 0.812 / 0.864 | 0.991 / 0.858 / 0.763 |
+| Cat tap 15 MLP probe (131 conv) | 0.910 / 0.803 / 0.857 | 0.931 / 0.806 / 0.858 | 0.991 / 0.884 / 0.833 |
+| Cat head input, linear (19 conv) | 0.850 / 0.824 / 0.849 | 0.920 / 0.846 / 0.850 | 0.965 / 0.711 / 0.622 |
+| MTD, linear (19 conv) | 0.980 / 0.842 / 0.877 | 0.963 / 0.874 / 0.892 | 1.000 / 0.789 / 0.766 |
+| MTD, MLP (19 conv) | 1.000 / 0.860 / 0.885 | 0.997 / 0.878 / 0.897 | 1.000 / 0.737 / 0.802 |
+
+(For MTD rows the first column is the 19 probe-training conversations and the second is
+the 4 selection conversations.)
+
+- **The head is not capacity-limited.**
+  - The heads score about the same on their own training conversations as on oto dev
+    (EOT 0.84–0.86 vs 0.80–0.82).
+  - MLP probes memorize the training events (AUC up to 1.000), yet gain nothing on dev.
+  - What limits this data is generalization, not fit.
+- **For EOT the head adds little beyond the features.**
+  - A single-frame linear probe on any Cat tap from 7 to 31 reaches 0.84–0.87 on TB dev,
+    against 0.88–0.90 for the heads with 20 s of context.
+  - The taps are interchangeable, which matches the tap ablations.
+- **For EOT the encoder matters: MTD carries more of the decision than Cat.**
+  - At equal data (19 conversations), MTD probes beat Cat on oto selection
+    (0.84–0.88 vs 0.81–0.85) and on TB dev (0.88–0.90 vs 0.83–0.85).
+  - An MTD linear probe trained on 19 conversations matches the full Cat head trained on 131.
+  - This fits the residuals: Cat carries no lexical-completeness cue, and MTD is an ASR encoder.
+- **INT does not transfer from oto to TB dev, whatever the input.**
+  - Probes beat the head on oto dev (0.86–0.89 vs 0.72) but lose to it on TB dev
+    (0.73–0.83 vs 0.85).
+  - The backchannel-vs-take-over decision learned on otoSpeech does not carry over, and
+    MTD does not change that.
+  - The head's floor objective transfers better than a probe trained on the decision itself.
+- **Caveats:**
+  - AUC at a fixed readout is not the TurnBench score: no commit policy, no latency.
+  - TB dev events count each turn end at two delays separately.
+  - The heads were early-stopped on floor loss, not on these events.
+
+## Full head on MTD features (r015, Ray RTX 3090)
+
+This follows up the diagnosis above: the same floor head, trained on MTD features in
+place of Cat (`configs/r015_mtd.json`, `feats: mtd`, the 4 × 1024 final + hidden-layer
+stack). It ran on a single RTX 3090 through `ray_run.py` / `ray_submit.py`.
+- **Data:** the first 32 training conversations so far (Cat r012 used all 131).
+- **Training:** 1000 steps × 64 crops, 4 arms trained together, about 15 min. Every arm's
+  dev floor+future loss is best at step 250 and rises after that, so 32 conversations
+  overfit quickly.
+- **Labels:** built with the post-review rules (CONTESTED etc.). Scoring uses the official
+  TurnBench dev gold, so the comparison is fair on the test side.
+
+TB dev FP at fixed recall (same scoring as the LoRA table above):
+
+| TB dev | EOT (`eot_q@r0.5+rc1.0`) FP@R0.92 | EOT FP@R0.94 | INT (`int_nobc@r0.5`) FP@R0.95 | INT FP@R0.97 |
+|---|---|---|---|---|
+| Cat head, 131 conv (r012 fine1_bal1, s1 / s2) | 0.054 / 0.061 | 0.127 / 0.132 | 0.014 / 0.018 | 0.048 / 0.044 |
+| MTD head, 32 conv (r015 fine1_bal1, s1 / s2) | **0.048 / 0.041** | **0.073 / 0.071** | 0.015 / 0.014 | **0.021 / 0.027** |
+| MTD head, 32 conv (r015 nofine, s1 / s2) | 0.045 / 0.043 | 0.081 / 0.066 | 0.031 / 0.037 (`int_nobc`) | 0.076 / 0.057 |
+| MTD head, 131 conv (r015 fine1_bal1, s1 / s2) | 0.061 / 0.059 | 0.100 / 0.104 | **0.008 / 0.010** | **0.016 / 0.015** |
+| MTD head, 131 conv (r015 nofine, s1 / s2) | 0.061 / 0.073 | 0.102 / 0.117 | 0.017 / 0.020 (`int_nobc`) | 0.033 / 0.038 |
+
+- **EOT:** at recall 0.94, false fires drop by about 45% (0.13 → 0.07), with a quarter of
+  the training data. Latency at that point is p50 ~300 ms.
+- **INT:** about the same at recall 0.95, and roughly half the FP at recall 0.97. The fine
+  head is still what makes `int_nobc` work.
+- **At the FP ≤ 0.10 budget**, swept on TB dev: EOT R 0.945–0.951 (p50 ~265 ms) and INT
+  R 0.986 (p50 ~330 ms), against Cat's 0.939 and 0.974 (p50 585 ms).
+- **Caveat:** MTD re-encodes a 30 s window every 160 ms. This is causal, but it costs far
+  more than Cat. Encoding runs at about 7.4 channel-seconds per second on the 3090, so it
+  is not real time.
+- **131 conversations** (same configs, about 14 min): dev floor+future improves
+  (0.629 → 0.611, best step now 1000 for the fine arms), and oto dev INT recall at
+  FP ≤ 0.10 rises from 0.91–0.92 to 0.959.
+  - INT: TB dev improves again, to about half of Cat's FP at both recall points.
+  - EOT: TB dev gets *worse* than the 32-conversation run, landing between it and Cat
+    (FP@R0.94 0.10 vs 0.07 and 0.13; FP@R0.92 about equal to Cat). The 131 model also
+    fires earlier (p50 ~185 ms vs ~300 ms at R0.94). So more oto data moves EOT toward
+    oto's own timing, not toward TurnBench's.
+  - At the FP ≤ 0.10 budget: EOT R 0.939–0.940 (p50 ~190 ms), INT R 0.986–0.988 (p50 ~295 ms).
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`
@@ -357,3 +456,106 @@ The largest avoidable costs, all fixed:
 Training runs sit at 94–98% GPU utilization by training all configs in lockstep on
 VRAM-resident features. Feature loading went from 255 s to 146 s for 1.2× the data with
 parallel, preallocated reads.
+
+## Text end-of-turn model at every pause (`textfuse/`, CPU only)
+
+Question: does transcript content help EOT if it comes from a model trained for the job
+rather than a chat LLM asked zero-shot, and is it fused fairly?
+- **Text:** annotator-'a' transcripts (a perfect ASR upper bound). Context uses no labels:
+  own segments plus the other speaker's segments with 3 or more words, the last 6 turns.
+- **Text models:** LiveKit's turn detector (Qwen2.5-0.5B fine-tuned for end-of-utterance,
+  P(`<|im_end|>`)), zero-shot. Also a logistic probe on its last hidden state, trained on
+  TB dev with 5-fold cross-validation by conversation (optimistic: it sees TB labels).
+- **Queries:** every one of the 5525 segment ends. All 1063 holds and 1901 of 1904 EOT
+  ends start at a segment end, so ends and holds are compared at the same kind of point.
+- **Audio:** r012 fine1_bal1 `eot_q`, both seeds.
+
+Discrimination of ends vs holds at segment ends (AUC; audio = max `eot_q` over the first
+1 s of the pause):
+
+| | all | long holds (>0.6 s) vs ends | hard subset (audio above the 75th pct of holds) |
+|---|---|---|---|
+| text, zero-shot | 0.616 | 0.639 | 0.525 / 0.531 |
+| text, probe | 0.664 | 0.643 | 0.596 / 0.584 |
+| audio (s1 / s2) | 0.960 / 0.958 | 0.936 | — |
+| audio + text probe, logistic (s1 / s2) | 0.960 / 0.958 | | |
+| audio + shuffled probe (s1 / s2) | 0.960 / 0.958 | | |
+
+Frame-level fusion, `logit(eot_q) + w · centred logit(text)` live from segment end + 0.3 s
+until the speaker's next segment, scored with the pinned scorer (`@r0.5+rc1.0`):
+
+| EOT FP@R0.92 / FP@R0.94 (s1) | w 0 | 0.25 | 0.5 | 1.0 |
+|---|---|---|---|---|
+| zero-shot | 0.054 / 0.127 | 0.064 / 0.165 | 0.086 / 0.179 | 0.171 / — |
+| zero-shot, shuffled | | 0.067 / 0.141 | 0.113 / 0.177 | 0.171 / 0.287 |
+| probe | | 0.057 / 0.125 | 0.060 / 0.153 | 0.097 / 0.192 |
+| probe, shuffled | | 0.064 / 0.118 | 0.064 / 0.126 | 0.121 / 0.180 |
+
+Seed 2 behaves the same (audio 0.061 / 0.132; no text arm is better).
+
+- **The words barely separate ends from holds** on this data (AUC 0.62–0.66), and on the cases
+  the audio model gets wrong they are near chance (0.53–0.60). TurnBench holds mostly
+  follow syntactically complete clauses, and many ends are short, generic phrases.
+- **Fusion never beats audio alone.** The best arm ties it, and real and shuffled text
+  behave alike.
+- **Verdict:** with perfect transcripts and a purpose-built end-of-turn LM, late text fusion
+  is not a lever for TurnBench EOT. Semantics, if they help, have to come in as learned
+  features (an ASR encoder such as MTD or a streaming transducer) inside the head, where the
+  model can combine them with prosody.
+
+## ASR encoders as head input: probe test (`pipeline/diagnose_asr.py`)
+
+Question: would an ASR encoder that carries the words help the head, alone or fused with Cat?
+Same events, readouts and equal-data split as the encoder-vs-head diagnosis (draft PR #4:
+19 oto train / 4 selection conversations among the 23 with MTD features, TB dev for report).
+Each readout encodes the last 16 s of each channel ending at the readout time and keeps the
+final 80 ms frame plus the last 1.04 s mean, for a middle layer and the output (causal).
+- **stream:** `nvidia/stt_en_fastconformer_hybrid_large_streaming_multi` (114M) at attention
+  context [70, 0], i.e. the cache-aware streaming encoder with no lookahead.
+- **tdt:** `nvidia/parakeet-tdt-0.6b-v2` (600M), full attention inside the window.
+
+AUC on TB dev (linear / MLP probe); "long" = long holds (≥1.2 s) vs all ends:
+
+| | EOT +0.24 s | EOT +0.48 s | EOT +0.48 s, long | INT +0.40 s |
+|---|---|---|---|---|
+| Cat head input | 0.849 / 0.832 | 0.850 / 0.851 | 0.816 / 0.825 | 0.622 / 0.773 |
+| MTD | 0.877 / 0.885 | 0.892 / 0.897 | 0.863 / 0.885 | 0.766 / 0.802 |
+| stream (114M, causal) | 0.874 / 0.873 | 0.887 / 0.894 | 0.856 / 0.882 | 0.823 / 0.816 |
+| tdt (600M) | 0.897 / 0.887 | 0.901 / 0.900 | 0.874 / 0.882 | 0.757 / 0.778 |
+| Cat + stream | 0.855 / 0.864 | 0.878 / 0.889 | 0.838 / 0.864 | 0.686 / 0.784 |
+| Cat + tdt | 0.878 / 0.893 | 0.890 / 0.907 | 0.857 / 0.873 | 0.705 / 0.812 |
+| Cat + MTD | 0.878 / 0.880 | 0.893 / 0.897 | 0.876 / 0.873 | 0.747 / 0.766 |
+
+- **Every ASR encoder beats Cat on EOT by about 0.03–0.05 AUC,** including on long holds.
+  All three ASR encoders are within noise of each other (4 selection conversations; differences
+  under ~0.02 are not meaningful).
+- **Adding Cat to an ASR encoder does not help** (as with Cat + MTD). At this data size the
+  extra 18k Cat dimensions mostly add overfitting.
+- **The 114M streaming FastConformer matches MTD** while being causal by construction: one
+  cache-aware pass per channel instead of a 30 s window every 160 ms. That makes it the cheap
+  way to put word content into the head.
+- **Cost:** about $0.3 on a Modal L4 (encoding 32k windows: 4.5 min stream, about 10 min tdt).
+
+## Full head on streaming-ASR features (r016, Ray RTX 3090)
+
+The r015 recipe with `feats: asr` (`configs/r016_asr.json`): the streaming FastConformer
+(`encode_asr.py`, mid layer + output, 1024-d, exactly causal, about 530 channel-s/s on the
+3090 against MTD's 7.4). Same 4 arms, 1000 steps; best dev floor+future at step 500
+(0.667–0.674 on 131 conversations, vs MTD 0.611 and Cat about 0.664).
+
+| TB dev | EOT FP@R0.92 | EOT FP@R0.94 | INT FP@R0.95 | INT FP@R0.97 |
+|---|---|---|---|---|
+| Cat head, 131 conv (r012 fine1_bal1, s1 / s2) | 0.054 / 0.061 | 0.127 / 0.132 | 0.014 / 0.018 | 0.048 / 0.044 |
+| MTD head, 32 conv (r015) | 0.048 / 0.041 | 0.073 / 0.071 | 0.015 / 0.014 | 0.021 / 0.027 |
+| MTD head, 131 conv (r015) | 0.061 / 0.059 | 0.100 / 0.104 | 0.008 / 0.010 | 0.016 / 0.015 |
+| ASR head, 32 conv (r016_fine32) | 0.095 / 0.091 | 0.162 / 0.195 | 0.037 / 0.043 | 0.079 / 0.092 |
+| ASR head, 131 conv (r016_asr) | 0.054 / 0.045 | 0.095 / 0.109 | 0.019 / 0.018 | 0.035 / 0.049 |
+
+(fine1_bal1 arms; scoring as above, `eot_q@r0.5+rc1.0` and `int_nobc@r0.5`.)
+
+- **131 conversations:** EOT matches MTD-131 and beats Cat at recall 0.94 (FP 0.10 vs 0.13).
+  INT sits between Cat and MTD. At the FP ≤ 0.10 budget: EOT R 0.936–0.937, INT R 0.977–0.983.
+- **32 conversations:** clearly worse than both, unlike MTD. The streaming encoder needs the
+  full data, so the single-frame probe advantage over Cat only partly carries over to the head.
+- **Verdict:** a real-time causal encoder with word content gets MTD-level EOT for about 1/70
+  of the encode cost, but not MTD's INT. MTD stays the accuracy reference.

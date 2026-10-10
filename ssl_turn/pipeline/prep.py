@@ -12,7 +12,7 @@ import json
 
 import modal
 
-from common import OTO, TB_DEV, VOLUMES, cpu_image, setup_path, work
+from common import WORK, OTO, TB_DEV, VOLUMES, cpu_image, setup_path, work
 
 app = modal.App('ssl-turn-prep')
 FRAME_S = 0.08
@@ -61,8 +61,8 @@ def make_split():
     counts = {k: len(v) for k, v in splits.items()}
     if counts != dict(train=131, dev=16, gate=20, excluded_cross_partition=253):
         raise ValueError(f'split does not reproduce attempt 1: {counts}')
-    os.makedirs('/work', exist_ok=True)
-    json.dump(out, open('/work/split.json', 'w'), indent=1)
+    os.makedirs(f'{WORK}', exist_ok=True)
+    json.dump(out, open(f'{WORK}/split.json', 'w'), indent=1)
     work.commit()
     return counts
 
@@ -89,7 +89,7 @@ def oto_item(cid):
     setup_path()
     from turnbench.gold import CANONICAL, TURN_CANONICAL, ConsensusEvent, ConsensusViews, build_conversation_events
     import labels as lb
-    if os.path.exists(f'/work/labels/oto/{cid}.npz') and os.path.exists(f'/work/audio/oto/{cid}.npy'):
+    if all(os.path.exists(f'{WORK}/{p}') for p in (f'labels/oto/{cid}.npz', f'audio/oto/{cid}.npy', f'gold/oto/{cid}.json')):
         return cid, 'cached'
     src = f'{OTO}/{cid}'
     chans, sr = [], None
@@ -116,11 +116,11 @@ def oto_item(cid):
     y = lb.floor_targets(times, segments, events)
     future, future_w = lb.floor_projection(y['floor'], y['floor_w'])
     for d in ('audio/oto', 'labels/oto', 'gold/oto'):
-        os.makedirs(f'/work/{d}', exist_ok=True)
-    np.save(f'/work/audio/oto/{cid}.npy', audio.astype(np.float16))
-    np.savez_compressed(f'/work/labels/oto/{cid}.npz', floor=y['floor'], floor_w=y['floor_w'], act=y['act'],
+        os.makedirs(f'{WORK}/{d}', exist_ok=True)
+    np.save(f'{WORK}/audio/oto/{cid}.npy', audio.astype(np.float16))
+    np.savez_compressed(f'{WORK}/labels/oto/{cid}.npz', floor=y['floor'], floor_w=y['floor_w'], act=y['act'],
                         act_w=y['act_w'], future=future, future_w=future_w, activity=activity, times=times)
-    json.dump(dict(duration_s=duration, events=events), open(f'/work/gold/oto/{cid}.json', 'w'))
+    json.dump(dict(duration_s=duration, events=events), open(f'{WORK}/gold/oto/{cid}.json', 'w'))
     work.commit()
     return cid, round(duration, 1), sr, int(T)
 
@@ -132,7 +132,7 @@ def tbdev_audio(cids):
     import numpy as np
     from turnbench.data import conversation, resolve_dataset
     ds = resolve_dataset(TB_DEV)
-    os.makedirs('/work/audio/tbdev', exist_ok=True)
+    os.makedirs(f'{WORK}/audio/tbdev', exist_ok=True)
     out = []
     for cid in cids:
         conv = conversation(ds, cid)
@@ -140,8 +140,50 @@ def tbdev_audio(cids):
         sr = chans[0][1]
         n = min(len(c[0]) for c in chans)
         audio = causal_resample(np.stack([c[0][:n] for c in chans], 1), sr)
-        np.save(f'/work/audio/tbdev/{cid}.npy', audio.astype(np.float16))
+        np.save(f'{WORK}/audio/tbdev/{cid}.npy', audio.astype(np.float16))
         out.append((cid, sr, round(conv.duration_s, 2)))
+    work.commit()
+    return out
+
+
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=32768, timeout=3600)
+def tbdev_labels(cids):
+    """Training targets for TurnBench dev conversations, built like oto_item's: floor/act from
+    the 3-annotator label-view consensus and the official gold events, fine labels and
+    activity from annotator a (oto has one annotator). Only for cross-fitted adaptation
+    tests: a model trained on these must never be scored on the same conversations."""
+    import os
+    from dataclasses import asdict
+    import numpy as np
+    setup_path()
+    from turnbench.data import conversation, resolve_dataset
+    from turnbench.gold import consensus_for_conversation, events_for_conversation
+    import labels as lb
+    ds = resolve_dataset(TB_DEV, skip_audio=True)
+    os.makedirs(f'{WORK}/labels/tbdev', exist_ok=True)
+    out = []
+    for cid in cids:
+        path = f'{WORK}/labels/tbdev/{cid}.npz'
+        if os.path.exists(path):
+            out.append((cid, 'cached'))
+            continue
+        conv = conversation(ds, cid)
+        T = int(np.floor(conv.duration_s / FRAME_S))
+        times = (np.arange(T) + 1) * FRAME_S
+        consensus, _ = consensus_for_conversation(conv)
+        segments = [(e.speaker, e.start, e.end, e.label) for e in consensus]
+        events = asdict(events_for_conversation(conv))
+        y = lb.floor_targets(times, segments, events)
+        future, future_w = lb.floor_projection(y['floor'], y['floor_w'])
+        raw = [(s, a, b, label) for s in (1, 2) for a, b, label, *_ in conv.annotations[(s, 'a')]]
+        activity = np.zeros((T, 2), np.float32)
+        for s, a, b, label in raw:
+            if label not in ACTIVITY_EXCLUDED:
+                activity[(times - FRAME_S / 2 >= a) & (times - FRAME_S / 2 < b), s - 1] = 1
+        np.savez_compressed(path, floor=y['floor'], floor_w=y['floor_w'], act=y['act'], act_w=y['act_w'],
+                            future=future, future_w=future_w, activity=activity, times=times,
+                            fine=lb.fine_acts(times, raw))
+        out.append((cid, int(T), len(segments)))
     work.commit()
     return out
 
@@ -160,7 +202,7 @@ def add_fine(cid):
     import numpy as np
     setup_path()
     import labels as lb
-    path = f'/work/labels/oto/{cid}.npz'
+    path = f'{WORK}/labels/oto/{cid}.npz'
     z = dict(np.load(path))
     if 'fine' in z:
         return cid, 'cached'
@@ -199,10 +241,10 @@ def extra_ids():
     rng.shuffle(actors)
     n = len(actors)
     assign = {a: ('train' if i < int(n * .6) else 'dev' if i < int(n * .8) else 'gate') for i, a in enumerate(actors)}
-    excluded = json.load(open('/work/split.json'))['splits']['excluded_cross_partition']
+    excluded = json.load(open(f'{WORK}/split.json'))['splits']['excluded_cross_partition']
     by = {r['_dir']: r for r in rows}
     keep = [c for c in excluded if 'gate' not in {assign[by[c][f'speaker_{s}_actor_id']] for s in (1, 2)}]
-    json.dump(keep, open('/work/extra_no_gate.json', 'w'))
+    json.dump(keep, open(f'{WORK}/extra_no_gate.json', 'w'))
     work.commit()
     return keep
 

@@ -11,10 +11,10 @@ import time
 
 import modal
 
-from common import VOLUMES, cpu_image, gpu_image, gpu_monitor, setup_path, work
+from common import WORK, VOLUMES, cpu_image, gpu_image, gpu_monitor, setup_path, work
 
 app = modal.App('ssl-turn-encode')
-MODEL_DIR = '/work/models/cat'
+MODEL_DIR = f'{WORK}/models/cat'
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, cpu=2, memory=8192, timeout=3600)
@@ -45,7 +45,7 @@ def encode(items, batch_waves=32, chunk_frames=50, dtype='fp32'):
 
     def load(item):
         split, cid = item
-        a = np.load(f'/work/audio/{split}/{cid}.npy')
+        a = np.load(f'{WORK}/audio/{split}/{cid}.npy')
         return item, a
 
     stats, stop = [], threading.Event()
@@ -89,8 +89,8 @@ def encode(items, batch_waves=32, chunk_frames=50, dtype='fp32'):
                 chans = results.pop(item)
                 split, cid = item
                 T = min(len(chans[0]), len(chans[1]))
-                os.makedirs(f'/work/feats/{split}', exist_ok=True)
-                np.save(f'/work/feats/{split}/{cid}.npy', np.stack([chans[0][:T], chans[1][:T]], 1))
+                os.makedirs(f'{WORK}/feats/{split}', exist_ok=True)
+                np.save(f'{WORK}/feats/{split}/{cid}.npy', np.stack([chans[0][:T], chans[1][:T]], 1))
                 saved += 1
                 if saved % 10 == 0:
                     work.commit()
@@ -110,8 +110,8 @@ def todo(splits):
     import os
     out = []
     for split in splits:
-        have = {f[:-4] for f in os.listdir(f'/work/feats/{split}')} if os.path.isdir(f'/work/feats/{split}') else set()
-        for f in sorted(os.listdir(f'/work/audio/{split}')):
+        have = {f[:-4] for f in os.listdir(f'{WORK}/feats/{split}')} if os.path.isdir(f'{WORK}/feats/{split}') else set()
+        for f in sorted(os.listdir(f'{WORK}/audio/{split}')):
             if f.endswith('.npy') and f[:-4] not in have:
                 out.append((split, f[:-4]))
     return out

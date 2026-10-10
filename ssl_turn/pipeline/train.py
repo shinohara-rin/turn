@@ -13,16 +13,17 @@ import time
 
 import modal
 
-from common import VOLUMES, gpu_image, gpu_monitor, setup_path, work
+from common import WORK, VOLUMES, gpu_image, gpu_monitor, setup_path, work
 
 app = modal.App('ssl-turn-train')
 TAPS = (7, 15, 23, 31)  # layout of encode.py features: 4 x 1280 taps, then 768 final
 TAP_DIM, FINAL_DIM = 1280, 768
 LOADED = list(TAPS)  # taps actually kept in VRAM for this run (set by train/infer)
-FEAT_DIR = 'feats'   # 'feats' (Cat) or 'feats_mtd' (MOSS-Transcribe-Diarize, 4096-d, no taps)
+FEAT_DIR = 'feats'   # 'feats' (Cat), 'feats_mtd' (MOSS-Transcribe-Diarize, 4096-d) or 'feats_asr' (streaming ASR, 1024-d)
+NO_TAP_FEATS = {'mtd': ('feats_mtd', 4096), 'asr': ('feats_asr', 1024)}  # config feats -> (dir, dim); no taps
 FUSE_MTD = False     # Cat columns + MTD 4096-d appended (config feats='cat+mtd')
 WARM = 0             # context-only frames before each training crop (encoder-tuning runs: CatTop window)
-CAT_DIR = '/work/models/cat'
+CAT_DIR = f'{WORK}/models/cat'
 _CAT = None
 
 
@@ -34,40 +35,42 @@ def columns(taps):
     return np.concatenate(cols)
 
 
-def load_split(split, cids, device, cols=None, workers=16):
+def load_split(split, cids, device, cols=None, workers=16, labeled=None):
     """Read per-conversation features with parallel threads (volume reads are I/O bound)
-    straight into one preallocated GPU tensor; peak VRAM is the final size, not 2x."""
+    straight into one preallocated GPU tensor; peak VRAM is the final size, not 2x.
+    Labels are read for oto by default, and for tbdev only when asked (labeled=True)."""
     import numpy as np
     import torch
     from concurrent.futures import ThreadPoolExecutor
+    labeled = split == 'oto' if labeled is None else labeled
 
     def length(cid):
-        T = np.load(f'/work/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r').shape[0]
+        T = np.load(f'{WORK}/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r').shape[0]
         if FUSE_MTD:
-            T = min(T, np.load(f'/work/feats_mtd/{split}/{cid}.npy', mmap_mode='r').shape[0])
-        if split == 'oto':
-            with np.load(f'/work/labels/oto/{cid}.npz') as z:
+            T = min(T, np.load(f'{WORK}/feats_mtd/{split}/{cid}.npy', mmap_mode='r').shape[0])
+        if labeled:
+            with np.load(f'{WORK}/labels/{split}/{cid}.npz') as z:
                 T = min(T, len(z['floor']))
         return T
 
     def read(cid, T):
-        f = np.load(f'/work/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r')
+        f = np.load(f'{WORK}/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r')
         lab = None
-        if split == 'oto':
-            z = np.load(f'/work/labels/oto/{cid}.npz')
+        if labeled:
+            z = np.load(f'{WORK}/labels/{split}/{cid}.npz')
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
             if 'fine' in z.files:
                 lab['fine'], lab['fine_w'] = z['fine'][:T], z['act_w'][:T]
         x = np.ascontiguousarray(f[:T]) if cols is None else np.ascontiguousarray(f[:T][..., cols])
         if FUSE_MTD:  # append the 4096-d MOSS-Transcribe-Diarize features after the Cat columns
-            g = np.load(f'/work/feats_mtd/{split}/{cid}.npy', mmap_mode='r')
+            g = np.load(f'{WORK}/feats_mtd/{split}/{cid}.npy', mmap_mode='r')
             x = np.concatenate([x, np.ascontiguousarray(g[:T])], -1)
         return x, lab
 
     with ThreadPoolExecutor(workers) as pool:
         lengths = list(pool.map(length, cids))
         offsets = np.concatenate([[0], np.cumsum(lengths)]).tolist()
-        dim = len(cols) if cols is not None else np.load(f'/work/{FEAT_DIR}/{split}/{cids[0]}.npy', mmap_mode='r').shape[-1]
+        dim = len(cols) if cols is not None else np.load(f'{WORK}/{FEAT_DIR}/{split}/{cids[0]}.npy', mmap_mode='r').shape[-1]
         dim += 4096 if FUSE_MTD else 0
         X = torch.empty((offsets[-1], 2, dim), dtype=torch.float16, device=device)
         labs = []
@@ -141,7 +144,7 @@ def infer_all(models, configs, splits, dev):
                     for s in range(a, b, 1000):
                         lo = max(a, s - ctx)
                         with torch.autocast('cuda', dtype=torch.bfloat16):
-                            o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None])
+                            o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None].to(dev))
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items()
                                      if k in ('floor', 'future', 'act', 'fine')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
@@ -162,27 +165,27 @@ def infer(run, names, out_run=None, use_dev=True):
     import numpy as np
     import torch
     dev = 'cuda'
-    split = json.load(open('/work/split.json'))['splits']
-    tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
+    split = json.load(open(f'{WORK}/split.json'))['splits']
     global LOADED, FEAT_DIR, FUSE_MTD
     models, configs = {}, {}
     for n in names:
-        ck = torch.load(f'/work/runs/{run}/{n}.pt', map_location=dev)
+        ck = torch.load(f'{WORK}/runs/{run}/{n}.pt', map_location=dev)
         configs[n] = ck['cfg']
         models[n] = build_model(ck['cfg']).to(dev)
         models[n].load_state_dict(ck['state'], strict=not ck['cfg'].get('tune'))  # tuned: trainable params only
     # Restore the feature layout the checkpoints were trained on (as train() sets it).
-    mtd = any(c.get('feats') == 'mtd' for c in configs.values())
+    mtd = next((c['feats'] for c in configs.values() if c.get('feats') in NO_TAP_FEATS), None)
     FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
-    FEAT_DIR = 'feats_mtd' if mtd else 'feats'
+    FEAT_DIR = NO_TAP_FEATS[mtd][0] if mtd else 'feats'
+    tb_ids = sorted(f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/tbdev') if not f.endswith('.tmp.npy'))
     need = {t for c in configs.values() for t in (c.get('taps') or [])
             if not c.get('tune') or t < c['tune'].get('first', 16)}
     need |= {c['tune'].get('first', 16) - 1 for c in configs.values() if c.get('tune')}
     LOADED = [t for t in TAPS if t in need]
     cols = None if mtd else columns(LOADED)
-    have = {f[:-4] for f in os.listdir(f'/work/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
+    have = {f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
     if FUSE_MTD:
-        have &= {f[:-4] for f in os.listdir('/work/feats_mtd/oto') if not f.endswith('.tmp.npy')}
+        have &= {f[:-4] for f in os.listdir(f'{WORK}/feats_mtd/oto') if not f.endswith('.tmp.npy')}
     dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
     probs = {}
     if dev_ids:
@@ -192,8 +195,8 @@ def infer(run, names, out_run=None, use_dev=True):
     Xt, offt, _ = load_split('tbdev', tb_ids, dev, cols)
     probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
     out_run = out_run or run
-    os.makedirs(f'/work/runs/{out_run}', exist_ok=True)
-    np.savez_compressed(f'/work/runs/{out_run}/probs.npz', **probs)
+    os.makedirs(f'{WORK}/runs/{out_run}', exist_ok=True)
+    np.savez_compressed(f'{WORK}/runs/{out_run}/probs.npz', **probs)
     work.commit()
     return len(probs)
 
@@ -226,7 +229,7 @@ def build_model(cfg):
 def build_head(cfg):
     setup_path()
     import model as m
-    final_dim = {'mtd': 4096, 'cat+mtd': FINAL_DIM + 4096}.get(cfg.get('feats'), FINAL_DIM)
+    final_dim = {'mtd': 4096, 'asr': 1024, 'cat+mtd': FINAL_DIM + 4096}.get(cfg.get('feats'), FINAL_DIM)
     return m.TurnModel(tap_layers=len(cfg.get('taps') or []), tap_dim=TAP_DIM,
                        final_dim=final_dim if cfg.get('final', True) else 0,
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
@@ -235,7 +238,16 @@ def build_head(cfg):
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
-          use_dev=True, train_from=None, infer=True):
+          use_dev=True, train_from=None, infer=True, feats_on='cuda', tb_train=(), tb_eval=None, tb_repeat=1,
+          init_from=None, select_last=False):
+    """feats_on='cpu' keeps features in host RAM and moves each batch to the GPU (for
+    feature sets larger than VRAM, e.g. MTD 4096-d on a 24 GB card).
+
+    TurnBench-dev adaptation test (cross-fitting only): tb_train adds those TB dev
+    conversations (labels/tbdev) to the training set, their crop starts repeated tb_repeat
+    times; n_train=0 trains on them alone. tb_eval restricts TB dev inference to the held-out
+    conversations. init_from=RUN starts each model from RUN/{name}.pt; select_last keeps the
+    final step instead of the best oto-dev checkpoint."""
     import os, threading
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')  # before the first CUDA allocation
     import numpy as np
@@ -246,19 +258,20 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     torch.manual_seed(seed)
     torch.backends.cuda.matmul.allow_tf32 = True
     dev = 'cuda'
-    split = json.load(open('/work/split.json'))['splits']
-    have = {f[:-4] for f in os.listdir('/work/feats/oto')}
+    split = json.load(open(f'{WORK}/split.json'))['splits']
+    feat_dir = next((NO_TAP_FEATS[c['feats']][0] for c in configs.values() if c.get('feats') in NO_TAP_FEATS), 'feats')
+    have = {f[:-4] for f in os.listdir(f'{WORK}/{feat_dir}/oto') if not f.endswith('.tmp.npy')}
     train_ids = [c for c in split['train'] if c in have][:n_train]
     if extra:  # labeled data-scaling ablation: gate-free cross-partition conversations
-        train_ids += [c for c in json.load(open('/work/extra_no_gate.json')) if c in have]
+        train_ids += [c for c in json.load(open(f'{WORK}/extra_no_gate.json')) if c in have]
     global LOADED, FEAT_DIR, FUSE_MTD, WARM
     setup_path()
     import cat_top
     WARM = cat_top.WINDOW if any(c.get('tune') for c in configs.values()) else 0
-    mtd = any(c.get('feats') == 'mtd' for c in configs.values())
+    mtd = next((c['feats'] for c in configs.values() if c.get('feats') in NO_TAP_FEATS), None)
     FUSE_MTD = any(c.get('feats') == 'cat+mtd' for c in configs.values())
-    FEAT_DIR = 'feats_mtd' if mtd else 'feats'
-    have = {f[:-4] for f in os.listdir(f'/work/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
+    FEAT_DIR = NO_TAP_FEATS[mtd][0] if mtd else 'feats'
+    have = {f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/oto') if not f.endswith('.tmp.npy')}
     if train_from:  # pin the exact conversation list (e.g. to match another backbone's subset)
         train_ids = [c for c in json.load(open(train_from)) if c in have]
     train_ids = [c for c in train_ids if c in have]
@@ -269,12 +282,19 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     LOADED = [t for t in TAPS if t in need]
     cols = None if mtd else columns(LOADED)
     dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
-    tb_ids = sorted(f[:-4] for f in os.listdir('/work/feats/tbdev'))
+    tb_ids = sorted(f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/tbdev') if not f.endswith('.tmp.npy'))
     t0 = time.time()
-    X, off, lab = load_split('oto', train_ids, dev, cols)
+    X, off, lab = load_split('oto', train_ids, feats_on, cols) if train_ids else (None, [0], [])
+    reps = [1] * len(train_ids)
+    if tb_train:
+        Xb, offb, labb = load_split('tbdev', list(tb_train), feats_on, cols, labeled=True)
+        X = Xb if X is None else torch.cat([X, Xb])
+        off = off + [off[-1] + o for o in offb[1:]]
+        lab = lab + labb
+        reps += [tb_repeat] * len(tb_train)
     Y = stack_labels(lab, dev)
     if dev_ids:
-        Xd, offd, labd = load_split('oto', dev_ids, dev, cols)
+        Xd, offd, labd = load_split('oto', dev_ids, feats_on, cols)
         Yd = stack_labels(labd, dev)
     print(f'loaded {len(train_ids)} train ({len(X)} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
           f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
@@ -295,11 +315,14 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
     # Valid crop starts: within one conversation.
     # Valid crop starts (first labelled frame): WARM context frames before it, all in one conversation.
-    starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev) for a, b in zip(off[:-1], off[1:])
-                        if b - a > crop + WARM])
+    starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r)
+                        for a, b, r in zip(off[:-1], off[1:], reps) if b - a > crop + WARM])
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = build_model(cfg).to(dev)
+        if init_from:
+            net.load_state_dict(torch.load(f'{WORK}/runs/{init_from}/{name}.pt', weights_only=False)['state'],
+                                strict=False)
         models[name] = net
         groups = [dict(params=[p for n, p in net.named_parameters() if p.requires_grad and not n.startswith('top.')],
                        lr=cfg.get('lr', 3e-4), weight_decay=cfg.get('wd', 0.05))]
@@ -317,7 +340,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         """Features for [idx - WARM, idx + crop), labels for [idx, idx + crop)."""
         span = idx[:, None] + torch.arange(-WARM, crop, device=dev)
         b = {k: v[span[:, WARM:]] for k, v in Ys.items()}
-        return Xs[span], b
+        return Xs[span.to(Xs.device)].to(dev, non_blocking=True), b
 
     SWAP = torch.tensor([1, 0, 2, 3], device=dev)  # HELD_0 <-> HELD_1
     VAPN = len(m.VAP_BINS)
@@ -352,7 +375,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         if cfg.get('tune'):
             net, first = models[name], cfg['tune'].get('first', 16)
             n = min(1500, off[1] - off[0])  # conversation start: the cache had no more left context either
-            x = X[:n][None]
+            x = X[:n][None].to(dev)  # X may live on the CPU (feats_on='cpu')
             i = LOADED.index(first - 1)
             with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16):
                 o = net.top(x[0, :, :, i * TAP_DIM:(i + 1) * TAP_DIM].transpose(0, 1).float())
@@ -435,6 +458,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         return {n: dict(best_step=best[n][2], best=best[n][0], ms_per_step=(time.time() - tstep) / steps * 1000,
                         peak_gib=torch.cuda.max_memory_allocated() / 2**30) for n in history}
     for name, net in models.items():  # restore the best dev checkpoint (early stopping)
+        if select_last:
+            best[name] = (float('nan'), None, steps)
+            continue
         net.load_state_dict(best[name][1], strict=False)  # trainable params; frozen encoder weights unchanged
         print(f'{name}: best step {best[name][2]} (floor+future {best[name][0]:.4f})', flush=True)
     torch.cuda.empty_cache()
@@ -443,14 +469,16 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if dev_ids:
         del Xd
     torch.cuda.empty_cache()
-    Xt, offt, _ = load_split('tbdev', tb_ids, dev, cols)
+    if tb_eval is not None:
+        tb_ids = [c for c in tb_ids if c in set(tb_eval)]
+    Xt, offt, _ = load_split('tbdev', tb_ids, feats_on, cols)
     probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
-    os.makedirs(f'/work/runs/{run}', exist_ok=True)
-    np.savez_compressed(f'/work/runs/{run}/probs.npz', **probs)
+    os.makedirs(f'{WORK}/runs/{run}', exist_ok=True)
+    np.savez_compressed(f'{WORK}/runs/{run}/probs.npz', **probs)
     for name, net in models.items():
-        torch.save(dict(cfg=configs[name], state=cat_top.trainable_state(net)), f'/work/runs/{run}/{name}.pt')
-    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
-                   wall_s=time.time() - t0, gpu_util=[u for u, _ in stats]), open(f'/work/runs/{run}/train.json', 'w'))
+        torch.save(dict(cfg=configs[name], state=cat_top.trainable_state(net)), f'{WORK}/runs/{run}/{name}.pt')
+    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, tb_train=list(tb_train), tb_eval=tb_eval, init_from=init_from, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
+                   wall_s=time.time() - t0, gpu_util=[u for u, _ in stats]), open(f'{WORK}/runs/{run}/train.json', 'w'))
     work.commit()
     stop.set()
     return {n: dict(best_step=best[n][2], best=best[n][0]) for n in history}
