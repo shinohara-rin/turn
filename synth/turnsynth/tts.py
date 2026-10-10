@@ -165,6 +165,8 @@ class IndexTTS:
     sample_rate = 22050
     whole_turn = True
     EMOTIONS = EMOTIONS  # IndexTTS2's emotion-vector order
+    # Above about 0.4, "happy" makes IndexTTS laugh through the line.
+    EMOTION_CAP = {"happy": 0.35}
 
     def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
                  half: bool = True, anchor_s: float = 8.0, history_s: float = 3.0, entrain: float = 0.0,
@@ -216,7 +218,8 @@ class IndexTTS:
         elif language == "ja":
             raise ValueError("IndexTTS2 reads only zh and en; use version 2.5 for ja")
         if context.emotion:
-            kwargs.update(emo_vector=[float(context.emotion.get(k, 0.0)) for k in self.EMOTIONS],
+            kwargs.update(emo_vector=[min(float(context.emotion.get(k, 0.0)), self.EMOTION_CAP.get(k, 1.0))
+                                      for k in self.EMOTIONS],
                           emo_alpha=self.emo_alpha)
         elif self.text_emotion and self.whole_turn:
             # IndexTTS's QwenEmotion reads an emotion vector off the text itself.
