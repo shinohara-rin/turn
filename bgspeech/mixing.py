@@ -24,8 +24,10 @@ ANNOTATORS = ("a", "b", "c")
 
 # ---- data access (row by row: a whole TB dev shard decodes to tens of GB) ----
 
-def parquet_files(data_dir: str | Path) -> list[Path]:
-    return sorted(Path(data_dir).glob("*.parquet"))
+def parquet_files(data: str | Path) -> list[Path]:
+    """`data`: a directory of parquet shards, or one shard."""
+    p = Path(data)
+    return [p] if p.is_file() else sorted(p.glob("*.parquet"))
 
 
 def list_ids(data_dir) -> list[str]:

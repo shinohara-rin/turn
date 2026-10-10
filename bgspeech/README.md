@@ -4,6 +4,43 @@ Deployment problem: a TV, a YouTube video or another person talks in the room. T
 lands only in the **user** channel, and the turn model treats it as the user: it fires false
 interruptions while the agent talks, and misses or delays the user's end of turn.
 
+## bgbench: the fixed benchmark (`bench.py`, `bench_modal.py`, `bench_score.py`)
+
+The earlier sections below used a 12-conversation subset and ad hoc conditions. bgbench
+fixes the recipe so any model gets the same report card:
+
+- All 38 TurnBench dev conversations (7.3 h). Plan (user channel, 4 donor conversations
+  each) from seed 20261010; every background's random stream is seeded by
+  (version, conversation, style), so rendering is deterministic. `bench.VERSION` names it.
+- 14 conditions: `clean`; far-field playback `far10/5/0/m5`; TV (dialogue + music bed)
+  `tv5/0`; music only `music5/0`; a talker near the mic (short room, no loudspeaker)
+  `near10/5/0`; four-talker babble `babble5/0`. Details in `bench.py`.
+- SNR references and the "listening" mask exclude Channel Bleed, Non-Speech Noise and
+  Awkward Silence labels (TB annotators mark those on the silent channel).
+- Thresholds: each model's clean operating point (FP <= 0.10), held fixed.
+- Music: even-indexed MUSAN fma files; the odd ones are for training augmentation. Donors
+  are TB dev conversations, so training augmentation must not use TB dev audio.
+- Runs on Modal (volume `turn-bgbench`): `prep` once, then `vap` / `asr --run R` (a new
+  model family needs a runner in `bench_modal.py`), `fetch`, then `bench_score.py`.
+  Mixtures are rendered on the fly in each runner. Cost for VAP + one 2-seed ASR head: about
+  $4 on L4s (VAP is most of it).
+
+### v1 results (2026-10-10)
+
+Headline, user channel, mean over each group (r016_asr = 2-seed mean):
+
+| model | clean EOT / INT | playback | near talker | babble | music |
+|---|---|---|---|---|---|
+| VAP (oto), user EOT recall | 0.843 / 0.954 | 0.615 | 0.664 | 0.502 | 0.809 |
+| VAP (oto), false INT/min | | 5.0 | 3.9 | 6.4 | 0.2 |
+| r016_asr (FastConformer), user EOT recall | 0.939 / 0.980 | 0.713 | 0.792 | 0.682 | 0.913 |
+| r016_asr, false INT/min | | 13.9 | 13.3 | 7.1 | 0.1 |
+
+Clean r016_asr matches its reported TB dev numbers (EOT 0.94, INT 0.98), which checks the
+runner. The FastConformer head breaks under background speech just like the Cat head did
+(far0: about 21 false INT/min, user EOT 0.95 to 0.62), and worse than VAP on false
+interruptions. Music alone barely matters. Full table: `/mnt/project-files/bg-speech/bgbench/report-v1.md`.
+
 ## Test (`mixing.py`, `run_vap.py`, `score_all.py`; ssl_turn side in `ssl_turn/pipeline/bgmix.py`)
 - 12 TurnBench dev conversations (seed 0, 2.17 h). One random channel per conversation is the
   "user". Its background is another TB dev conversation (both speakers, like a podcast playing),
