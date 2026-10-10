@@ -1,4 +1,5 @@
-"""Streaming step (K frames per call, K = 1 by default) of the ssl_turn head (TurnModel, stereo) with attention KV caches, for ONNX export.
+"""Streaming step of the ssl_turn head (TurnModel, stereo) with attention KV caches, for ONNX export.
+K frames per call (K = 1 by default).
 
 TurnModel runs causal ALiBi attention over a 20 s window (W = 250 frames): per layer a self
 block per channel, then a cross block whose keys are the other channel's self-block output.

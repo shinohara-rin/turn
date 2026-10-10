@@ -107,7 +107,8 @@ def to_int8(src, dst):
     weights = {i.name for i in m.graph.initializer}
     keep = [n.name for n in m.graph.node if n.name.count('/') < 2 or
             (n.op_type in ('MatMul', 'Gemm') and not any(i in weights for i in n.input))]
-    quantize_dynamic(src, dst, weight_type=QuantType.QInt8, op_types_to_quantize=['MatMul', 'Gemm'], nodes_to_exclude=keep)
+    quantize_dynamic(src, dst, weight_type=QuantType.QInt8, op_types_to_quantize=['MatMul', 'Gemm'],
+                     nodes_to_exclude=keep)
 
 
 def main():
