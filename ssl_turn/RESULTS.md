@@ -535,3 +535,27 @@ AUC on TB dev (linear / MLP probe); "long" = long holds (≥1.2 s) vs all ends:
   cache-aware pass per channel instead of a 30 s window every 160 ms. That makes it the cheap
   way to put word content into the head.
 - **Cost:** about $0.3 on a Modal L4 (encoding 32k windows: 4.5 min stream, about 10 min tdt).
+
+## Full head on streaming-ASR features (r016, Ray RTX 3090)
+
+The r015 recipe with `feats: asr` (`configs/r016_asr.json`): the streaming FastConformer
+(`encode_asr.py`, mid layer + output, 1024-d, exactly causal, about 530 channel-s/s on the
+3090 against MTD's 7.4). Same 4 arms, 1000 steps; best dev floor+future at step 500
+(0.667–0.674 on 131 conversations, vs MTD 0.611 and Cat about 0.664).
+
+| TB dev | EOT FP@R0.92 | EOT FP@R0.94 | INT FP@R0.95 | INT FP@R0.97 |
+|---|---|---|---|---|
+| Cat head, 131 conv (r012 fine1_bal1, s1 / s2) | 0.054 / 0.061 | 0.127 / 0.132 | 0.014 / 0.018 | 0.048 / 0.044 |
+| MTD head, 32 conv (r015) | 0.048 / 0.041 | 0.073 / 0.071 | 0.015 / 0.014 | 0.021 / 0.027 |
+| MTD head, 131 conv (r015) | 0.061 / 0.059 | 0.100 / 0.104 | 0.008 / 0.010 | 0.016 / 0.015 |
+| ASR head, 32 conv (r016_fine32) | 0.095 / 0.091 | 0.162 / 0.195 | 0.037 / 0.043 | 0.079 / 0.092 |
+| ASR head, 131 conv (r016_asr) | 0.054 / 0.045 | 0.095 / 0.109 | 0.019 / 0.018 | 0.035 / 0.049 |
+
+(fine1_bal1 arms; scoring as above, `eot_q@r0.5+rc1.0` and `int_nobc@r0.5`.)
+
+- **131 conversations:** EOT matches MTD-131 and beats Cat at recall 0.94 (FP 0.10 vs 0.13).
+  INT sits between Cat and MTD. At the FP ≤ 0.10 budget: EOT R 0.936–0.937, INT R 0.977–0.983.
+- **32 conversations:** clearly worse than both, unlike MTD. The streaming encoder needs the
+  full data, so the single-frame probe advantage over Cat only partly carries over to the head.
+- **Verdict:** a real-time causal encoder with word content gets MTD-level EOT for about 1/70
+  of the encode cost, but not MTD's INT. MTD stays the accuracy reference.
