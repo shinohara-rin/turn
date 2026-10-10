@@ -33,6 +33,9 @@ current state, and the open threads. Last updated 2026-10-09.
   tracked here. Keep pilots small and report cost.
 - The user is not certain about the Cat encoder and asked about the MOSS-Transcribe-Diarize
   (MTD) backbone. Both are implemented; see RESULTS.md for the comparison.
+- **Backbone decision (2026-10-10): drop Cat for now.** Use the causal streaming FastConformer
+  (`feats: asr`, `encode_asr.py`, real time) as the default backbone, with MTD (`feats: mtd`) as the
+  accuracy reference. Cat code stays for reproducing old runs. Evidence: RESULTS.md r016 / r015.
 
 ## Hard rules
 
