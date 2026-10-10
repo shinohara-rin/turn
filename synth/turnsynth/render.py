@@ -268,9 +268,18 @@ def synthesize_by_item(tts: TTS, script: Script, voices: dict[str, str], timing:
     return speeches
 
 
+RATE_LIMITS = (0.85, 1.15)
+
+
 def item_speed(script: Script, item: Item) -> float:
-    """Speaking rate for an item: its own `speed` times its speaker's `pace`."""
-    return (item.speed or 1.0) * pace(script.speakers[item.speaker])
+    """Speaking rate for an item: its own `speed` times its speaker's `pace`.
+
+    Kept within RATE_LIMITS: IndexTTS-2.5 applies it by stretching the
+    mel length, not by generating faster or slower speech, so a laughing
+    line squeezed to 1.27x ran laugh and words together with no breath.
+    """
+    rate = (item.speed or 1.0) * pace(script.speakers[item.speaker])
+    return min(RATE_LIMITS[1], max(RATE_LIMITS[0], rate))
 
 
 SPEED_SPLIT = 0.1  # a floor pass ends where the rate changes by more than this
