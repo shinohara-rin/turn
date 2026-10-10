@@ -444,6 +444,48 @@ TB dev FP at fixed recall (same scoring as the LoRA table above):
     oto's own timing, not toward TurnBench's.
   - At the FP ≤ 0.10 budget: EOT R 0.939–0.940 (p50 ~190 ms), INT R 0.986–0.988 (p50 ~295 ms).
 
+## Training on TurnBench dev itself: 2-fold cross-fit (r017/r018)
+
+This asks whether the oto→TurnBench gap is about labeling conventions: if it is, a little
+in-domain supervision should help a lot.
+- **Setup:** TB dev is split into two fixed halves of 19 conversations (alternating ids,
+  `ray_run.tb_folds`). A model trained on one half is scored only on the other half, and it
+  is compared with the oto-only r016 head (FastConformer, 131 conv) on the same half.
+- **Labels:** `prep.tbdev_labels`. The floor targets come from the 3-annotator consensus
+  and the official gold events. Fine labels and activity come from annotator a.
+- **Arms (FastConformer features, `configs/r016_asr.json`, 2 seeds, last step):**
+  - *mix*: 131 oto + the TB half, TB crops repeated 4×, 1000 steps from scratch.
+  - *ft*: r016 fine-tuned on the TB half alone, lr 1e-4, 300 steps.
+  - *tbonly* (first pass only): the TB half alone, from scratch.
+
+**First pass (r017):** every arm was far worse. TB annotators mark the other speaker's
+channel bleed and background noise on a listening channel; otoSpeech has almost none of
+these labels. As act targets they teach the head that a silent speaker is "not silent"
+whenever the other one talks. That breaks p(SILENT) and so `eot_q`. **r018** drops them:
+NonContent spans are kept only where some annotator heard laughter or non-linguistic
+speech, and annotator a's bleed/noise segments are left out of the fine targets.
+
+FP at fixed recall on each held-out half (fine1_bal1, s1 / s2; EOT `eot_q@r0.5+rc1.0`
+at R0.92, INT `int_nobc@r0.5` at R0.95):
+
+| held-out half | r016 oto only | r017 mix | r018 mix | r017 ft | r018 ft |
+|---|---|---|---|---|---|
+| B: EOT | **0.044 / 0.032** | 0.173 / 0.111 | 0.123 / 0.111 | 0.104 / 0.116 | 0.079 / 0.076 |
+| B: INT | **0.016 / 0.016** | 0.035 / 0.063 | 0.037 / 0.061 | 0.031 / 0.039 | 0.033 / 0.045 |
+| A: EOT | **0.065 / 0.071** | 0.135 / 0.158 | 0.103 / 0.139 | 0.117 / 0.115 | 0.101 / 0.105 |
+| A: INT | **0.013 / 0.015** | 0.096 / 0.057 | 0.084 / 0.073 | 0.080 / 0.081 | 0.084 / 0.084 |
+
+- **In-domain supervision hurts, on both halves and both tasks.** Dropping the bleed labels
+  roughly halves the damage, but every TB-trained arm stays worse than oto only.
+- So the gap is not something a few TurnBench-style labels fix. Either 19 conversations
+  are too few and the head overfits them (fine-tuning at a low lr still hurts), or the TB
+  label construction still differs from oto's in ways that matter. A cheap way to tell the
+  two apart: score the fine-tuned head on its own training half.
+- **This also cuts against pseudo-labeling podcasts in TurnBench conventions** as the next
+  data step: real TB labels in that style did not help.
+- **Caveat:** the arms keep the last step. That is the same recipe as r016 except
+  for early stopping, so an oto-only control trained with `--select-last` was not run.
+
 ## Cost
 
 About $11–12 of the $20 allocation for all of the above (Modal billing for `ssl-turn-*`

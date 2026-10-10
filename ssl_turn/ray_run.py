@@ -159,6 +159,8 @@ def tb_folds():
 def cmd_tblabels(a):
     """Training targets for TB dev (prep.tbdev_labels; turnbench env, one process: ~25 GB RAM)."""
     import prep
+    if a.force:
+        shutil.rmtree(f'{WORK}/labels/tbdev', ignore_errors=True)
     tb = sorted(json.load(open(f'{WORK}/gold/tbdev.json')), key=int)
     print(prep.tbdev_labels(tb), flush=True)
 
@@ -180,11 +182,12 @@ def cmd_train(a):
 def cmd_merge(a):
     """Merge runs' probs.npz (e.g. the two cross-fitted folds) into one run for scoring."""
     import numpy as np
-    out = {}
+    out, keep = {}, set(tb_folds()[a.tb]) if a.tb else None
     for r in a.runs:
         with np.load(f'{WORK}/runs/{r}/probs.npz') as z:
             for k in z.files:
-                out.setdefault(k, z[k])  # oto dev keys appear in every fold: keep the first
+                if keep is None or k.split('/')[1] != 'tbdev' or k.split('/')[2] in keep:
+                    out.setdefault(k, z[k])  # oto dev keys appear in every fold: keep the first
     os.makedirs(f'{WORK}/runs/{a.out}', exist_ok=True)
     np.savez_compressed(f'{WORK}/runs/{a.out}/probs.npz', **out)
     print(a.out, len(out), 'arrays', flush=True)
@@ -240,10 +243,11 @@ def main():
     t.add_argument('--init-from', help='start each model from this run\'s checkpoint')
     t.add_argument('--select-last', action='store_true')
     t.add_argument('--lr', type=float)
-    sub.add_parser('tblabels')
+    sub.add_parser('tblabels').add_argument('--force', action='store_true')
     g = sub.add_parser('merge')
     g.add_argument('out')
     g.add_argument('runs', nargs='+')
+    g.add_argument('--tb', choices=('A', 'B'), help='keep only this TB dev half')
     s = sub.add_parser('score')
     s.add_argument('run')
     s.add_argument('--variants', default='')
