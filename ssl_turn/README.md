@@ -426,6 +426,8 @@ What the experiments changed in the plan:
 | Cat features | `encode.py` | L4, TF32 (bf16 drifts), per-stage KV caches, about 180 channel-s/s |
 | MTD features | `encode_mtd.py` | H100, GPU log-mel identical to the processor, trailing 30 s windows every 160 ms |
 | Training | `train.py` | Features resident in VRAM, configs trained in lockstep on shared batches (94–98% GPU utilization), early stopping, speaker-swap augmentation, exact chunked causal inference; `infer` rescans saved checkpoints |
+| VAD | `vad.py` | Silero (ONNX) per channel on the causal 16 kHz resample, 32 ms, for the commit policy |
+| Policy scoring | `policy_score.py` | `../policy.py` on VAD + score tracks: evaluate, grid reselection with split-half estimate, official dev JSON export |
 | Scoring | `score.py` | Pinned `commit_events` / `score_task` sweeps, score variants from posteriors, miss anatomy, official `predictions-dev.json` export + `turnbench.check` + `turnbench.score` |
 
 ## Files
@@ -440,6 +442,8 @@ What the experiments changed in the plan:
   score readout.
 - `mtd_encoder.py`, `hf_slice.py`: exactly causal trailing-window MOSS-Transcribe-Diarize
   encoder; encoder-only tensor fetch by HTTP range reads.
+- `policy.py`: the event commit policy (voice activity + rules, model scores as extra
+  triggers); `test_policy.py` covers its rules and a truncation (causality) test.
 - `test_cat_encoder.py`, `test_mtd_encoder.py`, `test_model.py`, `test_podcast.py`,
   `test_labels.py`: contracts.
   `CAT_DIR=<dir>` enables the real-weight tests; `test_labels` needs the pinned `turnbench`
