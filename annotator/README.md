@@ -19,6 +19,13 @@ python -m annotator.train --data tbdev=DIR oto=DIR --eval          # cross-check
 python -m annotator.train --data tbdev=DIR oto=DIR --out model.joblib
 python -m annotator.annotate --model model.joblib --mode mono a.wav --out labels/
 ```
+`annotate` writes `<stem>.json` (every candidate with its score, plus positive events) and
+`<stem>.labels.txt`, an Audacity label track of the positive events (File > Import > Labels).
+Using the track as a preprocessor for human labeling works well: at the stored thresholds a
+reviewer sees about 5 proposals per real interruption and 2 per real turn end, and confirms or
+rejects them instead of scanning the whole recording. Lower `--int-threshold` /
+`--eot-threshold` to miss fewer events at the cost of more proposals.
+
 Training data is `<dir>/<cid>.npz` (`silero_u8_32ms`: Silero probability x 255 per channel,
 32 ms) plus `<dir>/<cid>.gold.json` (TurnBench-style events). Neither data nor model files are
 committed; this project keeps them in the shared folder (`audio-llm/annotator-data/`,

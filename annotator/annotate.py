@@ -6,6 +6,10 @@
 Writes <out>/<stem>.json with every candidate and its score per task, plus `*_positive_events`
 at the chosen thresholds (TurnBench event format; speaker 1/2 are diarizer slots in mono mode,
 not identities). Thresholds default to the operating points stored by train.py.
+
+Also writes <out>/<stem>.labels.txt, an Audacity label track of the positive events
+(File > Import > Labels) for a human to confirm or reject. Lower the thresholds to trade more
+proposals to reject for fewer missed events.
 """
 from __future__ import annotations
 
@@ -33,11 +37,18 @@ def annotate(a, models, thresholds):
             if c['score'] < thresholds[task]:
                 continue
             if events and events[-1]['speaker'] == c['speaker'] and c['time_s'] - events[-1]['_last'] <= MERGE_S:
-                events[-1]['_last'] = c['time_s']
+                events[-1]['_last'] = c['time_s']; events[-1]['score'] = max(events[-1]['score'], c['score'])
                 continue
-            events.append(dict(speaker=c['speaker'], time_s=c['time_s'], _last=c['time_s']))
-        out[f'{task}_positive_events'] = [dict(speaker=e['speaker'], time_s=e['time_s']) for e in events]
+            events.append(dict(speaker=c['speaker'], time_s=c['time_s'], _last=c['time_s'], score=c['score']))
+        out[f'{task}_positive_events'] = [dict(speaker=e['speaker'], time_s=e['time_s'], score=e['score']) for e in events]
     return out
+
+
+def audacity_labels(res):
+    """Audacity label track lines: start, end, text (point labels, sorted by time)."""
+    rows = sorted((e['time_s'], f"{task.upper()} spk{e['speaker']} {e['score']:.2f}")
+                  for task in F.TASKS for e in res[f'{task}_positive_events'])
+    return ''.join(f'{t:.2f}\t{t:.2f}\t{text}\n' for t, text in rows)
 
 
 def main():
@@ -62,6 +73,7 @@ def main():
         stem = os.path.splitext(os.path.basename(path))[0]
         np.save(os.path.join(a.out, f'{stem}.activity.npy'), act)
         json.dump(res, open(os.path.join(a.out, f'{stem}.json'), 'w'))
+        open(os.path.join(a.out, f'{stem}.labels.txt'), 'w').write(audacity_labels(res))
         print(stem, {t: len(res[f'{t}_positive_events']) for t in F.TASKS}, flush=True)
 
 

@@ -43,6 +43,12 @@ class FeaturesTest(unittest.TestCase):
         self.assertEqual(F.label(g, 'int', 1, 11.0), -1)
         self.assertEqual(F.label(g, 'int', 1, 3.0), 0)
 
+    def test_audacity_labels(self):
+        from annotator.annotate import audacity_labels
+        res = dict(eot_positive_events=[dict(speaker=2, time_s=5.0, score=0.9)],
+                   int_positive_events=[dict(speaker=1, time_s=1.5, score=0.71)])
+        self.assertEqual(audacity_labels(res), '1.50\t1.50\tINT spk1 0.71\n5.00\t5.00\tEOT spk2 0.90\n')
+
 
 if __name__ == '__main__':
     unittest.main()
