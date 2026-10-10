@@ -418,7 +418,7 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
             if prev.item.type == "interruption" and prev.item.host is not None \
                     and script.item(prev.item.host).speaker == item.speaker:
                 fto = max(fto, 0.0)  # someone who was just cut off lets the interrupter finish
-            start = max(prev.speech_end + fto, prev.start + 0.3)
+            start = max(prev.speech_end + fto, prev.start + 0.3, _earliest_reply(prev, timing))
         start = max(start, channel_end + timing.min_same_channel_gap)
         p = Placed(item, speech, start)
         if item.type == "interruption" and prev is not None:
@@ -481,6 +481,21 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
     order = {it.id: i for i, it in enumerate(script.items)}
     return Rendered(conversation_id, script, channels, sr,
                     sorted(placed.values(), key=lambda p: order[p.item.id]), voices)
+
+
+def _earliest_reply(prev: Placed, timing: Timing) -> float:
+    """How early the next speaker may come in on `prev`: overlap at a turn
+    change is projection, so it covers at most the last word, once the
+    listener can hear the turn is ending. A question has to be heard out
+    (Stivers et al. 2009: answers come 0-200 ms after it), so it gets
+    at most `question_overlap`.
+    """
+    words = [w for w in prev.words if any(c.isalnum() for c in w.text)]
+    if not words:
+        return prev.start
+    if prev.item.text.rstrip().endswith(("?", "？")):
+        return prev.speech_end - timing.question_overlap
+    return words[-1].start + timing.projection_lead
 
 
 def _phrase_end(words: list[Word], k: int, look: int = 4, gap: float = 0.15) -> int:

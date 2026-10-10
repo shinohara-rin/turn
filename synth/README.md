@@ -73,7 +73,7 @@ IndexTTS backend (`--tts indextts`, IndexTTS-2.5 by default, IndexTTS2 with
 | whole turns | one call per item; `<pause X>` becomes a comma, then the pause is cut back in at the forced-aligned word boundary at its sampled length; IndexTTS's 120-token segment split is turned off | a hold pause keeps continuation intonation instead of turn-final falling pitch, which is exactly the EOT hard negative TurnBench scores |
 | rolling speaker prompt | the prompt is the speaker's bank clip (timbre anchor, 5 s) followed by their most recent rendered speech, up to 14 s; items are synthesized in script order | rate, energy and register carry from turn to turn, and IndexTTS's mel stage continues from the end of the prompt, i.e. from what this speaker just said |
 | script delivery | per-item `"emotion": {"surprised": 0.5}` (IndexTTS2's 8 emotion axes) and `"speed": 1.2` (rate relative to the speaker's `"pace"`, set per speaker in the design), written by the script LLM, which sees the whole dialogue; speed becomes IndexTTS-2.5's `duration_factor` | delivery follows what was just said (a sharp retort, a surprised "oh wow"), and pace varies line to line instead of being guessed from the words |
-| text emotion (opt-in) | `--text-emotion`: lines without a script emotion get one from IndexTTS's QwenEmotion text classifier | some emotion even for scripts written without delivery |
+| text emotion (opt-in, not recommended) | `--text-emotion`: lines without a script emotion get one from IndexTTS's QwenEmotion text classifier | sounded exaggerated in listening, see below |
 | entrainment (opt-in) | `--entrain 0.3`: lines without a script emotion use the partner's last line as emotion reference at that strength | listeners match the energy of who they answer |
 
 What it cannot do: IndexTTS conditions on audio and an emotion vector, not
@@ -153,9 +153,10 @@ passes on a Modal L4, whisper `small.en`; per speaker A / B, 12-13 lines each):
 | ASR WER | 7.4% | 7.5% | 6.1% | 10.3% |
 
 Any explicit emotion vector moves the read away from the prompt's flat
-audiobook delivery; QwenEmotion's vectors (mostly "calm" with some happy or
-surprised) move pitch more than the hand-written ones, at no quality cost.
-One conversation, so this is direction, not size; listen before choosing.
+audiobook delivery. By ear (Rin, 2026-10-10) script delivery is slightly
+better than none, and `--text-emotion` is clearly worse: exaggerated,
+unnatural emotion, so more pitch movement is not the goal and the flag
+stays off by default.
 
 ### Reading several lines in one pass
 
@@ -195,7 +196,12 @@ anything an overlay reacts to come before the quote. The renderer then adds
 a listener's reaction time after the anchor word's aligned end: 100-350 ms
 for backchannels, which also move to the next phrase end (punctuation or a
 150 ms gap) within four words, and a lognormal around 300 ms (120-800 ms)
-for interruptions. A floor-taking interruption's host trails off at its
+for interruptions. At a turn change the sampled floor-transfer offset may
+be negative, but the reply never starts before the other speaker's last
+word (overlap there is projection of an ending the listener can hear), and
+overlaps a question by at most 100 ms, since the answer needs the
+question; before this, 39% of turn changes on the examples started earlier
+than the last word, such as an answer starting mid-question. A floor-taking interruption's host trails off at its
 own next pause after the minimum yield time, not mid-word.
 
 ## Japanese and Chinese

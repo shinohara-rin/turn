@@ -328,3 +328,16 @@ def test_speed_and_emotion_reach_the_tts_and_split_passes():
     obj["turns"][0]["speed"] = 2.0
     with pytest.raises(ScriptError):
         parse(obj)
+
+
+@pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: p.stem)
+def test_replies_wait_for_the_last_word(path):
+    script = load(path)
+    for seed in range(5):
+        r = render(script, DummyTTS(), conversation_id="1", seed=seed)
+        floor = sorted((p for p in r.placed if p.item.is_floor and not p.dropped), key=lambda p: p.start)
+        for a, b in zip(floor, floor[1:]):
+            if a.item.speaker != b.item.speaker and b.item.type == "turn" and a.words:
+                assert b.start >= a.words[-1].start
+                if a.item.text.endswith("?"):
+                    assert b.start >= a.speech_end - 0.1 - 1e-9
