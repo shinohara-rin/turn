@@ -50,7 +50,8 @@ def cmd_render(args) -> None:
     if args.tts == "indextts":
         tts_kwargs = {"model_dir": args.index_model_dir, "bank": args.voice_bank, "version": args.index_version,
                       "device": None if args.device == "auto" else args.device, "entrain": args.entrain,
-                      "context": not args.no_dialogue_context, "pass_mode": args.index_pass}
+                      "context": not args.no_dialogue_context, "pass_mode": args.index_pass,
+                      "emo_alpha": args.emo_alpha, "text_emotion": args.text_emotion}
     tts = make_tts(args.tts, **tts_kwargs)
     transcriber = Transcriber(args.asr, device=args.device) if args.asr else None
     judge = None
@@ -154,6 +155,10 @@ def main(argv=None) -> None:
                         "or the same but a pass ends when the other speaker takes the floor")
     r.add_argument("--entrain", type=float, default=0.0,
                    help="IndexTTS: emotion strength borrowed from the partner's last line when the script gives none")
+    r.add_argument("--emo-alpha", type=float, default=0.8,
+                   help="IndexTTS: strength of script (or text-derived) emotion vectors; the rest comes from the speaker prompt")
+    r.add_argument("--text-emotion", action="store_true",
+                   help="IndexTTS: for lines without a script emotion, read one off the text with IndexTTS's QwenEmotion")
     r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en; a multilingual one such as small for ja/zh); empty = script text")
     r.add_argument("--device", default="auto")
     r.add_argument("--judge", default="rules", choices=["rules", "llm"])

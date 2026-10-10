@@ -54,7 +54,14 @@ class Timing:
     yield_min: float = 1.0  # above annotate.OVERLAP_MAX_S, so a barge-in never reads as a smooth overlap
     yield_max: float = 3.0
     min_talk_after_yield: float = 0.5  # interrupter keeps talking this long after the host stops
-    onset_jitter: float = 0.15  # backchannel / interruption onset jitter after the anchor word
+    onset_jitter: float = 0.15  # (unused since overlays got reaction delays; kept for old configs)
+    # Listener reaction time after the anchor word ends: a backchannel answers
+    # a phrase end it saw coming; an interruption reacts to what was just said.
+    backchannel_delay: tuple[float, float] = (0.1, 0.35)
+    interrupt_delay_median: float = 0.3
+    interrupt_delay_sigma: float = 0.4
+    interrupt_delay_min: float = 0.12
+    interrupt_delay_max: float = 0.8
     min_same_channel_gap: float = 0.15
 
     def fto(self, rng: np.random.Generator, ctype: ConversationType) -> float:
@@ -64,6 +71,12 @@ class Timing:
         if requested is not None:
             return float(np.clip(requested, self.pause_min, self.pause_max))
         return float(np.clip(rng.lognormal(np.log(self.pause_median), self.pause_sigma), self.pause_min, self.pause_max))
+
+    def reaction(self, rng: np.random.Generator, kind: str) -> float:
+        if kind == "backchannel":
+            return float(rng.uniform(*self.backchannel_delay))
+        return float(np.clip(rng.lognormal(np.log(self.interrupt_delay_median), self.interrupt_delay_sigma),
+                             self.interrupt_delay_min, self.interrupt_delay_max))
 
     def yield_delay(self, rng: np.random.Generator) -> float:
         return float(np.clip(rng.lognormal(np.log(self.yield_median), self.yield_sigma), self.yield_min, self.yield_max))

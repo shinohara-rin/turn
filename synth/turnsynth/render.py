@@ -7,10 +7,11 @@ placement is sampled from the calibrated timing model in config.py:
 
   floor turns       start at previous floor end + FTO (or + a pause when the
                     same speaker continues)
-  interruptions     start just after the host's `after_word`; the host is cut
-                    on a word boundary a sampled yield delay later
-  backchannels and  start just after the host's `after_word`; dropped if the
-  failed attempts   host was already cut or the listener's channel is busy
+  interruptions     start a reaction time after the host's `after_word`; the
+                    host is cut on a word boundary a sampled yield delay later
+  backchannels and  start a reaction time after the host's `after_word` (for a
+  failed attempts   backchannel, the next phrase end); dropped if the host was
+                    already cut or the listener's channel is busy
 
 The output carries both channels and, per placed item, its realized word
 timings and intended fine label. That is the generator's annotation; the
@@ -23,7 +24,7 @@ import numpy as np
 
 from turnsynth import lang as L
 from turnsynth.config import TYPES, Timing
-from turnsynth.script import Item, Script
+from turnsynth.script import EMOTIONS, Item, Script, pace
 from turnsynth.tts import TTS, Context, Speech, Word
 
 FADE_S = 0.03
@@ -71,7 +72,7 @@ class Rendered:
 
 
 def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.random.Generator,
-                    context: Context | None = None, language: str = "en") -> Speech:
+                    context: Context | None = None, language: str = "en", speed: float = 1.0) -> Speech:
     """Synthesize one item with its scripted within-turn pauses.
 
     A whole-turn backend (IndexTTS) gets the full text in one call, with the
@@ -81,7 +82,7 @@ def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.ra
     """
     if getattr(tts, "whole_turn", False):
         text, cuts = spoken_text(item, language)
-        sp = tts.synthesize(text, voice, context=context, language=language)
+        sp = tts.synthesize(text, voice, speed=speed, context=context, language=language)
         words = item.words
         if len(sp.words) == len(words):
             sp = Speech(sp.audio, sp.sample_rate, [Word(w, x.start, x.end) for w, x in zip(words, sp.words)])
@@ -90,7 +91,7 @@ def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.ra
     sr = tts.sample_rate
     audio, words, offset = [], [], 0.0
     for text, pause in item.chunks:
-        sp = tts.synthesize(text, voice, language=language)
+        sp = tts.synthesize(text, voice, speed=speed, language=language)
         audio.append(sp.audio)
         words += [Word(w.text, offset + w.start, offset + w.end) for w in sp.words]
         offset += sp.duration
@@ -261,9 +262,42 @@ def synthesize_by_item(tts: TTS, script: Script, voices: dict[str, str], timing:
         other = "B" if item.speaker == "A" else "A"
         ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
                       emotion=item.emotion)
-        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx, script.language)
+        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx, script.language,
+                                            speed=item_speed(script, item))
         history[item.speaker].append(speeches[item.id])
     return speeches
+
+
+def item_speed(script: Script, item: Item) -> float:
+    """Speaking rate for an item: its own `speed` times its speaker's `pace`."""
+    return (item.speed or 1.0) * pace(script.speakers[item.speaker])
+
+
+SPEED_SPLIT = 0.1  # a floor pass ends where the rate changes by more than this
+EMOTION_SPLIT = 0.3  # ... or the emotion vector by more than this (L1)
+
+
+def _delivery_change(script: Script, block: list[Item], it: Item) -> bool:
+    """Whether `it` is said differently enough from the pass so far to need its own call.
+
+    IndexTTS takes one rate and one emotion per call, so a pass that runs
+    from a calm explanation into an excited exclamation would read both
+    the same way.
+    """
+    emotion, speed = _block_delivery(script, block)
+    other = it.emotion or {}
+    diff = sum(abs((emotion or {}).get(k, 0.0) - other.get(k, 0.0)) for k in EMOTIONS)
+    return abs(item_speed(script, it) - speed) > SPEED_SPLIT or diff > EMOTION_SPLIT
+
+
+def _block_delivery(script: Script, block: list[Item]) -> tuple[dict[str, float] | None, float]:
+    """Mean emotion (None if no item has one) and word-weighted mean rate of a pass."""
+    n = sum(len(it.words) for it in block)
+    speed = sum(item_speed(script, it) * len(it.words) for it in block) / n
+    if not any(it.emotion for it in block):
+        return None, speed
+    emotion = {k: sum((it.emotion or {}).get(k, 0.0) for it in block) / len(block) for k in EMOTIONS}
+    return {k: v for k, v in emotion.items() if v > 0} or None, speed
 
 
 def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timing: Timing,
@@ -294,7 +328,7 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                 handover |= it.is_floor
                 continue
             if blocks[-1] and (sum(len(b.words) for b in blocks[-1]) + len(it.words) > max_words
-                               or (by_floor and handover)):
+                               or (by_floor and handover) or _delivery_change(script, blocks[-1], it)):
                 blocks.append([])
             blocks[-1].append(it)
             handover = False
@@ -307,14 +341,16 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                     text += L.ELLIPSIS[script.language] if text[-1] not in L.CLAUSE_END else ""
                 texts.append(text)
                 cuts.append(c)
-            sp = tts.synthesize(" ".join(texts), voices[spk],
-                                context=Context(history=list(history)), language=script.language)
+            emotion, speed = _block_delivery(script, block)
+            sp = tts.synthesize(" ".join(texts), voices[spk], speed=speed,
+                                context=Context(history=list(history), emotion=emotion), language=script.language)
             history.append(sp)
             n_words = [len(it.words) for it in block]
             if len(sp.words) != sum(n_words):
                 for it in block:
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
-                                                      Context(history=list(history)), script.language)
+                                                      Context(history=list(history), emotion=it.emotion),
+                                                      script.language, speed=item_speed(script, it))
                 continue
             # Each item's piece runs from the previous item's last word to the
             # next item's first, so _trim can find where its sound starts and ends.
@@ -331,7 +367,8 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                 span = ws[-1].end - ws[0].start
                 if span < 0.07 * n or span > 1.2 * n + 0.5:
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
-                                                      Context(history=list(history)), script.language)
+                                                      Context(history=list(history), emotion=it.emotion),
+                                                      script.language, speed=item_speed(script, it))
                     continue
                 sr = sp.sample_rate
                 piece = Speech(sp.audio[int(t0 * sr): int(t1 * sr)].copy(), sr,
@@ -370,7 +407,10 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
             start = 0.5
         elif item.type == "interruption":
             host = prev
-            start = host.word_end(item.after_word) + rng.uniform(0.0, timing.onset_jitter)
+            anchor = host.word_end(item.after_word)
+            # React, but leave the host room to talk on for yield_min, or it is no barge-in.
+            start = max(anchor, min(anchor + timing.reaction(rng, "interruption"),
+                                    host.speech_end - timing.yield_min - 0.05))
         elif prev.item.speaker == item.speaker:
             start = prev.speech_end + timing.pause(rng)
         else:
@@ -402,9 +442,11 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
         if item.after_word > len(host.speech.words) - 1:
             p.dropped = "host_cut"
             continue
+        # A backchannel answers a phrase end: move a mid-phrase anchor to the next one.
+        first = _phrase_end(host.speech.words, item.after_word) if item.type == "backchannel" else item.after_word
         # Try the anchor word, then the next two word boundaries if the channel is busy.
-        for k in range(item.after_word, min(item.after_word + 3, len(host.speech.words))):
-            start = host.word_end(k) + rng.uniform(0.05, timing.onset_jitter + 0.05)
+        for k in range(first, min(first + 3, len(host.speech.words))):
+            start = host.word_end(k) + timing.reaction(rng, item.type)
             # A backchannel may trail just past the host's last word; a failed
             # attempt must end while the host is still talking, or it would
             # have taken the floor after all.
@@ -441,6 +483,17 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
                     sorted(placed.values(), key=lambda p: order[p.item.id]), voices)
 
 
+def _phrase_end(words: list[Word], k: int, look: int = 4, gap: float = 0.15) -> int:
+    """First word from the k-th (1-based) on, within `look` words, that ends a phrase:
+    punctuation after it, or a silence of `gap` s before the next word. Else k."""
+    for j in range(k, min(k + look, len(words))):
+        w, nxt = words[j - 1], words[j]
+        if w.text[-1] in L.SENTENCE_END + L.CLAUSE_END or not any(c.isalnum() for c in nxt.text) \
+                or nxt.start - w.end >= gap:
+            return j
+    return k
+
+
 def _cut_host(host: Placed, onset: float, cut_time: float, interrupter_end: float,
               busy: dict[str, list[tuple[float, float]]], min_yield: float, min_after: float) -> None:
     """Cut the host on a word boundary after the interrupter's onset.
@@ -449,7 +502,8 @@ def _cut_host(host: Placed, onset: float, cut_time: float, interrupter_end: floa
     smooth transition, not a barge-in) and stops at least `min_after` s before
     the interrupter finishes (or the floor never visibly changed hands). Within
     that window it stops at the first word ending after `cut_time`, or earlier
-    at one of its own pauses: people trail off rather than resume over someone.
+    at one of its own pauses (once past min_yield): people trail off rather
+    than resume over someone.
     """
     words = host.speech.words
     lo, hi = onset + min_yield - host.start, interrupter_end - min_after - host.start
@@ -458,7 +512,7 @@ def _cut_host(host: Placed, onset: float, cut_time: float, interrupter_end: floa
     for w, nxt in zip(words, words[1:]):
         if w.end < onset - host.start + 0.1:
             continue
-        if nxt.start - w.end > 0.3 or (w.end >= lo and w.end >= target):
+        if w.end >= lo and (nxt.start - w.end > 0.3 or w.end >= target):
             at = w.end + 0.02
             break
     if at is None:

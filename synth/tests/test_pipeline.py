@@ -32,10 +32,24 @@ def test_examples_pass_filter(path):
 def test_anchor_errors_are_reason_coded():
     obj = json.loads(EXAMPLES[0].read_text())
     bc = next(t for t in obj["turns"] if t["type"] == "backchannel")
+    bc["after"] = "words the host never says"
+    with pytest.raises(ScriptError) as e:
+        parse(obj)
+    assert e.value.code == "anchor"
+    del bc["after"]
     bc["after_word"] = 999
     with pytest.raises(ScriptError) as e:
         parse(obj)
     assert e.value.code == "anchor"
+
+
+def test_after_quote_resolves_to_word_count():
+    from turnsynth.script import resolve_after
+
+    words = "So we get there on Friday, right, and the campsite".split()
+    assert resolve_after(words, "on friday, Right") == 7
+    assert resolve_after(["我", "帮", "你", "看看？", "我"], "帮 你 看看", "zh") == 4
+    assert resolve_after(words, "not there") is None
 
 
 def test_stage_directions_rejected():
@@ -117,7 +131,7 @@ def test_generate_with_fake_llm():
     from turnsynth.generate import generate_script
     from turnsynth.llm import FunctionLLM
 
-    example = json.loads(EXAMPLES[1].read_text())  # casual
+    example = json.loads(next(p for p in EXAMPLES if p.stem == "casual_weekend").read_text())
 
     def fake(system, user):
         if "Design one" in user:
@@ -286,3 +300,31 @@ def test_standalone_punctuation_takes_no_time_in_alignment():
     words = ["你", "回来", "了", "！"]
     out = _fill(words, [Word("你", 0.1, 0.3), Word("回来", 0.4, 0.8), Word("了", 0.9, 1.0), None], 2.0)
     assert out[-1].start == out[-1].end == 1.0
+
+
+def test_speed_and_emotion_reach_the_tts_and_split_passes():
+    class PassTTS(WholeTurnTTS):
+        speaker_pass = True
+        pass_words = 60
+
+        def synthesize(self, text, voice, speed=1.0, context=None, language="en"):
+            self.speeds.append(speed)
+            return super().synthesize(text, voice, speed, context, language)
+
+    obj = json.loads(next(p for p in EXAMPLES if p.stem == "casual_weekend").read_text())
+    script = parse(obj)
+    assert script.speakers["A"]["pace"] == 1.1 and script.items[0].speed == 1.1
+    tts = PassTTS()
+    tts.speeds = []
+    render(script, tts, conversation_id="1")
+    assert len(set(round(s, 2) for s in tts.speeds)) > 3  # pace varies from pass to pass
+    assert all(ctx.emotion for _, ctx in tts.calls)
+    plain = parse({**obj, "turns": [{k: v for k, v in t.items() if k not in ("speed", "emotion")} for t in obj["turns"]]})
+    flat = PassTTS()
+    flat.speeds = []
+    render(plain, flat, conversation_id="1")
+    assert len(flat.calls) < len(tts.calls)  # delivery changes end a pass
+
+    obj["turns"][0]["speed"] = 2.0
+    with pytest.raises(ScriptError):
+        parse(obj)

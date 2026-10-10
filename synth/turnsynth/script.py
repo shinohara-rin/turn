@@ -6,18 +6,26 @@ list of items in rough temporal order:
     {"id": 3, "speaker": "A", "type": "turn", "style": "normal",
      "text": "So I went there <pause 0.7> and it was closed."}
     {"id": 4, "speaker": "B", "type": "backchannel", "kind": "continuer",
-     "text": "mhm", "host": 3, "after_word": 4}
+     "text": "mhm", "host": 3, "after": "I went there"}
     {"id": 5, "speaker": "B", "type": "interruption", "floor_taking": true,
-     "stance": "competitive", "text": "Wait, closed?", "host": 3, "after_word": 7}
+     "stance": "competitive", "text": "Wait, closed?", "host": 3, "after": "it was closed."}
 
 `turn` and floor-taking `interruption` items form the floor sequence.
 Backchannels and non-floor-taking interruptions are overlays anchored on a
-host turn of the other speaker, after its `after_word`-th word. For a
+host turn of the other speaker: `after` quotes the host's words right before
+the overlay starts (LLMs miscount words, but copy text reliably), and parse
+resolves it to `after_word`, the number of host words spoken by then (which
+may also be given directly). For a
 floor-taking interruption the host text is what the speaker *would* have said;
 the renderer cuts it shortly after the interrupter starts.
 
 Japanese and Chinese scripts (`"language": "ja"|"zh"`) put a space between
 words, since `after_word` counts words; see lang.py.
+
+Delivery is optional per item: `"emotion"` ({axis: weight}, IndexTTS2's
+eight axes) and `"speed"` (rate relative to the speaker's usual pace, which
+`speakers[X]["pace"]` sets), so the TTS is told how a line is said instead of
+guessing from its words.
 
 `<pause X>` inside a turn marks a within-turn pause of X seconds: the EOT
 hard negatives. The filter rejects scripts with structured reason codes, as in
@@ -33,6 +41,12 @@ PAUSE_RE = re.compile(r"<pause\s+([0-9.]+)\s*>")
 SPEAKERS = ("A", "B")
 EMOTIONS = ("happy", "angry", "sad", "afraid", "disgusted", "melancholic", "surprised", "calm")
 ITEM_TYPES = ("turn", "backchannel", "interruption")
+SPEED_RANGE = (0.7, 1.4)  # an item's "speed" and a speaker's "pace", as multiples of a typical rate
+
+
+def pace(speaker: dict) -> float:
+    """A speaker's usual speaking rate (`"pace"` in `speakers`, default 1.0)."""
+    return float(speaker.get("pace", 1.0) or 1.0)
 
 
 @dataclass
@@ -47,7 +61,9 @@ class Item:
     stance: str = "competitive"
     host: int | None = None
     after_word: int | None = None
+    after: str | None = None  # quoted host words before the onset; resolved to after_word
     emotion: dict[str, float] | None = None  # optional, for emotion-controllable TTS
+    speed: float | None = None  # optional speaking rate relative to the speaker's own pace (1.0 = usual)
 
     @property
     def chunks(self) -> list[tuple[str, float | None]]:
@@ -109,8 +125,12 @@ class Script:
             if it.type != "turn":
                 d["host"] = it.host
                 d["after_word"] = it.after_word
+                if it.after:
+                    d["after"] = it.after
             if it.emotion:
                 d["emotion"] = it.emotion
+            if it.speed is not None:
+                d["speed"] = it.speed
             return d
 
         return {
@@ -146,7 +166,9 @@ def parse(obj: dict) -> Script:
                 stance=str(raw.get("stance", "competitive")),
                 host=None if raw.get("host") is None else int(raw["host"]),
                 after_word=None if raw.get("after_word") is None else int(raw["after_word"]),
+                after=None if raw.get("after") is None else str(raw["after"]),
                 emotion=None if not raw.get("emotion") else {str(k): float(v) for k, v in raw["emotion"].items()},
+                speed=None if raw.get("speed") is None else float(raw["speed"]),
             )
             items.append(item)
         script = Script(
@@ -162,6 +184,13 @@ def parse(obj: dict) -> Script:
 
     if set(script.speakers) != set(SPEAKERS):
         raise ScriptError("schema", f"speakers must be exactly {SPEAKERS}")
+    for spk, info in script.speakers.items():
+        try:
+            ok = SPEED_RANGE[0] <= pace(info) <= SPEED_RANGE[1]
+        except (TypeError, ValueError, AttributeError):
+            ok = False
+        if not ok:
+            raise ScriptError("schema", f"speaker {spk}: pace {info.get('pace')} outside {SPEED_RANGE}")
     ids = [it.id for it in items]
     if len(set(ids)) != len(ids):
         raise ScriptError("schema", "duplicate ids")
@@ -184,12 +213,18 @@ def parse(obj: dict) -> Script:
             host = seen.get(it.host) if it.host is not None else None
             if host is None or not host.is_floor or host.speaker == it.speaker:
                 raise ScriptError("anchor", f"item {it.id}: host must be an earlier floor item of the other speaker")
+            if it.after:
+                it.after_word = resolve_after(host.words, it.after, script.language)
+                if it.after_word is None:
+                    raise ScriptError("anchor", f"item {it.id}: 'after' {it.after!r} is not in host {host.id}")
             if it.after_word is None or not 1 <= it.after_word < len(host.words):
                 raise ScriptError("anchor", f"item {it.id}: after_word out of range for host {host.id}")
             if it.type == "interruption" and it.floor_taking and host is not last_floor:
                 raise ScriptError("anchor", f"item {it.id}: a floor-taking interruption must cut the current floor holder")
         if it.emotion and (set(it.emotion) - set(EMOTIONS) or not all(0.0 <= v <= 1.0 for v in it.emotion.values())):
             raise ScriptError("schema", f"item {it.id}: emotion keys must be from {EMOTIONS} with weights in [0, 1]")
+        if it.speed is not None and not SPEED_RANGE[0] <= it.speed <= SPEED_RANGE[1]:
+            raise ScriptError("schema", f"item {it.id}: speed {it.speed} outside {SPEED_RANGE}")
         for chunk, pause in it.chunks:
             if pause is not None and not 0.1 <= pause <= 5.0:
                 raise ScriptError("schema", f"item {it.id}: pause {pause} out of range")
@@ -197,6 +232,24 @@ def parse(obj: dict) -> Script:
         if it.is_floor:
             last_floor = it
     return script
+
+
+def resolve_after(words: list[str], quote: str, language: str = "en") -> int | None:
+    """Number of host words up to and including the first occurrence of `quote`."""
+    key = lambda w: L.bare(w, language)
+    target = [key(w) for w in PAUSE_RE.sub(" ", quote).split() if key(w)]
+    hay = [key(w) for w in words]
+    n = len(target)
+    if not n:
+        return None
+    for i in range(len(hay) - n + 1):
+        if hay[i: i + n] == target:
+            j = i + n
+            # Count punctuation-only tokens right after the quote as already spoken.
+            while j < len(hay) and not hay[j]:
+                j += 1
+            return j
+    return None
 
 
 BANNED_PATTERNS = [
