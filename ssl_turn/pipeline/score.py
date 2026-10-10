@@ -13,7 +13,7 @@ import json
 
 import modal
 
-from common import TB_DEV, VOLUMES, cpu_image, work
+from common import WORK, TB_DEV, VOLUMES, cpu_image, work
 
 app = modal.App('ssl-turn-score')
 
@@ -24,7 +24,7 @@ def cache_tbdev_gold():
     from dataclasses import asdict
     from turnbench.data import conversation, conversation_ids, resolve_dataset
     from turnbench.gold import events_for_conversation
-    path = '/work/gold/tbdev.json'
+    path = f'{WORK}/gold/tbdev.json'
     if os.path.exists(path):
         return len(json.load(open(path)))
     ds = resolve_dataset(TB_DEV)
@@ -32,7 +32,7 @@ def cache_tbdev_gold():
     for cid in conversation_ids(ds):
         conv = conversation(ds, cid)
         out[cid] = dict(duration_s=conv.duration_s, events=asdict(events_for_conversation(conv)))
-    os.makedirs('/work/gold', exist_ok=True)
+    os.makedirs(f'{WORK}/gold', exist_ok=True)
     json.dump(out, open(path, 'w'))
     work.commit()
     return len(out)
@@ -91,7 +91,7 @@ def load_tracks(run, model, task, split):
     """Per-conversation [T, 2] score track for one model and score variant."""
     import numpy as np
     work.reload()
-    z = np.load(f'/work/runs/{run}/probs.npz')
+    z = np.load(f'{WORK}/runs/{run}/probs.npz')
     tracks = {}
     for k in z.files:
         m_, sp, cid, t = k.split('/')
@@ -108,9 +108,9 @@ def load_tracks(run, model, task, split):
 
 def load_gold(split, cids):
     if split == 'tbdev':
-        g = json.load(open('/work/gold/tbdev.json'))
+        g = json.load(open(f'{WORK}/gold/tbdev.json'))
         return {c: g[c] for c in cids}
-    return {c: json.load(open(f'/work/gold/oto/{c}.json')) for c in cids}
+    return {c: json.load(open(f'{WORK}/gold/oto/{c}.json')) for c in cids}
 
 
 def commit(p, fps, theta, refractory_s=2.0, recommit_s=None):
@@ -175,7 +175,7 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits
     import numpy as np
     from concurrent.futures import ProcessPoolExecutor
     work.reload()
-    z = np.load(f'/work/runs/{run}/probs.npz')
+    z = np.load(f'{WORK}/runs/{run}/probs.npz')
     by, posts = {}, {}
     for k in z.files:
         model, split, cid, task = k.split('/')
@@ -220,7 +220,7 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits
             entry['tbdev_swept'] = operating_point(tb)
         report.append(entry)
     json.dump(dict(report=report, rows={'|'.join(k): v for k, v in rows.items()}),
-              open(f'/work/runs/{run}/score' + ('_' + '-'.join(variants) if variants else '') + '.json', 'w'))
+              open(f'{WORK}/runs/{run}/score' + ('_' + '-'.join(variants) if variants else '') + '.json', 'w'))
     work.commit()
     return report
 
@@ -252,7 +252,7 @@ def analyze(run, model, task, theta, split='tbdev', refractory_s=2.0):
     work.reload()
     probs = load_tracks(run, model, task, split)
     gold = load_gold(split, list(probs))
-    types = json.load(open('/work/gold/tbdev_types.json')) if split == 'tbdev' else {}
+    types = json.load(open(f'{WORK}/gold/tbdev_types.json')) if split == 'tbdev' else {}
     key = 'eot' if task.startswith('eot') else 'int'
     by_type, fp_len, neg_len, lat = {}, [], [], []
     for cid, p in probs.items():
@@ -332,7 +332,7 @@ def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev',
     from turnbench.sweep import commit_events
     eot_tracks = load_tracks(run, eot[0], eot[1], 'tbdev')
     int_tracks = load_tracks(run, intr[0], intr[1], 'tbdev')
-    gold = json.load(open('/work/gold/tbdev.json'))
+    gold = json.load(open(f'{WORK}/gold/tbdev.json'))
     preds = []
     for cid in sorted(gold, key=lambda c: int(c)):
         dur = gold[cid]['duration_s']
@@ -345,7 +345,7 @@ def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev',
                 ev[key] = [round(t, 3) for t in times if t <= dur]
             entry[f'speaker_{s + 1}'] = ev
         preds.append(entry)
-    out = f'/work/runs/{run}/{name}.json'
+    out = f'{WORK}/runs/{run}/{name}.json'
     json.dump(dict(schema_version=1, predictions=preds), open(out, 'w'))
     work.commit()
     from pathlib import Path
@@ -357,7 +357,7 @@ def export_predictions(run, eot, intr, refractory_s=0.5, name='predictions-dev',
         lat = t.latency()
         res[task] = dict(recall=t.recall, fp=t.fp_rate, p10=lat.p10, p50=lat.p50, p90=lat.p90, tp=t.tp, fn=t.fn,
                          fp_n=t.fp)
-    json.dump(res, open(f'/work/runs/{run}/{name}.score.json', 'w'), indent=1)
+    json.dump(res, open(f'{WORK}/runs/{run}/{name}.score.json', 'w'), indent=1)
     work.commit()
     return res
 
@@ -376,8 +376,8 @@ def residuals(run, eot, intr, refractory_s=0.5, recommit_eot=1.0):
     from turnbench.data import conversation, resolve_dataset
     from turnbench.gold import CANONICAL
     ds = resolve_dataset(TB_DEV, skip_audio=True)
-    gold = json.load(open('/work/gold/tbdev.json'))
-    types = json.load(open('/work/gold/tbdev_types.json'))
+    gold = json.load(open(f'{WORK}/gold/tbdev.json'))
+    types = json.load(open(f'{WORK}/gold/tbdev_types.json'))
     eot_tr = load_tracks(run, eot[0], eot[1], 'tbdev')
     int_tr = load_tracks(run, intr[0], intr[1], 'tbdev')
     fps = 12.5
@@ -446,7 +446,7 @@ def residuals(run, eot, intr, refractory_s=0.5, recommit_eot=1.0):
                 txt = next((x[3] for x in seg_covering(own['a'], a, b)), '')
                 rows['int_neg'].append(dict(cid=cid, type=types.get(cid), fired=bool(fired), dur=b - a, label=lab,
                                             text=txt[:60], other_talking=bool(seg_covering(oth['a'], a, b))))
-    json.dump(rows, open(f'/work/runs/{run}/residuals.json', 'w'))
+    json.dump(rows, open(f'{WORK}/runs/{run}/residuals.json', 'w'))
     work.commit()
 
     def table(items, key, flag, bins=None):
@@ -493,7 +493,7 @@ def residuals(run, eot, intr, refractory_s=0.5, recommit_eot=1.0):
                       for r in ep if miss(r)][:25],
             eot_fp=[dict(t=r['prev_text'], label=r['prev_label'], dur=round(r['dur'], 2)) for r in en if r['fired']][:25],
             int_fp=[dict(t=r['text'], label=r['label'], dur=round(r['dur'], 2)) for r in inn if r['fired']][:25]))
-    json.dump(out, open(f'/work/runs/{run}/residuals_summary.json', 'w'), indent=1)
+    json.dump(out, open(f'{WORK}/runs/{run}/residuals_summary.json', 'w'), indent=1)
     work.commit()
     return out
 
@@ -509,7 +509,7 @@ def dump_transcripts():
     for cid in conversation_ids(ds):
         ann = conversation(ds, cid).annotations
         out['tbdev'][cid] = {s: [[a, b, t] for a, b, _, t in ann.get((s, 'a'), [])] for s in (1, 2)}
-    split = json.load(open('/work/split.json'))['splits']
+    split = json.load(open(f'{WORK}/split.json'))['splits']
     import srt
     for cid in split['dev']:
         segs = {}
@@ -564,9 +564,9 @@ def oracle_fusion(run, model, weights=(0.0, 0.25, 0.5, 0.75, 1.0), control=None)
     import numpy as np
     from concurrent.futures import ProcessPoolExecutor
     work.reload()
-    transcripts = json.load(open('/work/llm/transcripts.json'))
+    transcripts = json.load(open(f'{WORK}/llm/transcripts.json'))
     recs = {}
-    for line in open('/work/llm/oracle.jsonl'):
+    for line in open(f'{WORK}/llm/oracle.jsonl'):
         r = json.loads(line)
         recs.setdefault((r['split'], r['cid']), {})[r['id']] = r  # last answer per id wins
     if control == 'shuffle':
@@ -608,7 +608,7 @@ def oracle_fusion(run, model, weights=(0.0, 0.25, 0.5, 0.75, 1.0), control=None)
         rs = [r for (sp, _), d in recs.items() if sp == split for r in d.values()]
         coverage[split] = dict(n=len(rs), ok=sum(r['p'] is not None for r in rs))
     out['coverage'] = coverage
-    json.dump(out, open(f'/work/runs/{run}/oracle_fusion_{model}{"_" + control if control else ""}.json', 'w'), indent=1)
+    json.dump(out, open(f'{WORK}/runs/{run}/oracle_fusion_{model}{"_" + control if control else ""}.json', 'w'), indent=1)
     work.commit()
     return out
 
@@ -635,7 +635,7 @@ def verifier_fires(run, model, budgets=(0.30, 0.20, 0.15, 0.10, 0.07, 0.05), spl
                 fires = {cid: {s + 1: commit(p[:, s], 12.5, op['theta'], 0.5, rc) for s in (0, 1)}
                          for cid, p in tracks[t].items()}
                 out[t][str(b)] = dict(theta=op['theta'], recall=op['recall'], fp=op['fp'], p50=op['p50'], fires=fires)
-    json.dump(out, open(f'/work/llm/fires_{model}.json', 'w'))
+    json.dump(out, open(f'{WORK}/llm/fires_{model}.json', 'w'))
     work.commit()
     return {t: {b: (d['theta'], round(d['recall'], 4), round(d['fp'], 4),
                     sum(len(v) for f in d['fires'].values() for v in f.values())) for b, d in x.items()}
@@ -652,7 +652,7 @@ def verifier_score(model, answers, cuts=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7,
     from turnbench.gold import AnchorEvent, Interval
     from turnbench.score import TaskScore, merge, score_task
     work.reload()
-    allf = json.load(open(f'/work/llm/fires_{model}.json'))
+    allf = json.load(open(f'{WORK}/llm/fires_{model}.json'))
     gold = None
     if control == 'shuffle':
         rnd = random.Random(0)
@@ -719,7 +719,7 @@ def verifier_candidates(run, model, budget=0.30, step=5, split='tbdev'):
                  for cid, p in tracks[t].items()}
             out[t] = dict(theta_low=op['theta'], recall=op['recall'], fp=op['fp'], queries=q,
                           n=sum(map(len, q.values())))
-    json.dump(out, open(f'/work/llm/candidates_{model}.json', 'w'))
+    json.dump(out, open(f'{WORK}/llm/candidates_{model}.json', 'w'))
     work.commit()
     return {t: {k: v for k, v in d.items() if k != 'queries'} for t, d in out.items()}
 
@@ -773,8 +773,8 @@ def human_ceiling(model='fine1_bal1_s1', budget='0.1'):
     from turnbench.score import TaskScore, merge, score_task
     work.reload()
     ds = resolve_dataset(TB_DEV, skip_audio=True)
-    official = json.load(open('/work/gold/tbdev.json'))
-    fires = json.load(open(f'/work/llm/fires_{model}.json'))
+    official = json.load(open(f'{WORK}/gold/tbdev.json'))
+    fires = json.load(open(f'{WORK}/llm/fires_{model}.json'))
     model_fires = {t: {cid: {int(s): v for s, v in f.items()} for cid, f in fires[t][budget]['fires'].items()}
                    for t in ('eot', 'int')}
     own, loo = {}, {}
@@ -834,7 +834,7 @@ def human_ceiling(model='fine1_bal1_s1', budget='0.1'):
             positives_by_annotators_marking={k: dict(n=v[0], model_recall=round(v[1] / v[0], 3)) for k, v in sorted(pos.items())},
             negatives_by_annotators_marking_event={k: dict(n=v[0], model_fp=round(v[1] / v[0], 3)) for k, v in sorted(neg.items())})
     out = dict(scores=res, anatomy=anatomy, model=model, budget=budget)
-    json.dump(out, open('/work/human_ceiling.json', 'w'), indent=1)
+    json.dump(out, open(f'{WORK}/human_ceiling.json', 'w'), indent=1)
     work.commit()
     return out
 
@@ -878,6 +878,6 @@ def hold_sweep(run='r012_fine', models=('fine1_bal1_s1', 'fine1_bal1_s2'), holds
             out[f'{model}|{task}|{agg}|{n}'] = dict(
                 op=dict(recall=round(op['recall'], 4), fp=round(op['fp'], 4), p50=round(op['p50'])) if op else None,
                 **{f'fp@{t}': _fp_at(rows, t) for t in tasks[task][2]})
-    json.dump(out, open(f'/work/runs/{run}/hold_sweep_{split}{"" if half is None else f"_h{half}"}.json', 'w'), indent=1)
+    json.dump(out, open(f'{WORK}/runs/{run}/hold_sweep_{split}{"" if half is None else f"_h{half}"}.json', 'w'), indent=1)
     work.commit()
     return out

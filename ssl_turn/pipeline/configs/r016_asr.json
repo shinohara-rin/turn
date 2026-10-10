@@ -1,0 +1,60 @@
+{
+ "fine1_bal1_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 1
+ },
+ "nofine_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 0.0
+  },
+  "seed_tag": 1
+ },
+ "fine1_bal1_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 2
+ },
+ "nofine_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 0.0
+  },
+  "seed_tag": 2
+ }
+}

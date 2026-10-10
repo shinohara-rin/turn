@@ -15,10 +15,10 @@ import time
 
 import modal
 
-from common import VOLUMES, gpu_image, gpu_monitor, setup_path, work
+from common import WORK, VOLUMES, gpu_image, gpu_monitor, setup_path, work
 
 app = modal.App('ssl-turn-encode-mtd')
-MODEL_DIR = '/work/models/mtd'
+MODEL_DIR = f'{WORK}/models/mtd'
 LAYERS = (8, 16, 24)
 
 
@@ -71,7 +71,7 @@ def encode(items, step=2, batch=96):
         return (torch.maximum(log_spec, peak - 8.0) + 4.0) / 4.0
     t0, done_s, n_saved = time.time(), 0.0, 0
     for split, cid in items:
-        a24 = np.load(f'/work/audio/{split}/{cid}.npy').astype(np.float32)
+        a24 = np.load(f'{WORK}/audio/{split}/{cid}.npy').astype(np.float32)
         chans = [to16k(a24[:, c]) for c in (0, 1)]
         n = min(len(c) for c in chans)
         T = n // me.TOKEN_SAMPLES                      # 80 ms frames
@@ -100,9 +100,9 @@ def encode(items, step=2, batch=96):
             idx = np.searchsorted(ks, np.arange(T), side='right') - 1
             valid = idx >= 0
             out[valid, c] = f[idx[valid]]
-        os.makedirs(f'/work/feats_mtd/{split}', exist_ok=True)
-        np.save(f'/work/feats_mtd/{split}/{cid}.tmp.npy', out)
-        os.replace(f'/work/feats_mtd/{split}/{cid}.tmp.npy', f'/work/feats_mtd/{split}/{cid}.npy')  # atomic
+        os.makedirs(f'{WORK}/feats_mtd/{split}', exist_ok=True)
+        np.save(f'{WORK}/feats_mtd/{split}/{cid}.tmp.npy', out)
+        os.replace(f'{WORK}/feats_mtd/{split}/{cid}.tmp.npy', f'{WORK}/feats_mtd/{split}/{cid}.npy')  # atomic
         done_s += 2 * n / me.SAMPLE_RATE
         util = [u for u, _ in stats[-20:]]
         print(f'{split}/{cid}: {T} frames; {done_s / (time.time() - t0):.1f} channel-s/s; '
