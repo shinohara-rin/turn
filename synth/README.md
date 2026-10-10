@@ -165,6 +165,45 @@ audiobook speech; gender from median F0) by default, or GLOBE_V2 (CC0 Common
 Voice, more accents but noisy) with `--source globe`: `turnsynth voices`
 joins a few utterances per speaker into a 6-10 s clip. Nothing from TurnBench is used as a voice.
 
+## Japanese and Chinese
+
+`turnsynth scripts --language ja|zh` writes Japanese or Mandarin scripts;
+IndexTTS-2.5 reads both natively (`lang="ja"|"zh"`). What changes per
+language (`turnsynth/lang.py`):
+
+- **Words.** `after_word` and the turn-length rules count words, so the
+  LLM writes ja/zh with a space between words ("昨日 さ、 駅 前 の カフェ に
+  行っ た"); the filter rejects unsegmented scripts (`unsegmented`). The
+  spaces are removed before the TTS reads the text.
+- **Prompting.** Both passes get the language's rules: setting and names,
+  register, its punctuation (、。？ / ，。？), fillers, and its backchannel
+  inventory and placement (Japanese aizuchi at phrase boundaries inside the
+  other's turn; a turn ending in けど/から/し stays open). The backchannel
+  target is scaled from TurnBench's English rates by 1.6 for Japanese and
+  0.8 for Mandarin, following the ordering in Clancy et al. (1996) on
+  reactive tokens in English, Japanese and Mandarin; the factors are rough
+  and the timing model is otherwise TurnBench's.
+- **Alignment.** MMS_FA aligns a romanization of each word (pykakasi for
+  Japanese, read in sentence context; pypinyin for Chinese):
+  `pip install "synth[cjk]"`.
+- **Annotation.** ASR needs a multilingual Whisper (`--asr small`); the
+  error rate is per character for ja/zh; the rule judge and the LLM judge
+  know the language's backchannels; parquet metadata carries `language`.
+- **Voices.** Bank entries carry a `language`, and a script only draws
+  voices of its own language. `--voice-bank` takes several banks,
+  comma-separated:
+
+```bash
+hf download AISHELL/AISHELL-3 --repo-type dataset --include "test/wav/*" spk-info.txt --local-dir aishell3
+turnsynth voices aishell3 --source aishell3 --out voices-zh --per-gender 20     # studio Mandarin, Apache 2.0
+hf download TTS-AGI/emilia-yodas --repo-type dataset --include "JA/JA-B000000.tar" --local-dir emilia
+turnsynth voices emilia/JA/JA-B000000.tar --source emilia --language ja --out voices-ja --per-gender 20  # CC BY 4.0
+turnsynth render scripts-ja --tts indextts --voice-bank voices-ja,voices-zh,voices --asr small ...
+```
+
+Examples: `examples/scripts/casual_kyoto_ja.json`, `casual_chengdu_zh.json`
+(hand-written in the pass-2 format, like the English ones).
+
 ## Results so far
 
 Two hand-written scripts in `examples/scripts/` (one Casual, one
@@ -245,7 +284,8 @@ landed, word by word, for dense training targets) and `render_report.jsonl`
 | `turnsynth/config.py` | TurnBench conversation types and the timing model |
 | `turnsynth/tts.py` | IndexTTS (contextual), Kokoro and dummy backends with word timings |
 | `turnsynth/align.py` | MMS_FA forced alignment of script words (IndexTTS reports no timings) |
-| `turnsynth/voicebank.py` | voice-prompt bank from LibriTTS-R or GLOBE_V2 |
+| `turnsynth/voicebank.py` | voice-prompt banks: LibriTTS-R, GLOBE_V2 (en), Emilia-YODAS (ja), AISHELL-3 (zh) |
+| `turnsynth/lang.py` | per-language words, punctuation, error-rate units, romanization, backchannel lists |
 | `turnsynth/render.py` | timeline placement, interruption cuts, mixing |
 | `turnsynth/vad.py`, `annotate.py` | VAD segments, annotators a and c |
 | `turnsynth/judge.py` | ASR + LLM judge (annotator b), lexical fallback |

@@ -2,7 +2,9 @@
 
     turnsynth scripts --n 12 --minutes 4 --out out/scripts          # LLM: pass 1 + pass 2 + filter
     turnsynth render out/scripts --tts kokoro --asr base.en --judge llm --out out/synth
-    turnsynth voices globe-test-*.parquet --out voices                  # prompt bank for --tts indextts
+    turnsynth voices libritts/data/dev.clean/*.parquet --out voices     # prompt bank for --tts indextts
+    turnsynth voices emilia/JA/JA-B000000.tar --source emilia --language ja --out voices-ja
+    turnsynth scripts --language ja ...; turnsynth render ... --voice-bank voices-ja --asr small
     turnsynth render out/scripts --tts indextts --index-model-dir ckpt/IndexTTS-2.5 --voice-bank voices ...
     turnsynth stats out/synth/parquet
 """
@@ -26,8 +28,8 @@ def cmd_scripts(args) -> None:
     for i in range(args.n):
         ctype = types[i % len(types)]
         seed = args.seed + i
-        script, attempts = generate_script(llm, ctype, minutes=args.minutes, seed=seed)
-        log.append({"index": i, "type": ctype, "seed": seed, "accepted": script is not None, "attempts": attempts})
+        script, attempts = generate_script(llm, ctype, minutes=args.minutes, seed=seed, language=args.language)
+        log.append({"index": i, "type": ctype, "language": args.language, "seed": seed, "accepted": script is not None, "attempts": attempts})
         if script is not None:
             (out / f"{i:05d}.json").write_text(json.dumps(script.to_json(), indent=1))
         print(json.dumps(log[-1]))
@@ -81,7 +83,7 @@ def cmd_render(args) -> None:
             "tts": args.tts, "speaker_1_voice": res.rendered.voices["A"], "speaker_2_voice": res.rendered.voices["B"],
             "speaker_1_gender": sp["A"].get("gender", ""), "speaker_2_gender": sp["B"].get("gender", ""),
             "annotator_a": "generator-intent", "annotator_b": f"judge:{args.judge}" + (f"+asr:{args.asr}" if args.asr else "+script-text"),
-            "annotator_c": "geometry", "agreement": res.agreement,
+            "annotator_c": "geometry", "agreement": res.agreement, "language": script.language,
         }
         rows.append(to_row(res.rendered, res.tracks, meta))
         write_intent(res.rendered, out / "intent")
@@ -102,10 +104,14 @@ def cmd_render(args) -> None:
 
 
 def cmd_voices(args) -> None:
-    from turnsynth.voicebank import build_globe, build_libritts
+    from turnsynth.voicebank import build_aishell3, build_emilia, build_globe, build_libritts
 
     if args.source == "libritts":
         bank = build_libritts(args.shards, args.out, per_gender=args.per_gender, seed=args.seed)
+    elif args.source == "aishell3":
+        bank = build_aishell3(args.shards[0], args.out, per_gender=args.per_gender, seed=args.seed)
+    elif args.source == "emilia":
+        bank = build_emilia(args.shards, args.out, language=args.language, per_gender=args.per_gender)
     else:
         bank = build_globe(args.shards, args.out, per_gender=args.per_gender,
                            accents=args.accents.split(",") if args.accents else None, seed=args.seed)
@@ -129,6 +135,8 @@ def main(argv=None) -> None:
     s.add_argument("--minutes", type=float, default=4.0)
     s.add_argument("--model", default="claude-opus-5-5")
     s.add_argument("--effort", default="medium")
+    s.add_argument("--language", default="en", choices=["en", "ja", "zh"],
+                   help="ja/zh need --tts indextts and a multilingual --asr (e.g. small) at render time")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--out", required=True)
     s.set_defaults(fn=cmd_scripts)
@@ -138,7 +146,7 @@ def main(argv=None) -> None:
     r.add_argument("--tts", default="kokoro", choices=["kokoro", "indextts", "dummy"])
     r.add_argument("--index-model-dir", default="checkpoints/IndexTTS-2.5", help="IndexTTS weights (with config.yaml)")
     r.add_argument("--index-version", default="2.5", choices=["2.5", "2"])
-    r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices)")
+    r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices); several comma-separated, e.g. one per language")
     r.add_argument("--no-dialogue-context", action="store_true",
                    help="IndexTTS ablation: per-chunk calls from the fixed bank clip, as in MultiTalk")
     r.add_argument("--index-pass", default="floor", choices=["turn", "speaker", "floor"],
@@ -146,7 +154,7 @@ def main(argv=None) -> None:
                         "or the same but a pass ends when the other speaker takes the floor")
     r.add_argument("--entrain", type=float, default=0.0,
                    help="IndexTTS: emotion strength borrowed from the partner's last line when the script gives none")
-    r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en); empty = script text")
+    r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en; a multilingual one such as small for ja/zh); empty = script text")
     r.add_argument("--device", default="auto")
     r.add_argument("--judge", default="rules", choices=["rules", "llm"])
     r.add_argument("--judge-model", default="claude-opus-5-5")
@@ -160,10 +168,12 @@ def main(argv=None) -> None:
     r.add_argument("--out", required=True)
     r.set_defaults(fn=cmd_render)
 
-    v = sub.add_parser("voices", help="build a voice-prompt bank from LibriTTS-R or GLOBE_V2 parquet shards")
-    v.add_argument("shards", nargs="+")
-    v.add_argument("--source", default="libritts", choices=["libritts", "globe"],
-                   help="libritts: mythicinfinity/libritts_r shards (clean, default); globe: MushanW/GLOBE_V2 shards")
+    v = sub.add_parser("voices", help="build a voice-prompt bank (English, Japanese or Chinese voices)")
+    v.add_argument("shards", nargs="+", help="parquet shards, Emilia tars, or the AISHELL-3 root directory")
+    v.add_argument("--source", default="libritts", choices=["libritts", "globe", "aishell3", "emilia"],
+                   help="libritts: mythicinfinity/libritts_r shards (clean English, default); globe: MushanW/GLOBE_V2 "
+                        "shards; aishell3: AISHELL/AISHELL-3 root (zh); emilia: TTS-AGI/emilia-yodas tars (--language)")
+    v.add_argument("--language", default="ja", choices=["ja", "zh", "en"], help="language of --source emilia tars")
     v.add_argument("--out", required=True)
     v.add_argument("--per-gender", type=int, default=40)
     v.add_argument("--accents", default="", help="comma-separated substrings of GLOBE accent names to keep")

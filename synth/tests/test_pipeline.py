@@ -155,7 +155,7 @@ class WholeTurnTTS(DummyTTS):
     def __init__(self):
         self.calls = []
 
-    def synthesize(self, text, voice, speed=1.0, context=None):
+    def synthesize(self, text, voice, speed=1.0, context=None, language="en"):
         self.calls.append((text, context))
         return super().synthesize(text, voice, speed)
 
@@ -249,3 +249,40 @@ def test_trim_keeps_the_decay_after_the_aligned_word_end():
     assert out.duration > 0.6 + 0.15
     assert abs(out.audio[-int(0.005 * sr):]).max() < 1e-3
     assert out.words[0].end == pytest.approx(0.8 - (0.25 - out.words[0].start), abs=1e-6)
+
+
+def test_cjk_scripts_are_segmented_and_spoken_without_spaces():
+    from turnsynth import lang
+    from turnsynth.render import spoken_text
+
+    for name in ("casual_kyoto_ja.json", "casual_chengdu_zh.json"):
+        script = parse(json.loads((Path(__file__).parent.parent / "examples" / "scripts" / name).read_text()))
+        assert script.language in lang.CJK
+        item = next(it for it in script.items if it.type == "turn" and len(it.chunks) > 1)
+        text, cuts = spoken_text(item, script.language)
+        assert len(text.split()) == len(item.words) and cuts[0][0] < len(item.words)
+        said = lang.spoken(text.split(), script.language)
+        assert " " not in said and lang.COMMA[script.language] in said
+    unsegmented = json.loads((Path(__file__).parent.parent / "examples" / "scripts" / "casual_chengdu_zh.json").read_text())
+    unsegmented["turns"] = [dict(t, text=t["text"].replace(" ", "")) for t in unsegmented["turns"] if t["type"] == "turn"]
+    assert "unsegmented" in check(parse(unsegmented))
+
+
+def test_cjk_error_rate_counts_characters_and_rule_judge_knows_aizuchi():
+    from turnsynth import lang
+    from turnsynth.judge import _lexical
+
+    assert lang.units("今天 ， 下雨 。", "zh") == list("今天下雨")
+    assert lang.spoken(["買っ", "た", "iPhone", "15", "は"], "ja") == "買ったiPhone 15は"
+    assert _lexical("うんうん。", "ja")[2] is not None
+    assert _lexical("对对对", "zh")[2] is not None
+    assert _lexical("我觉得不是", "zh")[2] is None
+
+
+def test_standalone_punctuation_takes_no_time_in_alignment():
+    from turnsynth.align import _fill
+    from turnsynth.tts import Word
+
+    words = ["你", "回来", "了", "！"]
+    out = _fill(words, [Word("你", 0.1, 0.3), Word("回来", 0.4, 0.8), Word("了", 0.9, 1.0), None], 2.0)
+    assert out[-1].start == out[-1].end == 1.0

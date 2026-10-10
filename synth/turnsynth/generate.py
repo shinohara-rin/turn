@@ -6,6 +6,14 @@ types. Pass 2 realizes the dialogue under that design, with the turn-taking
 dynamics written as explicit, labelled script items: within-turn pauses,
 backchannels and interruptions anchored on a word of the host turn. Those
 labels are annotator a. The script then goes through the filter in script.py.
+
+`language` ja/zh adds LANGUAGE_RULES to both passes (word segmentation,
+punctuation, the language's own backchannel and filler inventory) and scales
+the backchannel target by BACKCHANNEL_RATE: listener responses are more
+frequent in Japanese conversation than in English and less frequent in
+Mandarin (Clancy, Thompson, Suzuki & Tao 1996, "The conversational use of
+reactive tokens in English, Japanese, and Mandarin"). The multipliers are
+rough and the TurnBench timing model is otherwise kept.
 """
 
 import json
@@ -35,7 +43,7 @@ DESIGN_SYSTEM = """You design realistic two-person spoken conversations for a sp
 Write ordinary people, not assistants. Never quote the seed verbatim."""
 
 DESIGN_USER = """Design one {type} conversation ({type_desc}).
-Starting topic: {topic}. Topics may drift naturally.
+Starting topic: {topic}. Topics may drift naturally.{setting}
 
 Return a ```json block with:
 {{"scenario": "<4-6 sentences: setting, relationship, what is at stake, how the talk will develop>",
@@ -67,6 +75,35 @@ Rules:
 - Text is spoken English exactly as it should be pronounced: disfluencies ("uh", "um", "I mean"), contractions and self-repairs are welcome. No stage directions, brackets, parentheses, asterisks, emoji or speaker names in the text.
 - Never break character or mention being an AI."""
 
+LANGUAGE_NAMES = {"en": "English", "ja": "Japanese", "zh": "Mandarin Chinese"}
+
+DESIGN_SETTING = {
+    "en": "",
+    "ja": "\nThe two speakers are Japanese and talk in Japanese; set the conversation in Japan and adapt the topic to everyday life there. Write the design in English, with names in Japanese.",
+    "zh": "\nThe two speakers are from mainland China and talk in Mandarin; set the conversation in China and adapt the topic to everyday life there. Write the design in English, with names in Chinese.",
+}
+
+BACKCHANNEL_RATE = {"en": 1.0, "ja": 1.6, "zh": 0.8}
+
+LANGUAGE_RULES = {
+    "en": "",
+    "ja": """
+
+Language: the dialogue is spoken Japanese. These rules replace the English-specific ones above:
+- Write in ordinary Japanese script (kanji and kana) and put one space between words, splitting off particles and auxiliaries, because after_word and the turn-length targets count these words: "昨日 さ、 駅 前 の カフェ に 行っ た ん だ けど <pause 0.7> もう 閉まっ て て。". Punctuation attaches to the word before it, with no space; use 、 。 ？ ！ and … (never ASCII , . ? !).
+- Register follows the relationship in the design: plain form between friends and family, です/ます where it would be used. Use natural spoken forms: contractions (てる, ちゃう, じゃん), sentence-final particles (ね, よ, よね, な), fillers (えーと, あの, まあ, なんか, その), self-repairs.
+- Aizuchi are far more frequent than English backchannels: うん, うんうん, はい, ええ, そう, そうそう, へえ, なるほど, ほんと？, まじで, たしかに, そっか. Place them at phrase boundaries inside the host turn (after a bunsetsu ending in particles like ね, さ, けど, て, から), not only at sentence ends; several in one long host turn is normal.
+- A turn ending in けど, から, し, て or a trailing … keeps the floor open; mark a pause there with <pause X> when the speaker goes on. A completed sentence ending in です, ます, よ, ね or ？ usually yields.
+- Interruptions are rarer and more often cooperative (finishing the other's sentence, an eager agreement) than competitive.""",
+    "zh": """
+
+Language: the dialogue is spoken Mandarin Chinese (Simplified characters). These rules replace the English-specific ones above:
+- Put one space between words, because after_word and the turn-length targets count these words: "我 昨天 去 那个 咖啡馆， <pause 0.7> 结果 它 关门 了。". Punctuation attaches to the word before it, with no space; use ， 。 ？ ！ and …… (never ASCII , . ? !).
+- Use natural spoken forms: sentence-final particles (吧, 呢, 啊, 嘛, 了), fillers (那个, 就是, 然后, 嗯, 呃), repetition and self-repairs.
+- Backchannels: 嗯, 嗯嗯, 对, 对对对, 是, 是吗, 哦, 啊, 真的吗, 好, 没错. They are somewhat less frequent than in English; place them at phrase boundaries inside the host turn.
+- Write numbers as Chinese words when they would be read that way (三点半, 两百块).""",
+}
+
 DIALOGUE_USER = """Conversation design:
 {design}
 
@@ -76,29 +113,30 @@ Target about {n_items} items in total, covering roughly {minutes:.0f} minutes of
 Write the script."""
 
 
-def target_counts(ctype: ConversationType, minutes: float) -> dict[str, int]:
-    n_bc = round(ctype.backchannels_per_min * minutes)
+def target_counts(ctype: ConversationType, minutes: float, language: str = "en") -> dict[str, int]:
+    n_bc = round(ctype.backchannels_per_min * BACKCHANNEL_RATE[language] * minutes)
     n_int = round(ctype.interruptions_per_min * minutes)
     n_turns = round(minutes * 60 / ctype.mean_turn_s * 1.6)  # segments, not whole turns
     return {"n_bc": n_bc, "n_int": n_int, "n_ft": round(n_int * 0.6), "n_items": n_turns + n_bc + n_int}
 
 
 def generate_script(llm: LLM, conversation_type: str, *, topic: str | None = None, minutes: float = 4.0,
-                    seed: int = 0, max_attempts: int = 3) -> tuple[Script | None, list[dict]]:
+                    seed: int = 0, max_attempts: int = 3, language: str = "en") -> tuple[Script | None, list[dict]]:
     """Returns (script or None, attempt log with reason codes)."""
     rng = np.random.default_rng(seed)
     ctype = TYPES[conversation_type]
     topic = topic or str(rng.choice(TOPIC_SEEDS[conversation_type]))
     log: list[dict] = []
-    design = extract_json(llm.complete(DESIGN_SYSTEM, DESIGN_USER.format(type=ctype.name, type_desc=ctype.description, topic=topic)))
-    counts = target_counts(ctype, minutes)
+    design = extract_json(llm.complete(DESIGN_SYSTEM, DESIGN_USER.format(
+        type=ctype.name, type_desc=ctype.description, topic=topic, setting=DESIGN_SETTING[language])))
+    counts = target_counts(ctype, minutes, language)
     for attempt in range(max_attempts):
-        reply = llm.complete(DIALOGUE_SYSTEM, DIALOGUE_USER.format(
+        reply = llm.complete(DIALOGUE_SYSTEM + LANGUAGE_RULES[language], DIALOGUE_USER.format(
             design=json.dumps(design, indent=1), type=ctype.name, type_desc=ctype.description,
             minutes=minutes, **counts))
         try:
             obj = extract_json(reply)
-            obj = {"conversation_type": ctype.name, "scenario": design.get("scenario", ""),
+            obj = {"language": language, "conversation_type": ctype.name, "scenario": design.get("scenario", ""),
                    "speakers": design["speakers"], "turns": obj["turns"],
                    "meta": {"topic": topic, "seed": seed, "attempt": attempt, "targets": counts}}
             script = parse(obj)

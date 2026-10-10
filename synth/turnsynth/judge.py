@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from turnsynth import labels as L
+from turnsynth import lang as lang_
 from turnsynth.annotate import Segment, Track, overlap_class
 from turnsynth.llm import LLM, extract_json
 
@@ -30,15 +31,18 @@ class Transcriber:
         from faster_whisper import WhisperModel
 
         self.model = WhisperModel(model, device=device, compute_type=compute_type)
+        self.name, self.english_only = model, model.endswith(".en")
 
-    def transcribe(self, audio: np.ndarray, sr: int, segs: list[Segment]) -> list[str]:
+    def transcribe(self, audio: np.ndarray, sr: int, segs: list[Segment], language: str = "en") -> list[str]:
+        if language != "en" and self.english_only:
+            raise ValueError(f"ASR model {self.name} is English-only; use a multilingual one (e.g. small) for {language}")
         out = []
         for seg in segs:
             i0, i1 = int(max(0.0, seg.start - 0.1) * sr), int((seg.end + 0.1) * sr)
             clip = audio[i0:i1]
             if sr != 16000:
                 clip = np.interp(np.arange(0, len(clip), sr / 16000), np.arange(len(clip)), clip).astype(np.float32)
-            parts, _ = self.model.transcribe(clip, language="en", beam_size=1, vad_filter=False,
+            parts, _ = self.model.transcribe(clip, language=language, beam_size=1, vad_filter=False,
                                              condition_on_previous_text=False)
             out.append(" ".join(p.text.strip() for p in parts).strip())
         return out
@@ -48,7 +52,36 @@ def _norm(text: str) -> list[str]:
     return [w.strip(".,?!;:\"'").lower() for w in text.split() if w.strip(".,?!;:\"'")]
 
 
-def rule_judge(segs: dict[int, list[Segment]], text: dict[int, list[str]]) -> dict[int, Track]:
+def _lexical(t: str, language: str) -> tuple[bool, bool, str | None]:
+    """(no words, only fillers, backchannel label or None) for a short segment transcript."""
+    if language in lang_.CJK:
+        b = lang_.bare(t, language)
+        fillers, bcs = lang_.FILLERS[language], lang_.BACKCHANNELS[language]
+        if not b:
+            return True, False, None
+        if b in fillers:
+            return False, True, None
+        for kind, label in (("continuer", L.BC_CONTINUER), ("reaction", L.BC_REACTION),
+                            ("acknowledgement", L.BC_ACK)):
+            # "うんうんうん", "对对对": a repeated token is the same backchannel.
+            if any(len(b) % len(tok) == 0 and b == tok * (len(b) // len(tok)) for tok in bcs[kind]):
+                return False, False, label
+        return False, False, None
+    words = _norm(t)
+    if not words:
+        return True, False, None
+    if all(w in FILLERS for w in words):
+        return False, True, None
+    if len(words) <= 3 and all(w in BC_CONTINUER | BC_REACTION | BC_ACK for w in words):
+        if any(w in BC_CONTINUER for w in words):
+            return False, False, L.BC_CONTINUER
+        if any(w in BC_REACTION for w in words):
+            return False, False, L.BC_REACTION
+        return False, False, L.BC_ACK
+    return False, False, None
+
+
+def rule_judge(segs: dict[int, list[Segment]], text: dict[int, list[str]], language: str = "en") -> dict[int, Track]:
     """Offline fallback: lexical cues from the transcript decide backchannels,
     fillers and non-speech; overlap geometry decides the rest. It shares the
     geometry annotator's timing rules, so it is far less independent than the
@@ -56,19 +89,14 @@ def rule_judge(segs: dict[int, list[Segment]], text: dict[int, list[str]]) -> di
     tracks: dict[int, Track] = {1: [], 2: []}
     for spk in (1, 2):
         for i, (seg, t) in enumerate(zip(segs[spk], text[spk])):
-            words = _norm(t)
+            empty, filler, bc = _lexical(t, language)
             geo = overlap_class(segs, spk, i)
-            if not words:
+            if empty:
                 label = L.NONLINGUISTIC
-            elif all(w in FILLERS for w in words):
+            elif filler:
                 label = L.FILLER
-            elif geo is not None and len(words) <= 3 and all(w in BC_CONTINUER | BC_REACTION | BC_ACK for w in words):
-                if any(w in BC_CONTINUER for w in words):
-                    label = L.BC_CONTINUER
-                elif any(w in BC_REACTION for w in words):
-                    label = L.BC_REACTION
-                else:
-                    label = L.BC_ACK
+            elif geo is not None and bc is not None:
+                label = bc
             elif geo in ("short", "failed"):
                 label = L.NFT_COMPETITIVE
             elif geo == "took":
@@ -94,13 +122,21 @@ Judge from content and timing together: a segment starting while the other speak
 Return only a JSON object mapping each segment id (as a string) to its label, inside a ```json fenced block."""
 
 
+LANGUAGE_NOTE = {
+    "ja": "\n\nThe conversation is in Japanese. Japanese listeners give aizuchi (うん, はい, そう, へえ, なるほど) often, also in the middle of the other's sentence; they are backchannels, not turns.",
+    "zh": "\n\nThe conversation is in Mandarin Chinese. Short listener tokens such as 嗯, 对, 是, 哦, 真的吗 are backchannels, not turns.",
+}
+
+
 @dataclass
 class LLMJudge:
     llm: LLM
     window: int = 120
     context: int = 20
 
-    def __call__(self, segs: dict[int, list[Segment]], text: dict[int, list[str]]) -> dict[int, Track]:
+    def __call__(self, segs: dict[int, list[Segment]], text: dict[int, list[str]],
+                 language: str = "en") -> dict[int, Track]:
+        system = JUDGE_SYSTEM + LANGUAGE_NOTE.get(language, "")
         rows = sorted(
             [(seg.start, spk, i, seg, t) for spk in (1, 2) for i, (seg, t) in enumerate(zip(segs[spk], text[spk]))],
             key=lambda r: (r[0], r[1]),
@@ -113,7 +149,7 @@ class LLMJudge:
             for n, (_, spk, _, seg, t) in enumerate(chunk, start=lo):
                 tag = " (context only, already labelled)" if n < w0 else ""
                 lines.append(f"[{n}] S{spk} {seg.start:.2f}-{seg.end:.2f}: {t or '<no words>'}{tag}")
-            reply = self.llm.complete(JUDGE_SYSTEM, "\n".join(lines))
+            reply = self.llm.complete(system, "\n".join(lines))
             try:
                 parsed = extract_json(reply)
             except (ValueError, json.JSONDecodeError):
@@ -121,7 +157,7 @@ class LLMJudge:
             for key, value in parsed.items():
                 if str(key).isdigit() and int(key) >= w0 and value in L.FINE_LABELS:
                     labels[int(key)] = value
-        fallback = rule_judge(segs, text)
+        fallback = rule_judge(segs, text, language)
         tracks: dict[int, Track] = {1: [], 2: []}
         for n, (_, spk, i, seg, t) in enumerate(rows):
             label = labels.get(n, fallback[spk][i][2])

@@ -22,6 +22,7 @@ from typing import Protocol
 
 import numpy as np
 
+from turnsynth.lang import spoken
 from turnsynth.script import EMOTIONS
 
 
@@ -55,9 +56,9 @@ class Context:
 class TTS(Protocol):
     sample_rate: int
 
-    def voices(self, gender: str) -> list[str]: ...
+    def voices(self, gender: str, language: str = "en") -> list[str]: ...
 
-    def synthesize(self, text: str, voice: str, speed: float = 1.0) -> Speech: ...
+    def synthesize(self, text: str, voice: str, speed: float = 1.0, language: str = "en") -> Speech: ...
 
 
 # A backend with `whole_turn = True` gets each item as one text, with pauses
@@ -69,10 +70,10 @@ class DummyTTS:
 
     sample_rate = 24000
 
-    def voices(self, gender: str) -> list[str]:
+    def voices(self, gender: str, language: str = "en") -> list[str]:
         return [f"dummy_{gender}_{i}" for i in range(4)]
 
-    def synthesize(self, text: str, voice: str, speed: float = 1.0) -> Speech:
+    def synthesize(self, text: str, voice: str, speed: float = 1.0, language: str = "en") -> Speech:
         rng = np.random.default_rng(zlib.crc32(f"{voice}|{text}".encode()))
         sr = self.sample_rate
         pieces, words, t = [np.zeros(int(0.05 * sr), np.float32)], [], 0.05
@@ -106,10 +107,14 @@ class KokoroTTS:
 
         self.pipeline = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M", device=device)
 
-    def voices(self, gender: str) -> list[str]:
+    def voices(self, gender: str, language: str = "en") -> list[str]:
+        if language != "en":
+            return []
         return list(self.VOICES.get(gender, self.VOICES["female"] + self.VOICES["male"]))
 
-    def synthesize(self, text: str, voice: str, speed: float = 1.0) -> Speech:
+    def synthesize(self, text: str, voice: str, speed: float = 1.0, language: str = "en") -> Speech:
+        if language != "en":
+            raise ValueError("the kokoro backend is English only; use --tts indextts for ja/zh")
         audio, words, offset = [], [], 0.0
         for result in self.pipeline(text, voice=voice, speed=speed):
             if result.audio is None:
@@ -191,38 +196,44 @@ class IndexTTS:
         self._n = itertools.count()
         self._anchors: dict[str, np.ndarray] = {}
 
-    def voices(self, gender: str) -> list[str]:
-        names = [k for k, v in self.bank.items() if v.get("gender") == gender]
-        return names or list(self.bank)
+    def voices(self, gender: str, language: str = "en") -> list[str]:
+        """Bank voices of this language (bank entries without one are English), matched on gender if possible."""
+        names = [k for k, v in self.bank.items() if v.get("language", "en") == language]
+        return [k for k in names if self.bank[k].get("gender") == gender] or names
 
-    def synthesize(self, text: str, voice: str, speed: float = 1.0, context: Context | None = None) -> Speech:
+    def synthesize(self, text: str, voice: str, speed: float = 1.0, context: Context | None = None,
+                   language: str = "en") -> Speech:
+        """`text` is space-separated words in every language; ja/zh are run together before the model reads them."""
         context = context if (context is not None and self.whole_turn) else Context()
         kwargs = dict(max_text_tokens_per_segment=600, interval_silence=0, verbose=False)
         if self.version == "2.5":
-            kwargs.update(lang="en", duration_factor=1.0 / speed)
+            kwargs.update(lang=language, duration_factor=1.0 / speed)
+        elif language == "ja":
+            raise ValueError("IndexTTS2 reads only zh and en; use version 2.5 for ja")
         if context.emotion:
             kwargs.update(emo_vector=[float(context.emotion.get(k, 0.0)) for k in self.EMOTIONS],
                           emo_alpha=self.emo_alpha)
         elif self.entrain > 0 and context.partner is not None and context.partner.duration > 1.0:
             kwargs.update(emo_audio_prompt=self._write(context.partner.audio), emo_alpha=self.entrain)
         try:
-            audio, words = self._infer(text, voice, context, kwargs)
+            audio, words = self._infer(text.split(), voice, context, kwargs, language)
         finally:
             for f in self._tmp.glob("*.wav"):
                 f.unlink()
         return Speech(audio, self.sample_rate, words)
 
-    def _infer(self, text: str, voice: str, context: Context, kwargs: dict) -> tuple[np.ndarray, list[Word]]:
+    def _infer(self, words: list[str], voice: str, context: Context, kwargs: dict,
+               language: str) -> tuple[np.ndarray, list[Word]]:
         prompt = self._write(self._prompt(voice, context.history))
         try:
-            result = self.model.infer(spk_audio_prompt=prompt, text=text, output_path=None, **kwargs)
+            result = self.model.infer(spk_audio_prompt=prompt, text=spoken(words, language), output_path=None, **kwargs)
         finally:
             Path(prompt).unlink()
         if result is None:
             return np.zeros(int(0.1 * self.sample_rate), np.float32), []
         sr, wav = result
         audio = np.asarray(wav, dtype=np.float32).reshape(len(wav), -1).mean(axis=1) / 32768.0
-        return audio, self.aligner(audio, sr, text.split())
+        return audio, self.aligner(audio, sr, words, language)
 
     def _anchor(self, voice: str) -> np.ndarray:
         if voice not in self._anchors:

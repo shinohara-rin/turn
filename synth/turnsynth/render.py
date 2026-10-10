@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from turnsynth import lang as L
 from turnsynth.config import TYPES, Timing
 from turnsynth.script import Item, Script
 from turnsynth.tts import TTS, Context, Speech, Word
@@ -70,7 +71,7 @@ class Rendered:
 
 
 def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.random.Generator,
-                    context: Context | None = None) -> Speech:
+                    context: Context | None = None, language: str = "en") -> Speech:
     """Synthesize one item with its scripted within-turn pauses.
 
     A whole-turn backend (IndexTTS) gets the full text in one call, with the
@@ -79,8 +80,8 @@ def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.ra
     called chunk by chunk with silence inserted between chunks.
     """
     if getattr(tts, "whole_turn", False):
-        text, cuts = spoken_text(item)
-        sp = tts.synthesize(text, voice, context=context)
+        text, cuts = spoken_text(item, language)
+        sp = tts.synthesize(text, voice, context=context, language=language)
         words = item.words
         if len(sp.words) == len(words):
             sp = Speech(sp.audio, sp.sample_rate, [Word(w, x.start, x.end) for w, x in zip(words, sp.words)])
@@ -89,7 +90,7 @@ def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.ra
     sr = tts.sample_rate
     audio, words, offset = [], [], 0.0
     for text, pause in item.chunks:
-        sp = tts.synthesize(text, voice)
+        sp = tts.synthesize(text, voice, language=language)
         audio.append(sp.audio)
         words += [Word(w.text, offset + w.start, offset + w.end) for w in sp.words]
         offset += sp.duration
@@ -102,7 +103,7 @@ def synthesize_item(tts: TTS, item: Item, voice: str, timing: Timing, rng: np.ra
     return _trim(speech)
 
 
-def spoken_text(item: Item) -> tuple[str, list[tuple[int, float]]]:
+def spoken_text(item: Item, language: str = "en") -> tuple[str, list[tuple[int, float]]]:
     """Text for a whole-turn backend, and the scripted pauses as (after word k, seconds).
 
     A pause becomes a comma unless the chunk already ends in punctuation: a
@@ -113,8 +114,8 @@ def spoken_text(item: Item) -> tuple[str, list[tuple[int, float]]]:
     for text, pause in item.chunks:
         n += len(text.split())
         if pause is not None:
-            if text[-1] not in ",.?!;:-\u2026":
-                text += ","
+            if text[-1] not in L.SENTENCE_END + L.CLAUSE_END:
+                text += L.COMMA[language]
             cuts.append((n, pause))
         parts.append(text)
     return " ".join(parts), cuts
@@ -242,7 +243,10 @@ def assign_voices(tts: TTS, script: Script, rng: np.random.Generator) -> dict[st
     voices = {}
     for spk in ("A", "B"):
         gender = str(script.speakers[spk].get("gender", "female")).lower()
-        pool = [v for v in tts.voices(gender) if v not in used] or [v for v in tts.voices("any") if v not in used]
+        pool = [v for v in tts.voices(gender, script.language) if v not in used] \
+            or [v for v in tts.voices("any", script.language) if v not in used]
+        if not pool:
+            raise ValueError(f"no {script.language} voices in this TTS backend or voice bank")
         voices[spk] = str(rng.choice(pool))
         used.add(voices[spk])
     return voices
@@ -257,7 +261,7 @@ def synthesize_by_item(tts: TTS, script: Script, voices: dict[str, str], timing:
         other = "B" if item.speaker == "A" else "A"
         ctx = Context(history=list(history[item.speaker]), partner=history[other][-1] if history[other] else None,
                       emotion=item.emotion)
-        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx)
+        speeches[item.id] = synthesize_item(tts, item, voices[item.speaker], timing, rng, ctx, script.language)
         history[item.speaker].append(speeches[item.id])
     return speeches
 
@@ -298,19 +302,19 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
         for block in blocks:
             texts, cuts = [], []
             for it in block:
-                text, c = spoken_text(it)
-                if text[-1] not in ".?!\u2026":
-                    text += "..." if text[-1] not in ",;:-" else ""
+                text, c = spoken_text(it, script.language)
+                if text[-1] not in L.SENTENCE_END:
+                    text += L.ELLIPSIS[script.language] if text[-1] not in L.CLAUSE_END else ""
                 texts.append(text)
                 cuts.append(c)
             sp = tts.synthesize(" ".join(texts), voices[spk],
-                                context=Context(history=list(history)))
+                                context=Context(history=list(history)), language=script.language)
             history.append(sp)
             n_words = [len(it.words) for it in block]
             if len(sp.words) != sum(n_words):
                 for it in block:
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
-                                                      Context(history=list(history)))
+                                                      Context(history=list(history)), script.language)
                 continue
             # Each item's piece runs from the previous item's last word to the
             # next item's first, so _trim can find where its sound starts and ends.
@@ -327,7 +331,7 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
                 span = ws[-1].end - ws[0].start
                 if span < 0.07 * n or span > 1.2 * n + 0.5:
                     speeches[it.id] = synthesize_item(tts, it, voices[spk], timing, rng,
-                                                      Context(history=list(history)))
+                                                      Context(history=list(history)), script.language)
                     continue
                 sr = sp.sample_rate
                 piece = Speech(sp.audio[int(t0 * sr): int(t1 * sr)].copy(), sr,
