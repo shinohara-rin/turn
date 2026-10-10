@@ -192,6 +192,8 @@ def infer(run, names, out_run=None, use_dev=True):
     for n in names:
         ck = torch.load(f'{WORK}/runs/{run}/{n}.pt', map_location=dev)
         configs[n] = ck['cfg']
+        if ck['cfg'].get('enroll'):
+            raise NotImplementedError(f'{n}: speaker-enrolled checkpoints need enrollment vectors; use train() or bgmix')
         models[n] = build_model(ck['cfg']).to(dev)
         models[n].load_state_dict(ck['state'], strict=not ck['cfg'].get('tune'))  # tuned: trainable params only
     # Restore the feature layout the checkpoints were trained on (as train() sets it).
@@ -321,6 +323,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         Yd = stack_labels(labd, dev)
     Xa, aug_p = None, max(c.get('bg_aug', 0.0) for c in configs.values())
     if aug_p > 0:  # background-speech augmented copies (bgmix.encode_aug), same frames as X
+        aug_cfgs = [c for c in configs.values() if c.get('bg_aug')]
+        # one shared augmented crop per step: every augmented model must ask for the same recipe
+        assert len({(c['bg_aug'], bool(c.get('near_aug'))) for c in aug_cfgs}) == 1, \
+            'models in one run must share bg_aug and near_aug (one augmented crop is shared per step)'
         if mtd == 'asr':  # bgmix.encode_aug_asr: 1024-d streaming-ASR copies
             aug_dir, near = f'{WORK}/feats_asr_aug/oto', False
         else:
@@ -474,7 +480,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             rows = torch.rand(batch, device=dev) < aug_p
             ch = torch.randint(2, (batch,), device=dev)
             pick = (rows[:, None] & (torch.arange(2, device=dev)[None] == ch[:, None]))[:, None, :, None]
-            xb_aug = torch.where(pick, Xa[span], xb)
+            xb_aug = torch.where(pick, Xa[span.to(Xa.device)].to(dev, non_blocking=True), xb)
         swap = torch.rand(batch, device=dev) < 0.5
         if xb_aug is not None:
             xb_aug = torch.where(swap[:, None, None, None], xb_aug.flip(2), xb_aug)
@@ -565,6 +571,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if tb_eval is not None:
         tb_ids = [c for c in tb_ids if c in set(tb_eval)]
     Xt, offt, _ = load_split('tbdev', tb_ids, feats_on, cols)
+    if E is not None:
+        enrolls = enrolls or {}
     if E is not None and ecapa:
         with np.load(f'{WORK}/enroll_ecapa/tbdev.npz') as z:
             for cid in tb_ids:
