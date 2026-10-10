@@ -422,6 +422,8 @@ TB dev FP at fixed recall (same scoring as the LoRA table above):
 | Cat head, 131 conv (r012 fine1_bal1, s1 / s2) | 0.054 / 0.061 | 0.127 / 0.132 | 0.014 / 0.018 | 0.048 / 0.044 |
 | MTD head, 32 conv (r015 fine1_bal1, s1 / s2) | **0.048 / 0.041** | **0.073 / 0.071** | 0.015 / 0.014 | **0.021 / 0.027** |
 | MTD head, 32 conv (r015 nofine, s1 / s2) | 0.045 / 0.043 | 0.081 / 0.066 | 0.031 / 0.037 (`int_nobc`) | 0.076 / 0.057 |
+| MTD head, 131 conv (r015 fine1_bal1, s1 / s2) | 0.061 / 0.059 | 0.100 / 0.104 | **0.008 / 0.010** | **0.016 / 0.015** |
+| MTD head, 131 conv (r015 nofine, s1 / s2) | 0.061 / 0.073 | 0.102 / 0.117 | 0.017 / 0.020 (`int_nobc`) | 0.033 / 0.038 |
 
 - **EOT:** at recall 0.94, false fires drop by about 45% (0.13 → 0.07), with a quarter of
   the training data. Latency at that point is p50 ~300 ms.
@@ -432,7 +434,15 @@ TB dev FP at fixed recall (same scoring as the LoRA table above):
 - **Caveat:** MTD re-encodes a 30 s window every 160 ms. This is causal, but it costs far
   more than Cat. Encoding runs at about 7.4 channel-seconds per second on the 3090, so it
   is not real time.
-- **Next:** rerun on all 131 conversations once they are encoded.
+- **131 conversations** (same configs, about 14 min): dev floor+future improves
+  (0.629 → 0.611, best step now 1000 for the fine arms), and oto dev INT recall at
+  FP ≤ 0.10 rises from 0.91–0.92 to 0.959.
+  - INT: TB dev improves again, to about half of Cat's FP at both recall points.
+  - EOT: TB dev gets *worse* than the 32-conversation run, landing between it and Cat
+    (FP@R0.94 0.10 vs 0.07 and 0.13; FP@R0.92 about equal to Cat). The 131 model also
+    fires earlier (p50 ~185 ms vs ~300 ms at R0.94). So more oto data moves EOT toward
+    oto's own timing, not toward TurnBench's.
+  - At the FP ≤ 0.10 budget: EOT R 0.939–0.940 (p50 ~190 ms), INT R 0.986–0.988 (p50 ~295 ms).
 
 ## Cost
 
