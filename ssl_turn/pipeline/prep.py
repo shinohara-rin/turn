@@ -146,6 +146,48 @@ def tbdev_audio(cids):
     return out
 
 
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=4, memory=32768, timeout=3600)
+def tbdev_labels(cids):
+    """Training targets for TurnBench dev conversations, built like oto_item's: floor/act from
+    the 3-annotator label-view consensus and the official gold events, fine labels and
+    activity from annotator a (oto has one annotator). Only for cross-fitted adaptation
+    tests: a model trained on these must never be scored on the same conversations."""
+    import os
+    from dataclasses import asdict
+    import numpy as np
+    setup_path()
+    from turnbench.data import conversation, resolve_dataset
+    from turnbench.gold import consensus_for_conversation, events_for_conversation
+    import labels as lb
+    ds = resolve_dataset(TB_DEV, skip_audio=True)
+    os.makedirs(f'{WORK}/labels/tbdev', exist_ok=True)
+    out = []
+    for cid in cids:
+        path = f'{WORK}/labels/tbdev/{cid}.npz'
+        if os.path.exists(path):
+            out.append((cid, 'cached'))
+            continue
+        conv = conversation(ds, cid)
+        T = int(np.floor(conv.duration_s / FRAME_S))
+        times = (np.arange(T) + 1) * FRAME_S
+        consensus, _ = consensus_for_conversation(conv)
+        segments = [(e.speaker, e.start, e.end, e.label) for e in consensus]
+        events = asdict(events_for_conversation(conv))
+        y = lb.floor_targets(times, segments, events)
+        future, future_w = lb.floor_projection(y['floor'], y['floor_w'])
+        raw = [(s, a, b, label) for s in (1, 2) for a, b, label, *_ in conv.annotations[(s, 'a')]]
+        activity = np.zeros((T, 2), np.float32)
+        for s, a, b, label in raw:
+            if label not in ACTIVITY_EXCLUDED:
+                activity[(times - FRAME_S / 2 >= a) & (times - FRAME_S / 2 < b), s - 1] = 1
+        np.savez_compressed(path, floor=y['floor'], floor_w=y['floor_w'], act=y['act'], act_w=y['act_w'],
+                            future=future, future_w=future_w, activity=activity, times=times,
+                            fine=lb.fine_acts(times, raw))
+        out.append((cid, int(T), len(segments)))
+    work.commit()
+    return out
+
+
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=8192, timeout=1800)
 def tbdev_ids():
     from turnbench.data import conversation_ids, resolve_dataset

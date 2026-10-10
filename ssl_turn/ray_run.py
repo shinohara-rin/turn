@@ -9,6 +9,9 @@ and calls the functions directly:
     python ray_run.py encode_mtd [--train N]     # MTD features: oto dev, TB dev, then train (GPU env)
     python ray_run.py encode_asr [--train N]     # streaming-ASR features (NeMo env; waits for an idle GPU)
     python ray_run.py train RUN CONFIGS.json [--n-train N] [--steps S]   # GPU env
+    python ray_run.py tblabels                   # TB dev training targets, for cross-fitted tests only
+    python ray_run.py train RUN CONFIGS.json --tb-fold A [--n-train 0] [--init-from RUN]  # fit on TB half A
+    python ray_run.py merge OUT RUN_A RUN_B      # combine cross-fitted folds into one run
     python ray_run.py score RUN [--variants a,b] [--refractories 0.5] [--recommits ,1.0]  # turnbench env
 
 Paths (environment, with defaults for Rin's Ray node):
@@ -147,12 +150,44 @@ def cmd_encode_asr(a):
     print(encode_asr.encode(items), flush=True)
 
 
+def tb_folds():
+    """Two fixed halves of TB dev (alternating in id order) for cross-fitted adaptation tests."""
+    tb = sorted(json.load(open(f'{WORK}/gold/tbdev.json')), key=int)
+    return {'A': tb[0::2], 'B': tb[1::2]}
+
+
+def cmd_tblabels(a):
+    """Training targets for TB dev (prep.tbdev_labels; turnbench env, one process: ~25 GB RAM)."""
+    import prep
+    tb = sorted(json.load(open(f'{WORK}/gold/tbdev.json')), key=int)
+    print(prep.tbdev_labels(tb), flush=True)
+
+
 def cmd_train(a):
     gpu_deps()
     import train
     configs = json.load(open(a.configs if os.path.isabs(a.configs) else os.path.join(HERE, 'pipeline', a.configs)))
+    kw = {}
+    if a.tb_fold:  # train on one TB dev half, infer only on the other
+        folds = tb_folds()
+        kw = dict(tb_train=folds[a.tb_fold], tb_eval=folds['B' if a.tb_fold == 'A' else 'A'], tb_repeat=a.tb_repeat)
+    if a.lr:
+        configs = {n: dict(c, lr=a.lr) for n, c in configs.items()}
     print(train.train(a.run, configs, a.n_train, a.steps, a.batch, 375, a.eval_every, a.seed,
-                      feats_on=a.feats_on), flush=True)
+                      feats_on=a.feats_on, init_from=a.init_from, select_last=a.select_last, **kw), flush=True)
+
+
+def cmd_merge(a):
+    """Merge runs' probs.npz (e.g. the two cross-fitted folds) into one run for scoring."""
+    import numpy as np
+    out = {}
+    for r in a.runs:
+        with np.load(f'{WORK}/runs/{r}/probs.npz') as z:
+            for k in z.files:
+                out.setdefault(k, z[k])  # oto dev keys appear in every fold: keep the first
+    os.makedirs(f'{WORK}/runs/{a.out}', exist_ok=True)
+    np.savez_compressed(f'{WORK}/runs/{a.out}/probs.npz', **out)
+    print(a.out, len(out), 'arrays', flush=True)
 
 
 def cmd_score(a):
@@ -200,6 +235,15 @@ def main():
     t.add_argument('--eval-every', type=int, default=250)
     t.add_argument('--seed', type=int, default=0)
     t.add_argument('--feats-on', default='cpu')
+    t.add_argument('--tb-fold', choices=('A', 'B'), help='train on this TB dev half, infer on the other')
+    t.add_argument('--tb-repeat', type=int, default=1)
+    t.add_argument('--init-from', help='start each model from this run\'s checkpoint')
+    t.add_argument('--select-last', action='store_true')
+    t.add_argument('--lr', type=float)
+    sub.add_parser('tblabels')
+    g = sub.add_parser('merge')
+    g.add_argument('out')
+    g.add_argument('runs', nargs='+')
     s = sub.add_parser('score')
     s.add_argument('run')
     s.add_argument('--variants', default='')

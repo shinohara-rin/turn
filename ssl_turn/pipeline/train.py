@@ -35,27 +35,29 @@ def columns(taps):
     return np.concatenate(cols)
 
 
-def load_split(split, cids, device, cols=None, workers=16):
+def load_split(split, cids, device, cols=None, workers=16, labeled=None):
     """Read per-conversation features with parallel threads (volume reads are I/O bound)
-    straight into one preallocated GPU tensor; peak VRAM is the final size, not 2x."""
+    straight into one preallocated GPU tensor; peak VRAM is the final size, not 2x.
+    Labels are read for oto by default, and for tbdev only when asked (labeled=True)."""
     import numpy as np
     import torch
     from concurrent.futures import ThreadPoolExecutor
+    labeled = split == 'oto' if labeled is None else labeled
 
     def length(cid):
         T = np.load(f'{WORK}/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r').shape[0]
         if FUSE_MTD:
             T = min(T, np.load(f'{WORK}/feats_mtd/{split}/{cid}.npy', mmap_mode='r').shape[0])
-        if split == 'oto':
-            with np.load(f'{WORK}/labels/oto/{cid}.npz') as z:
+        if labeled:
+            with np.load(f'{WORK}/labels/{split}/{cid}.npz') as z:
                 T = min(T, len(z['floor']))
         return T
 
     def read(cid, T):
         f = np.load(f'{WORK}/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r')
         lab = None
-        if split == 'oto':
-            z = np.load(f'{WORK}/labels/oto/{cid}.npz')
+        if labeled:
+            z = np.load(f'{WORK}/labels/{split}/{cid}.npz')
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
             if 'fine' in z.files:
                 lab['fine'], lab['fine_w'] = z['fine'][:T], z['act_w'][:T]
@@ -236,9 +238,16 @@ def build_head(cfg):
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
-          use_dev=True, train_from=None, infer=True, feats_on='cuda'):
+          use_dev=True, train_from=None, infer=True, feats_on='cuda', tb_train=(), tb_eval=None, tb_repeat=1,
+          init_from=None, select_last=False):
     """feats_on='cpu' keeps features in host RAM and moves each batch to the GPU (for
-    feature sets larger than VRAM, e.g. MTD 4096-d on a 24 GB card)."""
+    feature sets larger than VRAM, e.g. MTD 4096-d on a 24 GB card).
+
+    TurnBench-dev adaptation test (cross-fitting only): tb_train adds those TB dev
+    conversations (labels/tbdev) to the training set, their crop starts repeated tb_repeat
+    times; n_train=0 trains on them alone. tb_eval restricts TB dev inference to the held-out
+    conversations. init_from=RUN starts each model from RUN/{name}.pt; select_last keeps the
+    final step instead of the best oto-dev checkpoint."""
     import os, threading
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')  # before the first CUDA allocation
     import numpy as np
@@ -275,7 +284,14 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     dev_ids = [c for c in split['dev'] if c in have] if use_dev else []
     tb_ids = sorted(f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/tbdev') if not f.endswith('.tmp.npy'))
     t0 = time.time()
-    X, off, lab = load_split('oto', train_ids, feats_on, cols)
+    X, off, lab = load_split('oto', train_ids, feats_on, cols) if train_ids else (None, [0], [])
+    reps = [1] * len(train_ids)
+    if tb_train:
+        Xb, offb, labb = load_split('tbdev', list(tb_train), feats_on, cols, labeled=True)
+        X = Xb if X is None else torch.cat([X, Xb])
+        off = off + [off[-1] + o for o in offb[1:]]
+        lab = lab + labb
+        reps += [tb_repeat] * len(tb_train)
     Y = stack_labels(lab, dev)
     if dev_ids:
         Xd, offd, labd = load_split('oto', dev_ids, feats_on, cols)
@@ -299,11 +315,14 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
     # Valid crop starts: within one conversation.
     # Valid crop starts (first labelled frame): WARM context frames before it, all in one conversation.
-    starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev) for a, b in zip(off[:-1], off[1:])
-                        if b - a > crop + WARM])
+    starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r)
+                        for a, b, r in zip(off[:-1], off[1:], reps) if b - a > crop + WARM])
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = build_model(cfg).to(dev)
+        if init_from:
+            net.load_state_dict(torch.load(f'{WORK}/runs/{init_from}/{name}.pt', weights_only=False)['state'],
+                                strict=False)
         models[name] = net
         groups = [dict(params=[p for n, p in net.named_parameters() if p.requires_grad and not n.startswith('top.')],
                        lr=cfg.get('lr', 3e-4), weight_decay=cfg.get('wd', 0.05))]
@@ -439,6 +458,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         return {n: dict(best_step=best[n][2], best=best[n][0], ms_per_step=(time.time() - tstep) / steps * 1000,
                         peak_gib=torch.cuda.max_memory_allocated() / 2**30) for n in history}
     for name, net in models.items():  # restore the best dev checkpoint (early stopping)
+        if select_last:
+            best[name] = (float('nan'), None, steps)
+            continue
         net.load_state_dict(best[name][1], strict=False)  # trainable params; frozen encoder weights unchanged
         print(f'{name}: best step {best[name][2]} (floor+future {best[name][0]:.4f})', flush=True)
     torch.cuda.empty_cache()
@@ -447,13 +469,15 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     if dev_ids:
         del Xd
     torch.cuda.empty_cache()
+    if tb_eval is not None:
+        tb_ids = [c for c in tb_ids if c in set(tb_eval)]
     Xt, offt, _ = load_split('tbdev', tb_ids, feats_on, cols)
     probs.update(infer_all(models, configs, (('tbdev', Xt, offt, tb_ids),), dev))
     os.makedirs(f'{WORK}/runs/{run}', exist_ok=True)
     np.savez_compressed(f'{WORK}/runs/{run}/probs.npz', **probs)
     for name, net in models.items():
         torch.save(dict(cfg=configs[name], state=cat_top.trainable_state(net)), f'{WORK}/runs/{run}/{name}.pt')
-    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
+    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, tb_train=list(tb_train), tb_eval=tb_eval, init_from=init_from, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
                    wall_s=time.time() - t0, gpu_util=[u for u, _ in stats]), open(f'{WORK}/runs/{run}/train.json', 'w'))
     work.commit()
     stop.set()
