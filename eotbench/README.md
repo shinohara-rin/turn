@@ -49,10 +49,32 @@ them exactly. Other variants (`eot`, `eot_f04_q`) land in the same 776-846 ms ba
 - The gap to LiveKit v1 is at the low-latency end: at 300 ms we cut off ~20% of pauses vs 9.9%.
   Our heads see audio only; v1 and Baton also use the conversation text, and eot-bench gives no agent
   audio, so our cross-channel features are idle.
-- The turn-1-mini-style rules policy is VAD + timing only. On eot-bench the silence spans are given,
-  so any rule that only looks at silence timing is the harness's VAD baseline (1600 / 1000 ms). Its
-  TurnBench gains came from TurnBench's scorer (fires after a cancelled candidate, confirmation
-  events), which eot-bench does not have: the first fire in a pause decides.
+- turn-1-mini-style policy (rules alone): VAD + timing only. On eot-bench the silence spans are
+  given, so any rule that only looks at silence timing is the harness's VAD baseline (1600 / 1000 ms).
+
+## turn-1-mini policy + r019 (`t1m_policy.py`)
+
+The round-2 hybrid from the "Study turn-1-mini" thread commits a pause at min(VAD deadline, first
+time eot_q >= th at or after t + mw_model). That is the harness's own threshold / action delay /
+timeout policy except for one detail: the harness fires at max(delay, first crossing), so a score
+that crossed early and fell back still fires at the delay, while turn-1-mini reads the score only
+once the delay has passed. `t1m_policy.py` sweeps both rules on the harness grid (its `harness`
+rule reproduces `eot-harness compute-metrics` exactly for our runs and VAP).
+
+| eot_q head | rule | Latency @ 5% | Latency @ 10% | Cutoff @ 300 ms | Cutoff @ 600 ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| bgaug_s1 | harness / t1m | 815 / 813 ms | 570 / 526 ms | 22.6 / 22.1% | 9.1 / 8.4% |
+| bgaug_s2 | harness / t1m | 805 / 804 ms | 539 / 524 ms | 21.0 / 20.1% | 8.4 / 8.2% |
+| fine1_bal1_s1 | harness / t1m | 826 / 818 ms | 516 / 507 ms | 18.9 / 18.3% | 8.2 / 7.8% |
+| fine1_bal1_s2 | harness / t1m | 838 / 838 ms | 523 / 501 ms | 20.0 / 19.0% | 8.7 / 7.8% |
+
+The turn-1-mini rule helps a little on every head (0-8 ms at 5%, 9-44 ms at 10%, about 0.5-1 point
+fewer cutoffs) but does not change the ranking (Soniox 647 / 512 ms is next above). The rest of the
+policy has nothing to act on here: the 2.5 s confirmation event and the resumption cancel only matter
+after a first fire, and on eot-bench the first fire in a pause already decides a cutoff; the
+other-speaker trigger needs agent audio; and the pauses are the dataset's spans, not our VAD. The
+TurnBench deadlines (< 1 s) are also below the harness's timeout grid (1-3.5 s); the VAD baseline at
+1.0 s already cuts off 21.7% of pauses, so shorter deadlines cannot help at a 5-10% budget.
 
 ## Reproduce
 
@@ -64,6 +86,7 @@ cp -r eot-bench/output/livekit__eot-bench-data__validation__min_silence_100ms/en
 python eotbench/to_harness.py tracks.npz en --variants eot_q
 for d in en/ssl_turn__*; do eot-harness compute-metrics --predictions $d/predictions.parquet --output-dir $d/metrics; done
 eot-harness compare-models en
+python eotbench/t1m_policy.py en/ssl_turn__*_eot_q/predictions.parquet
 ```
 
 (The harness pins numpy<2; pyarrow 18.1 works with it.)
