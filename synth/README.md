@@ -126,7 +126,16 @@ our own choices, measured on the same casual lines with torchaudio SQUIM
 3. Passes over ~60 words rush and garble; `floor`/`speaker` passes are
    capped at 60 words.
 
-Full casual render after the fixes vs the earlier `floor` render: PESQ
+Line ends: lines used to be cut 20 ms after the forced-aligned end of the
+last word, which lands before the voice and breath have died away, so most
+lines stopped dead (casual: median level in a line's last 10 ms 15 dB under
+its peak, 90% of lines above -30 dB). `_trim` and `_retime` now cut where
+the level has stayed 45 dB under the peak for 80 ms (so a final stop's
+release is kept), at most 0.5 s past the aligned end, with a 50 ms fade:
+median end level -63 dB, 3% of lines above -30 dB, median tail 140 ms.
+Word times still mark the words, so placement and labels are unchanged.
+
+Full casual render after the quality fixes vs the earlier `floor` render: PESQ
 3.46 vs 3.12, SI-SDR 20.0 vs 19.2 dB, 3.1 vs 3.2 words/s, WER 7.2% vs 9.8%
 (argumentative: WER 10.9%).
 

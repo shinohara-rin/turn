@@ -234,3 +234,18 @@ def test_voice_clip_skips_utterances_too_long_to_fit():
 
     clip, sr = _join([utt(14.0), utt(5.0), utt(3.0)], max_s=10.0)
     assert 7.5 <= len(clip) / sr <= 10.0
+
+
+def test_trim_keeps_the_decay_after_the_aligned_word_end():
+    from turnsynth.render import _trim
+    from turnsynth.tts import Speech, Word
+
+    sr = 22050
+    t = np.arange(int(1.5 * sr)) / sr
+    env = np.where(t < 0.2, 0.0, np.where(t < 0.8, 1.0, np.exp(-(t - 0.8) / 0.05)))
+    audio = (0.5 * env * np.sin(2 * np.pi * 150 * t)).astype(np.float32)
+    # The aligner ends the word at 0.8 s, while the voice dies away over ~0.25 s.
+    out = _trim(Speech(audio, sr, [Word("so.", 0.25, 0.8)]))
+    assert out.duration > 0.6 + 0.15
+    assert abs(out.audio[-int(0.005 * sr):]).max() < 1e-3
+    assert out.words[0].end == pytest.approx(0.8 - (0.25 - out.words[0].start), abs=1e-6)
