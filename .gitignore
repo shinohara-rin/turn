@@ -1,1 +1,50 @@
+# Python bytecode and local environments
 __pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.python-version
+
+# Tool caches, coverage, and notebook state
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+
+# Python packaging output
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Local configuration and credentials; keep reusable examples
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.hf_token
+
+# Logs and process state
+*.log
+*.pid
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
