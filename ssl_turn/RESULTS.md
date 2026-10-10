@@ -464,6 +464,8 @@ these labels. As act targets they teach the head that a silent speaker is "not s
 whenever the other one talks. That breaks p(SILENT) and so `eot_q`. **r018** drops them:
 NonContent spans are kept only where some annotator heard laughter or non-linguistic
 speech, and annotator a's bleed/noise segments are left out of the fine targets.
+(r018 kept a whole NonContent span if any part of it was vocal; `tbdev_labels` now keeps
+only the vocal part. r018 was not rerun with that.)
 
 FP at fixed recall on each held-out half (fine1_bal1, s1 / s2; EOT `eot_q@r0.5+rc1.0`
 at R0.92, INT `int_nobc@r0.5` at R0.95):

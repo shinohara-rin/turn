@@ -156,8 +156,8 @@ def tbdev_labels(cids):
     TB annotators mark the other speaker's bleed and background noise on a listening
     channel; otoSpeech has (almost) none of these labels. Kept, they teach the act head that
     a silent speaker is "not silent" whenever the other talks, which breaks p(silent) and so
-    the EOT score. They are dropped: NonContent consensus spans count only where some
-    annotator marked laughter or non-linguistic speech there, and annotator a's bleed/noise
+    the EOT score. They are dropped: NonContent consensus spans are cut to the parts some
+    annotator marked as laughter or non-linguistic speech, and annotator a's bleed/noise
     segments are left out of the fine targets."""
     import os
     from dataclasses import asdict
@@ -180,8 +180,9 @@ def tbdev_labels(cids):
         consensus, _ = consensus_for_conversation(conv)
         vocal = [(s, a, b) for s in (1, 2) for ann in ('a', 'b', 'c')
                  for a, b, label, *_ in conv.annotations[(s, ann)] if label in ('Laughter', 'Speech, Non-Linguistic')]
-        segments = [(e.speaker, e.start, e.end, e.label) for e in consensus
-                    if e.label != 'NonContent' or any(s == e.speaker and a < e.end and b > e.start for s, a, b in vocal)]
+        segments = [(e.speaker, e.start, e.end, e.label) for e in consensus if e.label != 'NonContent']
+        segments += [(e.speaker, max(a, e.start), min(b, e.end), e.label) for e in consensus if e.label == 'NonContent'
+                     for s, a, b in vocal if s == e.speaker and a < e.end and b > e.start]  # vocal part only
         events = asdict(events_for_conversation(conv))
         y = lb.floor_targets(times, segments, events)
         future, future_w = lb.floor_projection(y['floor'], y['floor_w'])

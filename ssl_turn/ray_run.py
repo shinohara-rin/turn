@@ -180,13 +180,17 @@ def cmd_train(a):
 
 
 def cmd_merge(a):
-    """Merge runs' probs.npz (e.g. the two cross-fitted folds) into one run for scoring."""
+    """Merge runs' probs.npz (e.g. the two cross-fitted folds) into one run for scoring. With
+    several runs the oto dev outputs are dropped, so only TB-swept metrics are reported."""
     import numpy as np
     out, keep = {}, set(tb_folds()[a.tb]) if a.tb else None
     for r in a.runs:
         with np.load(f'{WORK}/runs/{r}/probs.npz') as z:
             for k in z.files:
-                if keep is None or k.split('/')[1] != 'tbdev' or k.split('/')[2] in keep:
+                sp = k.split('/')[1]
+                if sp == 'oto' and len(a.runs) > 1:
+                    continue  # each fold has its own oto dev outputs: no single oto threshold fits the merge
+                if keep is None or sp != 'tbdev' or k.split('/')[2] in keep:
                     out.setdefault(k, z[k])  # oto dev keys appear in every fold: keep the first
     os.makedirs(f'{WORK}/runs/{a.out}', exist_ok=True)
     np.savez_compressed(f'{WORK}/runs/{a.out}/probs.npz', **out)
