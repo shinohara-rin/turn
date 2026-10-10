@@ -27,7 +27,8 @@ def _setup():
     sys.path.insert(0, '/root/ssl_turn/pipeline')  # score.py
 
 
-def load_inputs(run, model, eot_var, int_var):
+def load_inputs(run, model, eot_var, int_var, int_run='', int_model=''):
+    """INT tracks come from `int_run` / `int_model` when given (e.g. onset.py), else from run / model."""
     import numpy as np
     from score import load_gold, load_tracks
     work.reload()
@@ -35,7 +36,8 @@ def load_inputs(run, model, eot_var, int_var):
     cids = sorted(gold, key=int)
     vad = {c: np.load(f'{WORK}/vad/tbdev/{c}.npy').astype(np.float32) / 255 for c in cids}
     eot = load_tracks(run, model, eot_var, 'tbdev') if model else {}
-    intr = load_tracks(run, model, int_var, 'tbdev') if model else {}
+    int_run, int_model = int_run or run, int_model or model
+    intr = load_tracks(int_run, int_model, int_var, 'tbdev') if int_model else {}
     return cids, load_gold('tbdev', cids), vad, eot, intr
 
 
@@ -68,18 +70,19 @@ def per_conv(task, P, cids, gold, vad, eot, intr):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=8192, timeout=1800)
-def evaluate(run='', model='', eot_var='eot_q', int_var='int_ft', overrides=None):
+def evaluate(run='', model='', eot_var='eot_q', int_var='int_ft', overrides=None, int_run='', int_model=''):
     """Both tasks at the default Policy (plus overrides)."""
     _setup()
     from policy import Policy
-    cids, gold, vad, eot, intr = load_inputs(run, model, eot_var, int_var)
+    cids, gold, vad, eot, intr = load_inputs(run, model, eot_var, int_var, int_run, int_model)
     P = Policy().but(**(overrides or {}))
     if not model:
         P = P.but(eot_th=None, int_th=None)
     return {t: summarize(per_conv(t, P, cids, gold, vad, eot, intr)) for t in ('eot', 'int')}
 
 
-INT_THRESHOLDS = {'int_ft': (0.05, 0.1, 0.15, 0.2, 0.3, 0.5), 'int_nobc': (0.3, 0.4, 0.5, 0.7, 0.9)}
+INT_THRESHOLDS = {'int_ft': (0.05, 0.1, 0.15, 0.2, 0.3, 0.5), 'int_nobc': (0.3, 0.4, 0.5, 0.7, 0.9),
+                  'int_onset': (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)}
 
 
 def _grid(task, models, eot_vars, int_vars):
@@ -106,13 +109,13 @@ def _grid(task, models, eot_vars, int_vars):
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=8192, timeout=3600)
-def _sweep_chunk(run, task, items):
+def _sweep_chunk(run, task, items, int_run=''):
     _setup()
     from policy import Policy
     cache, rows = {}, []
     for m, v, kw in items:
         if (m, v) not in cache:
-            cache[m, v] = load_inputs(run, m, v, v)
+            cache[m, v] = load_inputs(run, m, v, v, int_run if task == 'int' else '')
         rows.append([(s.tp, s.fn, s.fp, s.tn, s.latencies_ms)
                      for s in per_conv(task, Policy(**kw), *cache[m, v])])
     return rows
@@ -133,7 +136,7 @@ def _pick(scores, budget, family, cap):
 
 @app.local_entrypoint()
 def sweep(run: str, models: str, eot_vars: str = 'eot_q', int_vars: str = 'int_ft,int_nobc', splits: int = 200,
-          caps: str = '500,400', tasks: str = 'eot,int'):
+          caps: str = '500,400', tasks: str = 'eot,int', int_run: str = '', int_models: str = ''):
     import random
     from dataclasses import asdict
     import numpy as np
@@ -143,9 +146,10 @@ def sweep(run: str, models: str, eot_vars: str = 'eot_q', int_vars: str = 'int_f
     models = [m for m in models.split(',') if m]
     base, report = Policy(), {}
     for task in tasks.split(','):
-        grid = [(m, v, asdict(P)) for m, v, P in _grid(task, models, eot_vars.split(','), int_vars.split(','))]
+        ms = [m for m in int_models.split(',') if m] if task == 'int' and int_models else models
+        grid = [(m, v, asdict(P)) for m, v, P in _grid(task, ms, eot_vars.split(','), int_vars.split(','))]
         chunks = [grid[i:i + 64] for i in range(0, len(grid), 64)]
-        R = [r for rows in _sweep_chunk.starmap([(run, task, c) for c in chunks]) for r in rows]
+        R = [r for rows in _sweep_chunk.starmap([(run, task, c, int_run) for c in chunks]) for r in rows]
         n = len(R[0])
         rng = random.Random(0)
         halves = []
@@ -185,7 +189,8 @@ def sweep(run: str, models: str, eot_vars: str = 'eot_q', int_vars: str = 'int_f
 
 
 @app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=8192, timeout=1800)
-def export_predictions(run, model, eot_var='eot_q', int_var='int_ft', name='predictions-dev-policy'):
+def export_predictions(run, model, eot_var='eot_q', int_var='int_ft', name='predictions-dev-policy', int_run='',
+                       int_model=''):
     """Official predictions JSON for TB dev at the default Policy, validated and scored with the
     pinned evaluator."""
     import os
@@ -194,7 +199,7 @@ def export_predictions(run, model, eot_var='eot_q', int_var='int_ft', name='pred
     from policy import Policy, conversation_events
     from turnbench.check import check_predictions
     from turnbench.durations import load_durations
-    cids, gold, vad, eot, intr = load_inputs(run, model, eot_var, int_var)
+    cids, gold, vad, eot, intr = load_inputs(run, model, eot_var, int_var, int_run, int_model)
     P, preds, scores = Policy(), [], {'eot': [], 'int': []}
     for c in cids:
         dur = gold[c]['duration_s']
@@ -215,14 +220,15 @@ def export_predictions(run, model, eot_var='eot_q', int_var='int_ft', name='pred
 
 
 @app.local_entrypoint()
-def export(run: str, model: str, eot_var: str = 'eot_q', int_var: str = 'int_ft'):
-    out, res = export_predictions.remote(run, model, eot_var, int_var)
+def export(run: str, model: str, eot_var: str = 'eot_q', int_var: str = 'int_ft', int_run: str = '', int_model: str = ''):
+    out, res = export_predictions.remote(run, model, eot_var, int_var, int_run=int_run, int_model=int_model)
     print(out)
     for t, r in res.items():
         print(t, f"R {r['recall']:.3f} FP {r['fp']:.3f} p50 {r['p50']:.0f}")
 
 
 @app.local_entrypoint()
-def main(run: str = '', model: str = '', eot_var: str = 'eot_q', int_var: str = 'int_ft'):
-    for t, r in evaluate.remote(run, model, eot_var, int_var).items():
+def main(run: str = '', model: str = '', eot_var: str = 'eot_q', int_var: str = 'int_ft', int_run: str = '',
+         int_model: str = ''):
+    for t, r in evaluate.remote(run, model, eot_var, int_var, int_run=int_run, int_model=int_model).items():
         print(t, f"R {r['recall']:.3f} FP {r['fp']:.3f} p50 {r['p50']:.0f}")

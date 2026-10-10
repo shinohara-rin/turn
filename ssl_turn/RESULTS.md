@@ -645,3 +645,22 @@ on the other 19, mean over 200 splits.
 - Fresh VAD on Modal (`vad.py`, causal one-sided resampler) and the older offline-resampled
   Silero probs give the same operating points (EOT 0.977 / 0.078, INT 0.991 / 0.046 at the
   earlier `int_nobc` setting).
+
+### Follow-up: a dedicated onset classifier for INT (`pipeline/onset.py`, negative)
+
+turn-1-mini's INT head classifies a vocalisation that has just started. We trained the same
+idea on otoSpeech train only (300k decision points at onset + 0.16-1.2 s, 6k floor-taking):
+an MLP on streaming FastConformer features (own channel now and mean since onset, other
+channel now) plus voice-activity context, 6 classes, early-stopped on oto dev. About $0.2
+on an L4.
+
+| TB dev, vocalisation level (INT events vs backchannel spans) | AUC at onset + 0.24 / 0.32 / 0.48 s |
+|---|---|
+| r019 `int_ft`, 2-seed mean | 0.80 / 0.84 / 0.88 |
+| onset MLP, 2-seed mean | 0.80 / 0.85 / 0.88 |
+| geometric mean of both | 0.81 / 0.86 / 0.89 |
+
+Through the policy (TB dev, FP budget 0.05): `int_ft` s1 0.983 / 0.043 / 534 ms, onset MLP
+0.988 / 0.046 / 613 ms, combined 0.986 / 0.043 / 501 ms; at 0.10 all reach R ≥ 0.997 at
+p50 385-470 ms. The separate head adds nothing the floor model's fine head did not already
+have: the limit is the features or the ~600 otoSpeech floor-taking examples, not the head.

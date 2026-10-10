@@ -144,9 +144,10 @@ current state, and the open threads. Last updated 2026-10-10.
    pipeline in README ("Podcasts", "Mixed-source training"; `podcast_subset.py`,
    `pseudo_stereo.py` exist). Start with a small separation-quality pilot (calibrate on
    otoSpeech mono mixes) before spending budget.
-0. **Earlier INT at onset (in progress 2026-10-10):** a dedicated onset classifier
-   (turn / floor-taking / backchannel at onset + 0.2-0.3 s), like turn-1-mini's own-channel
-   head (their AUC 0.92 at 0.2 s; our `int_ft` is 0.80 at 0.24 s, 0.84 at 0.32 s).
+0. **Earlier INT at onset:** a dedicated onset classifier on FastConformer features
+   (`pipeline/onset.py`, trained on oto) matched `int_ft` but did not beat it (AUC 0.80 at
+   0.24 s; turn-1-mini reports 0.92 at 0.2 s on their own data). Next would be more
+   interruption examples or better features, not another head.
 2. **Prosody features** (F0, energy, rate per 80 ms) next to Cat features, aimed at EOT
    false fires in unanimous holds. About a $1 run.
 3. Backbone: a causal MTD student, or distill MTD into the Cat head (MTD is ~150 ms faster).
