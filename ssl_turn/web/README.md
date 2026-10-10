@@ -10,6 +10,7 @@ plus a `feats: asr` head (r019 `bgaug_s1`, 3M params), run one chunk of 80 ms fr
 | `stream_head.py` | `HeadStep`: the TurnModel head with KV caches (20 s ALiBi window); outputs floor posteriors, p(SILENT), fine labels and the `eot_q` / `int_nobc` score tracks. |
 | `export_onnx.py` | Exports both, plus encoder variants, and checks each against PyTorch. |
 | `js/turn_stream.js` | Browser runtime: `TurnStream.push(ch0, ch1)` per 80 ms block. |
+| `playground/` | Live two-speaker demo (mic, audio files or a stereo file, optional background audio) with the TurnBench commit policy; `build.sh` assembles the static Hugging Face Space ([shinohararin/turn-playground](https://huggingface.co/spaces/shinohararin/turn-playground)). |
 | `bench/` | `bench.html` (streams a clip, checks every frame against Python), `make_ref.py`, `run_chromium.mjs` (headless here), `modal_webgpu.py` (Chrome + WebGPU on a Modal L4). |
 
 ```
