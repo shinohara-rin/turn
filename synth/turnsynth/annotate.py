@@ -18,6 +18,7 @@ as it masks no-majority regions in the human data.
 from dataclasses import dataclass
 
 from turnsynth import labels as L
+from turnsynth.lang import spoken
 from turnsynth.render import Rendered
 from turnsynth.vad import segments as vad_segments
 
@@ -75,7 +76,7 @@ def intent_track(rendered: Rendered, segs: dict[int, list[Segment]]) -> dict[int
                 ov = _overlap(seg.start, seg.end, p.start, p.end)
                 if ov > best_ov:
                     best, best_ov = p, ov
-            text = " ".join(w for w, _ in segment_words(rendered, seg))
+            text = spoken([w for w, _ in segment_words(rendered, seg)], rendered.script.language)
             if best is None:
                 tracks[spk].append((seg.start, seg.end, L.NONSPEECH_NOISE, text))
                 continue

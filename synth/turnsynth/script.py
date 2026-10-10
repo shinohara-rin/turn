@@ -16,6 +16,9 @@ host turn of the other speaker, after its `after_word`-th word. For a
 floor-taking interruption the host text is what the speaker *would* have said;
 the renderer cuts it shortly after the interrupter starts.
 
+Japanese and Chinese scripts (`"language": "ja"|"zh"`) put a space between
+words, since `after_word` counts words; see lang.py.
+
 `<pause X>` inside a turn marks a within-turn pause of X seconds: the EOT
 hard negatives. The filter rejects scripts with structured reason codes, as in
 MultiTalk §2.1.2, so prompt iterations can be tied to failure-rate deltas.
@@ -24,7 +27,7 @@ MultiTalk §2.1.2, so prompt iterations can be tied to failure-rate deltas.
 import re
 from dataclasses import dataclass, field
 
-from turnsynth import labels
+from turnsynth import labels, lang as L
 
 PAUSE_RE = re.compile(r"<pause\s+([0-9.]+)\s*>")
 SPEAKERS = ("A", "B")
@@ -85,6 +88,7 @@ class Script:
     speakers: dict[str, dict]
     items: list[Item]
     meta: dict = field(default_factory=dict)
+    language: str = "en"  # en | ja | zh; ja/zh text is space-segmented into words (see lang.py)
 
     def item(self, item_id: int) -> Item:
         return self._by_id[item_id]
@@ -110,6 +114,7 @@ class Script:
             return d
 
         return {
+            "language": self.language,
             "conversation_type": self.conversation_type,
             "scenario": self.scenario,
             "speakers": self.speakers,
@@ -150,6 +155,7 @@ def parse(obj: dict) -> Script:
             speakers=dict(obj["speakers"]),
             items=items,
             meta=dict(obj.get("meta", {})),
+            language=L.check(str(obj.get("language", "en"))),
         )
     except (KeyError, TypeError, ValueError) as e:
         raise ScriptError("schema", repr(e)) from e
@@ -235,6 +241,11 @@ def check(script: Script, *, min_items: int = 20) -> list[str]:
                 reasons.append(code)
     if not any(PAUSE_RE.search(it.text) for it in floor):
         reasons.append("no_pauses")
+    # ja/zh must be segmented into words, or after_word and turn lengths mean nothing.
+    if script.language in L.CJK:
+        words = [w for it in script.items for w in it.words]
+        if sum(len(L.units(w, script.language)) for w in words) / max(len(words), 1) > 3.5:
+            reasons.append("unsegmented")
     # A barge-in needs room to happen: the host must have words left to be cut
     # off in, and the interrupter must keep talking once the host stops.
     for it in script.items:

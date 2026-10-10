@@ -41,7 +41,7 @@ if TTS == "indextts":
             " --extra-index-url https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match",
             "hf download IndexTeam/IndexTTS-2.5 --local-dir /root/ckpt/IndexTTS-2.5",
             "hf download mythicinfinity/libritts_r --repo-type dataset --local-dir /root/libritts"
-            " --include 'data/dev.clean/*.parquet' --include 'data/test.clean/*.parquet'",
+            " --include 'data/dev.clean/*.parquet' 'data/test.clean/*.parquet'",
         )
         .add_local_dir(HERE, **SYNTH)
         .run_commands(
@@ -112,7 +112,7 @@ def render_chunk(scripts: list[tuple[str, str]], id_offset: int, seed: int, judg
             "tts": TTS, "speaker_1_voice": res.rendered.voices["A"], "speaker_2_voice": res.rendered.voices["B"],
             "speaker_1_gender": sp["A"].get("gender", ""), "speaker_2_gender": sp["B"].get("gender", ""),
             "annotator_a": "generator-intent", "annotator_b": f"judge:{judge}+asr:{asr}",
-            "annotator_c": "geometry", "agreement": res.agreement,
+            "annotator_c": "geometry", "agreement": res.agreement, "language": script.language,
         }))
         intents.append(intent_record(res.rendered))
     shard = b""

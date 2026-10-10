@@ -13,6 +13,7 @@ dependencies = [
 llm = ["anthropic>=0.60"]
 tts = ["kokoro==0.9.4", "torch>=2.4,<2.8"]
 asr = ["faster-whisper>=1.1"]
+cjk = ["pykakasi>=2.3", "pypinyin>=0.50"]  # forced alignment of Japanese / Chinese words
 # The official scorer and gold code, pinned to the commit the VAP baseline uses.
 score = ["turnbench @ git+https://github.com/SesameAILabs/turnbench@38a6f874322430cb3ca71d8a52aa1e636e88bad8"]
 dev = ["pytest>=8"]

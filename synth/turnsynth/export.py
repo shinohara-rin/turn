@@ -29,7 +29,7 @@ METADATA_TYPE = pa.struct([
     ("tts", pa.string()), ("speaker_1_voice", pa.string()), ("speaker_2_voice", pa.string()),
     ("speaker_1_gender", pa.string()), ("speaker_2_gender", pa.string()),
     ("annotator_a", pa.string()), ("annotator_b", pa.string()), ("annotator_c", pa.string()),
-    ("agreement", pa.float64()),
+    ("agreement", pa.float64()), ("language", pa.string()),
 ])
 SCHEMA = pa.schema(
     [("conversation_id", pa.string())]

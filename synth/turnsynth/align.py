@@ -4,12 +4,14 @@ CTC forced alignment of the known script words with torchaudio's MMS_FA
 model (wav2vec2, 1100+ languages, romanized character set). The renderer
 needs word ends to anchor backchannels and interruptions and to re-time
 within-turn pauses, so alignment is to the script text, not to an ASR
-transcript. Words with no alignable characters (digits, symbols) take their
+transcript. Japanese and Chinese words are aligned through their romanization
+(lang.romanize). Words with no alignable characters (digits, symbols) take their
 time from their neighbours.
 """
 
 import numpy as np
 
+from turnsynth.lang import romanize
 from turnsynth.tts import Word
 
 
@@ -24,16 +26,17 @@ class Aligner:
         self.dictionary = bundle.get_dict(star=None)
 
     def tokens(self, word: str) -> list[int]:
-        return [self.dictionary[c] for c in word.lower().replace("’", "'") if c in self.dictionary and c != "-"]
+        word = word.lower().replace("’", "'")
+        return [self.dictionary[c] for c in word if c in self.dictionary and c != "-"]
 
-    def __call__(self, audio: np.ndarray, sr: int, words: list[str]) -> list[Word]:
+    def __call__(self, audio: np.ndarray, sr: int, words: list[str], language: str = "en") -> list[Word]:
         import torch
         import torchaudio.functional as F
 
         wave = torch.from_numpy(np.ascontiguousarray(audio, dtype=np.float32))[None]
         if sr != self.sample_rate:
             wave = F.resample(wave, sr, self.sample_rate)
-        toks = [self.tokens(w) for w in words]
+        toks = [self.tokens(w) for w in romanize(words, language)]
         flat = [t for ts in toks for t in ts]
         if not flat:
             return _spread(words, len(audio) / sr)
@@ -60,7 +63,28 @@ def _spread(words: list[str], duration: float) -> list[Word]:
 
 
 def _fill(words: list[str], aligned: list[Word | None], duration: float) -> list[Word]:
-    """Give unaligned words a slice of the gap between their aligned neighbours."""
+    """Give unaligned words a slice of the gap between their aligned neighbours.
+
+    Punctuation-only tokens (a standalone "、" or "？" in a ja/zh script) take no
+    time: they sit at the end of the word before them, so a line that ends in
+    one still ends where its last spoken word does.
+    """
+    spoken = [i for i, w in enumerate(words) if any(c.isalnum() for c in w)]
+    if not spoken:
+        return _spread(words, duration)
+    filled = _fill_gaps([words[i] for i in spoken], [aligned[i] for i in spoken], duration)
+    out: list[Word] = []
+    by_index = dict(zip(spoken, filled))
+    for i, w in enumerate(words):
+        if i in by_index:
+            out.append(by_index[i])
+        else:
+            t = out[-1].end if out else filled[0].start
+            out.append(Word(w, t, t))
+    return out
+
+
+def _fill_gaps(words: list[str], aligned: list[Word | None], duration: float) -> list[Word]:
     out = list(aligned)
     i = 0
     while i < len(out):
