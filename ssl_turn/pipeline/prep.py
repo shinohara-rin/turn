@@ -151,7 +151,14 @@ def tbdev_labels(cids):
     """Training targets for TurnBench dev conversations, built like oto_item's: floor/act from
     the 3-annotator label-view consensus and the official gold events, fine labels and
     activity from annotator a (oto has one annotator). Only for cross-fitted adaptation
-    tests: a model trained on these must never be scored on the same conversations."""
+    tests: a model trained on these must never be scored on the same conversations.
+
+    TB annotators mark the other speaker's bleed and background noise on a listening
+    channel; otoSpeech has (almost) none of these labels. Kept, they teach the act head that
+    a silent speaker is "not silent" whenever the other talks, which breaks p(silent) and so
+    the EOT score. They are dropped: NonContent consensus spans are cut to the parts some
+    annotator marked as laughter or non-linguistic speech, and annotator a's bleed/noise
+    segments are left out of the fine targets."""
     import os
     from dataclasses import asdict
     import numpy as np
@@ -171,11 +178,16 @@ def tbdev_labels(cids):
         T = int(np.floor(conv.duration_s / FRAME_S))
         times = (np.arange(T) + 1) * FRAME_S
         consensus, _ = consensus_for_conversation(conv)
-        segments = [(e.speaker, e.start, e.end, e.label) for e in consensus]
+        vocal = [(s, a, b) for s in (1, 2) for ann in ('a', 'b', 'c')
+                 for a, b, label, *_ in conv.annotations[(s, ann)] if label in ('Laughter', 'Speech, Non-Linguistic')]
+        segments = [(e.speaker, e.start, e.end, e.label) for e in consensus if e.label != 'NonContent']
+        segments += [(e.speaker, max(a, e.start), min(b, e.end), e.label) for e in consensus if e.label == 'NonContent'
+                     for s, a, b in vocal if s == e.speaker and a < e.end and b > e.start]  # vocal part only
         events = asdict(events_for_conversation(conv))
         y = lb.floor_targets(times, segments, events)
         future, future_w = lb.floor_projection(y['floor'], y['floor_w'])
-        raw = [(s, a, b, label) for s in (1, 2) for a, b, label, *_ in conv.annotations[(s, 'a')]]
+        raw = [(s, a, b, label) for s in (1, 2) for a, b, label, *_ in conv.annotations[(s, 'a')]
+               if label not in ('Channel Bleed', 'Non-Speech Noise')]
         activity = np.zeros((T, 2), np.float32)
         for s, a, b, label in raw:
             if label not in ACTIVITY_EXCLUDED:
