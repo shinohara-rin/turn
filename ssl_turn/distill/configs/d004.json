@@ -1,0 +1,28 @@
+{
+ "s3m": {
+  "preset": "s3m",
+  "gt": 0.5,
+  "feat": 1.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1,
+  "eotb_aug": 0.3
+ },
+ "s3m_p3": {
+  "preset": "s3m",
+  "gt": 0.5,
+  "feat": 1.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1,
+  "eotb_aug": 0.3,
+  "pause_w": 3.0
+ },
+ "s3m_p8": {
+  "preset": "s3m",
+  "gt": 0.5,
+  "feat": 1.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1,
+  "eotb_aug": 0.3,
+  "pause_w": 8.0
+ }
+}
