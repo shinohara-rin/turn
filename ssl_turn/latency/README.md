@@ -90,4 +90,4 @@ python eotbench/to_harness.py tracks.npz en --variant eot_q --tag r025   # then 
 modal run ssl_turn/pipeline/policy_score.py::main --run r025_eotb5 --model eotb5_s2 [--eot-var yld_q]
 ```
 
-Modal cost for this part: about $2 (training ~$1.2, eot-bench scoring, data build).
+Modal cost for this part: about $1.5 (training $1.0, data build $0.3, eot-bench scoring $0.1).
