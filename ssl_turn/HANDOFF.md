@@ -98,10 +98,10 @@ current state, and the open threads. Last updated 2026-10-10.
   ablation shows two-channel EOT is carried by VAD + rules.
   - Inputs: Silero VAD per channel (`pipeline/vad.py`, `/work/vad/tbdev`) and the
     FastConformer head `r019_asr_bgaug/bgaug_s1` tracks `eot_q` and `int_ft`.
-  - TB dev at the `Policy()` defaults: **EOT 0.977 / FP 0.078 / p50 493 ms, INT 0.997 / FP
-    0.094 / p50 435 ms** (split-half held-out EOT 0.971 / 0.095, INT 0.991 / 0.098).
-  - On EOT the model adds no recall over VAD rules (0.978 / 0.078 / 620 ms); it only buys
-    latency. The earlier "EOT is at the label ceiling" reading below was about the commit
+  - TB dev at the `Policy()` defaults: **EOT 0.975 / FP 0.069 / p50 534 ms, INT 0.997 / FP
+    0.093 / p50 434 ms** (split-half held-out EOT 0.978 / 0.088, INT 0.991 / 0.097).
+  - On EOT the model adds no recall over VAD rules (0.984 / 0.091 / 616 ms); it buys FP
+    margin and ~100 ms. The earlier "EOT is at the label ceiling" reading below was about the commit
     rule, not the encoder.
   - INT: score `int_ft` (fine floor-taking probability) fires about 400 ms earlier than
     `int_nobc` at the same recall.
