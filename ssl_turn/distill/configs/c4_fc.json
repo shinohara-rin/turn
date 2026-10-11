@@ -1,0 +1,4 @@
+{
+ "fc4": {"arch": "fc", "layers": 4, "head_dim": 192, "head_layers": 3, "gt": 0.5, "feat": 0.0, "bg_aug": 0.5, "dropout": 0.1, "eotb_aug": 0.2, "pool_aug": 0.35, "enc_lr": 1e-4},
+ "fc2": {"arch": "fc", "layers": 2, "head_dim": 192, "head_layers": 3, "gt": 0.5, "feat": 0.0, "bg_aug": 0.5, "dropout": 0.1, "eotb_aug": 0.2, "pool_aug": 0.35, "enc_lr": 1e-4}
+}

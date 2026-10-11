@@ -604,6 +604,23 @@ The r015 recipe with `feats: asr` (`configs/r016_asr.json`): the streaming FastC
 - **Verdict:** a real-time causal encoder with word content gets MTD-level EOT for about 1/70
   of the encode cost, but not MTD's INT. MTD stays the accuracy reference.
 
+## Silence-driven EOT, semantics probes, backchannels, pause-warp r020 (2026-10-11)
+
+Details in [`semantics/README.md`](semantics/README.md).
+- On eot-bench, r019's EOT score climbs with silence on both ends and holds (end 0.25 -> 0.76,
+  hold 0.05 -> 0.41 from 0.1 to 1.5 s), while LiveKit v1 decides within 100 ms (AUC 0.96).
+- Pause-onset probes (CV on eot-bench): FastConformer features 0.91 AUC at 100 ms vs r019's
+  0.85; the RNNT decoder state (0.62) and a text EOU model on true words (0.76) add nothing on
+  top. The lever is the head's objective and data, not a text branch.
+- Backchannel INT fires are lexical (multi-word reactions), not an otoSpeech speaker overfit:
+  TB dev 11-14% vs oto dev 26% of backchannels.
+- r020 pause-warp augmentation (stretch holds, cut yield gaps; `pausewarp.py`): neutral on TB dev,
+  oto dev and eot-bench at 5-10% cutoff, better only at 2%. The hold ramp barely flattens.
+- r021/r022 completion head (Rin's "complete vs timeout" split; LLM labels on 24k oto pauses,
+  `semantics/complete_labels.py`): with onset-only targets (r022) the score is flat over silence and
+  keeps hesitations low (~0.35 at 1.5 s vs r019 0.43), but ends reach only ~0.56, so it is weak as an
+  EOT trigger (TB dev 0.58-0.71 alone; eot-bench 836-902 ms @5%). eot_q of the same models unchanged.
+
 ## Commit policy: voice activity + rules, model scores as triggers (`policy.py`, 2026-10-10)
 
 P99Lab's turn-1-mini (TurnBench leader, 2026-10; a paper-style README, no code or weights)

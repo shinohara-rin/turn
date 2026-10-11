@@ -1,0 +1,30 @@
+{
+ "s8m": {
+  "preset": "s8m",
+  "gt": 0.5,
+  "feat": 1.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1
+ },
+ "s3m": {
+  "preset": "s3m",
+  "gt": 0.5,
+  "feat": 1.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1
+ },
+ "s1m": {
+  "preset": "s1m",
+  "gt": 0.5,
+  "feat": 1.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1
+ },
+ "s3m_nofeat": {
+  "preset": "s3m",
+  "gt": 0.5,
+  "feat": 0.0,
+  "bg_aug": 0.5,
+  "dropout": 0.1
+ }
+}
