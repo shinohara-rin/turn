@@ -152,8 +152,13 @@ def _get(volume, remote, root):
         return
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     print('modal volume get', volume, remote, flush=True)
-    subprocess.run([sys.executable, '-m', 'modal', 'volume', 'get', volume, remote, os.path.dirname(dst) or '.'],
-                   check=True)
+    for attempt in range(4):  # transient 'Could not connect to the Modal server'
+        r = subprocess.run([sys.executable, '-m', 'modal', 'volume', 'get', volume, remote, os.path.dirname(dst) or '.'])
+        if r.returncode == 0:
+            return
+        import time
+        time.sleep(30 * (attempt + 1))
+    raise SystemExit(f'modal volume get {volume} {remote} failed')
 
 
 def cmd_pull(a):
