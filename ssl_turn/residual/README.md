@@ -133,3 +133,32 @@ for d in $DATA/eotb/*; do eot-harness compute-metrics --predictions $d/predictio
 
 The harness needs its own venv (`pip install git+https://github.com/livekit/eot-bench pyarrow==18.1.0 "pandas<3"`).
 Result files (harness predictions + metrics, logs) are in the project folder `residual/`.
+
+## 5. Pause-focused distillation (d004, `../distill`, RTX 3090)
+
+Follow-up: if the pauses carry the signal, a small student trained with more weight on them
+might close its eot-bench gap to the teacher. `distill.py` gains `pause_w`. `pause_frames` marks
+frames where a speaker the teacher calls SILENT was talking within the last 2.5 s (the student's
+analogue of a VAD candidate). The floor / future / yld KD terms are a weighted mean with weight
+1 + pause_w there. d004 is d002's recipe (teacher r025 eotb5_s2, 155 oto conversations + 30%
+voice-agent rows, 6000 steps): three s3m students on shared batches, pause_w 0 / 3 / 8. It was
+trained on the Ray 3090 (`distill/node.py`, 585 ms/step, 5.9 GB peak) and scored on CPU here.
+The local eot-bench pipeline reproduces d002 s3m (`yld_q` 1057 vs 1060 ms @5%).
+
+| eot-bench en | AUC | 2% | 5% | 10% |
+|---|---:|---:|---:|---:|
+| teacher r025 | 0.980 | 1261 | 621 | 387 |
+| d002 s3m `yld_q` (H100) | 0.936 | 2166 | 1057 | 705 |
+| d004 s3m control `yld_q` | 0.939 | 1971 | 1095 | 728 |
+| d004 s3m pause_w 3 `yld_q` | 0.924 | 1891 | 1193 | 755 |
+| d004 s3m pause_w 8 `yld_q` | 0.922 | 2051 | 1158 | 740 |
+| d004 control / p3 / p8 `eot_q` | 0.928 / 0.924 / 0.923 | 2119 / 1947 / 2066 | 1208 / 1300 / 1244 | 772 / 800 / 749 |
+
+NEGATIVE: up-weighting pauses makes the students slightly worse on eot-bench (AUC -0.015, +60-100
+ms at 5%), though the weighted students reach a lower oto-dev KD loss (0.705 vs 0.709). Where the
+loss falls doesn't seem to be what limits the students; it's what the small encoder can represent.
+
+TB dev through the policy (`colab.py sweep d004 s3m,s3m_p3,s3m_p8`; the sweep picks the best model
+per family): EOT 0.978 / 0.078 / 550 ms at FP 0.08 (held-out 0.978 / 0.085), INT 0.997 / 0.080 /
+584 ms at 0.10 (held-out 0.993 / 0.098). That is teacher level as before, and the picks are spread
+across all three students. So TB dev doesn't separate them; the difference shows only on eot-bench.
