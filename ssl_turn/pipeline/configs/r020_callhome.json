@@ -1,0 +1,98 @@
+{
+ "ctrl_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 1,
+  "extra": "none"
+ },
+ "ctrl_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 2,
+  "extra": "none"
+ },
+ "va_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 1,
+  "extra": "va"
+ },
+ "va_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 2,
+  "extra": "va"
+ },
+ "rule_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 1,
+  "extra": "rule"
+ },
+ "rule_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "seed_tag": 2,
+  "extra": "rule"
+ }
+}
