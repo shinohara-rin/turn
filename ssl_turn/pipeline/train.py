@@ -264,7 +264,7 @@ def build_head(cfg):
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
           use_dev=True, train_from=None, infer=True, feats_on='cuda', tb_train=(), tb_eval=None, tb_repeat=1,
-          init_from=None, select_last=False):
+          init_from=None, select_last=False, extra_split=None, extra_n=0, extra_frac=0.3):
     """feats_on='cpu' keeps features in host RAM and moves each batch to the GPU (for
     feature sets larger than VRAM, e.g. MTD 4096-d on a 24 GB card).
 
@@ -272,7 +272,13 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     conversations (labels/tbdev) to the training set, their crop starts repeated tb_repeat
     times; n_train=0 trains on them alone. tb_eval restricts TB dev inference to the held-out
     conversations. init_from=RUN starts each model from RUN/{name}.pt; select_last keeps the
-    final step instead of the best oto-dev checkpoint."""
+    final step instead of the best oto-dev checkpoint.
+
+    Unlabeled-convention data (multilingual/callhome_modal.py): extra_split names a feature/label split
+    (e.g. 'callhome'); extra_n conversations per language prefix (cid '<lang>_...') are loaded and
+    extra_frac of every batch is drawn from them. Each config's 'extra' key decides what it learns
+    from those rows: 'rule' (all targets, i.e. the timing-rule labels), 'va' (VAP voice-activity
+    projection only) or 'none' (all weights zeroed: an in-run control that sees the same oto crops)."""
     import os, threading
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')  # before the first CUDA allocation
     import numpy as np
@@ -317,6 +323,22 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         off = off + [off[-1] + o for o in offb[1:]]
         lab = lab + labb
         reps += [tb_repeat] * len(tb_train)
+    n_main = len(off) - 1
+    extra_ids = []
+    if extra_split:
+        avail = sorted({f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/{extra_split}') if not f.endswith('.tmp.npy')}
+                       & {f[:-4] for f in os.listdir(f'{WORK}/labels/{extra_split}')})
+        for lang in sorted({c.split('_')[0] for c in avail}):
+            extra_ids += [c for c in avail if c.split('_')[0] == lang][:extra_n]
+        Xe, offe, labe = load_split(extra_split, extra_ids, feats_on, cols, labeled=True)
+        for l in labe:
+            l['fine_w'] = np.zeros_like(l['fine_w'])  # no fine labels in rule-labeled data
+        X = Xe if X is None else torch.cat([X, Xe])
+        off = off + [off[-1] + o for o in offe[1:]]
+        lab = lab + labe
+        reps += [1] * len(extra_ids)
+        del Xe
+        print(f'extra {extra_split}: {len(extra_ids)} conversations, {offe[-1]} frames', flush=True)
     Y = stack_labels(lab, dev)
     if dev_ids:
         Xd, offd, labd = load_split('oto', dev_ids, feats_on, cols)
@@ -379,7 +401,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     # normalized to mean 1 over training frames, clipped at 20x).
     fine_cw = None
     if 'fine' in Y:
-        counts = torch.bincount(Y['fine'].flatten(), minlength=len(lb.FINE)).float().clamp_min(1)
+        main_frames = off[n_main]  # oto (and tb_train) frames only: extra rows carry no fine labels
+        counts = torch.bincount(Y['fine'][:main_frames].flatten(), minlength=len(lb.FINE)).float().clamp_min(1)
         freq = counts / counts.sum()
         fine_cw = {}
         for name, cfg in configs.items():
@@ -392,7 +415,11 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     # Valid crop starts: within one conversation.
     # Valid crop starts (first labelled frame): WARM context frames before it, all in one conversation.
     starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r)
-                        for a, b, r in zip(off[:-1], off[1:], reps) if b - a > crop + WARM])
+                        for a, b, r in list(zip(off[:-1], off[1:], reps))[:n_main] if b - a > crop + WARM])
+    starts_x = (torch.cat([torch.arange(a + WARM, b - crop, device=dev)
+                           for a, b in list(zip(off[:-1], off[1:]))[n_main:] if b - a > crop + WARM])
+                if extra_ids else None)
+    n_x = int(round(batch * extra_frac)) if extra_ids else 0
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = build_model(cfg).to(dev)
@@ -472,7 +499,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     best = {n: (float('inf'), None, 0) for n in models}
     tstep = time.time()
     for step in range(1, steps + 1):
-        idx = starts[torch.randint(len(starts), (batch,), device=dev)]
+        idx = starts[torch.randint(len(starts), (batch - n_x,), device=dev)]
+        if n_x:
+            idx = torch.cat([idx, starts_x[torch.randint(len(starts_x), (n_x,), device=dev)]])
+        row_x = torch.arange(batch, device=dev) >= batch - n_x  # rows drawn from the extra split
         xb, yb = crops(X, Y, idx)
         xb_aug = None
         if Xa is not None:  # background speech on one random channel of a random subset of crops
@@ -498,8 +528,15 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 out = run_net(net, cfg, regularize(x_in, cfg), WARM, enroll=eb)
             target = yb
+            if n_x:  # what this config learns from extra-split rows
+                mode = cfg.get('extra', 'none')
+                assert mode in ('none', 'va', 'rule'), mode
+                drop = ('floor_w', 'future_w', 'act_w', 'fine_w') + (('vap_valid',) if mode == 'none' else ())
+                if mode != 'rule':
+                    target = dict(target, **{k: torch.where(row_x.view(-1, *[1] * (yb[k].dim() - 1)),
+                                                            torch.zeros_like(yb[k]), yb[k]) for k in drop})
             if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
-                target = dict(target, fine_w=yb['fine_w'] * fine_cw[name][yb['fine']])
+                target = dict(target, fine_w=target['fine_w'] * fine_cw[name][yb['fine']])
             if cfg.get('blur_frames', 0) > 1:  # temporal label smoothing of the floor targets
                 k = cfg['blur_frames']
                 kern = torch.bartlett_window(k + 2, periodic=False, device=dev)[1:-1]
@@ -587,7 +624,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     np.savez_compressed(f'{WORK}/runs/{run}/probs.npz', **probs)
     for name, net in models.items():
         torch.save(dict(cfg=configs[name], state=cat_top.trainable_state(net)), f'{WORK}/runs/{run}/{name}.pt')
-    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, tb_train=list(tb_train), tb_eval=tb_eval, init_from=init_from, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
+    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, extra_split=extra_split,
+                   extra_ids=extra_ids, extra_frac=extra_frac, tb_train=list(tb_train), tb_eval=tb_eval, init_from=init_from, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
                    wall_s=time.time() - t0, gpu_util=[u for u, _ in stats]), open(f'{WORK}/runs/{run}/train.json', 'w'))
     work.commit()
     stop.set()
@@ -597,7 +635,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 @app.local_entrypoint()
 def main(run: str, configs: str, n_train: int = 32, steps: int = 1500, batch: int = 64, gpu: str = 'A100',
          extra: bool = False, seed: int = 0, no_dev: bool = False, train_from: str = '', eval_every: int = 250,
-         no_infer: bool = False):
+         no_infer: bool = False, extra_split: str = '', extra_n: int = 0, extra_frac: float = 0.3):
     cfgs = json.load(open(configs))
     print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch, 375, eval_every, seed, extra,
-                                             not no_dev, train_from or None, not no_infer))
+                                             not no_dev, train_from or None, not no_infer,
+                                             extra_split=extra_split or None, extra_n=extra_n, extra_frac=extra_frac))
