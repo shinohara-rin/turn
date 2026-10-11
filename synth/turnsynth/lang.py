@@ -52,6 +52,9 @@ def units(text: str, lang: str) -> list[str]:
     if lang == "ja":
         # Compare readings: ASR and script often differ only in kanji vs kana spelling.
         return [c for c in hiragana(text) if c.isalnum()]
+    if lang == "zh":
+        # Whisper often writes Traditional characters and Arabic digits for Mandarin.
+        text = simplified(text).translate(_ZH_DIGITS)
     if lang in CJK:
         return [c for c in text if c.isalnum()]
     return ["".join(c for c in w if c.isalnum()) for w in text.split() if any(c.isalnum() for c in w)]
@@ -60,6 +63,23 @@ def units(text: str, lang: str) -> list[str]:
 def bare(text: str, lang: str) -> str:
     """Text with spaces and punctuation removed, for matching short tokens like backchannels."""
     return "".join(units(text, lang)) if lang in CJK else " ".join(units(text, lang))
+
+
+_ZH_DIGITS = str.maketrans("0123456789", "零一二三四五六七八九")
+_t2s = None
+
+
+def simplified(text: str) -> str:
+    """Chinese text in Simplified characters (OpenCC), or unchanged if opencc is missing."""
+    global _t2s
+    if _t2s is None:
+        try:
+            from opencc import OpenCC
+
+            _t2s = OpenCC("t2s").convert
+        except ImportError:
+            _t2s = lambda t: t
+    return _t2s(text)
 
 
 _kks = None

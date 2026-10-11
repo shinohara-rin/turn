@@ -355,3 +355,10 @@ def test_glitchy_lines_are_resynthesized(monkeypatch):
     script = load(EXAMPLES[0])
     render(script, tts, conversation_id="1")
     assert len(tts.calls) == len(script.items) + 1
+
+
+def test_mandarin_error_rate_ignores_traditional_characters_and_digits():
+    pytest.importorskip("opencc")
+    from turnsynth import lang as L
+
+    assert L.units("多了6個，那個書架", "zh") == L.units("多了六个。那个书架", "zh")
