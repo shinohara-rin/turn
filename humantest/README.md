@@ -84,6 +84,41 @@ Rebuild the clips: `python build_clips.py en.parquet OUT` (eot-bench en parquet 
 `livekit/eot-bench-data`, CC BY 4.0). Score: export the artifact's `trials` collection (or the page's
 saved file) and run `python score.py 'trials/*.json'`.
 
+## Backchannels
+
+Two different questions, with different answers.
+
+**Placing a backchannel** (when to say "mm-hm") has no single right answer, so the ceiling is low.
+Listeners differ in where they backchannel: Ward & Tsukahara's low-pitch rule predicts Japanese
+backchannels at 56% coverage / 34% accuracy (English 48% / 18%), about half of its false alarms are
+places where this listener stayed quiet but another might not, and the authors estimate that a human
+eavesdropper predicting the actual listener would reach only ~95% coverage at ~67% accuracy
+(Ward 1998, ACL workshop W98-0311; an estimate, not a measurement). Real-time listeners asked to
+backchannel wherever they could mark many points per turn and disagree on most of them
+(Umair et al. 2024). Any backchannel model scored against one listener's choices tops out around
+two-thirds precision.
+
+**Telling a backchannel from a takeover** (TurnBench INT, where backchannels and non-content
+vocalisations are the negatives) has no published real-time human number that I could find.
+Useful facts:
+
+- TurnBench dev has 3,733 INT negative spans vs 347 positives. Their durations (gold, from
+  `dev-gold.json`): median 0.88 s; only 4% are over by 0.4 s, 15% by 0.5 s, 41% by 0.75 s, 56% by
+  1.0 s. At our INT p50 of 434 ms almost none has finished, so neither a model nor a human can wait
+  for the vocalisation to end; the call has to come from its first word or two.
+- TurnBench excludes non-floor-taking interruptions from scoring because "at onset it cannot be
+  distinguished from a floor-taking interruption" and the label depends on what happens seconds later.
+- The person being interrupted is the in-situ human detector, and they keep talking a median 1.48 s
+  after a floor-taking interruption starts before ceding (TurnBench paper §IV). Part of that is
+  finishing a phrase on purpose, so it is an upper limit on human detection time, not a measure of it.
+- Our own INT fires on backchannels are mostly multi-word ones (fire rate 4% for one-word
+  backchannels, 48% for four or more words on TB dev; see the semantics thread), which are also the
+  ones a human would find ambiguous at onset.
+
+A real-time human number would need a TurnBench block in the test: play the conversation up to a
+listener vocalisation onset, then let the listener press "taking the floor" as soon as they can
+tell. TurnBench audio is gated and was not reachable from this session.
+
 ## Sources
 
 - de Ruiter, Mitterer & Enfield (2006). Projecting the end of a speaker's turn. Language 82(3):515-535.
@@ -95,3 +130,4 @@ saved file) and run `python score.py 'trials/*.json'`.
 - Umair, Sarathy & de Ruiter (2024). Large language models know what to say but not when to speak. Findings of EMNLP. https://arxiv.org/abs/2410.16044
 - Umair & de Ruiter (2026). Using semantic uncertainty to estimate transition relevance in turn-taking. https://arxiv.org/abs/2609.10934
 - TurnBench (2026). arXiv 2608.25218.
+- Ward (1998). Using prosodic clues to decide when to produce back-channel utterances / back-channel cues summary, ACL workshop W98-0311. https://aclanthology.org/W98-0311
