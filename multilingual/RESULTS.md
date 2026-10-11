@@ -53,3 +53,66 @@ Nemotron's layer 12 into a 109M student with fc_en's architecture (initialised f
 audio only), so the browser export stays unchanged.
 
 Cost: ~$0.5 Modal (6 L4 containers, ~5-8 min each). Features: `/mnt/project-files/multilingual/encoder-probe/`.
+
+# Training with CallHome es / ja / zh (r020)
+
+## Data (`callhome_modal.py`)
+
+`talkbank/callhome` spa / jpn / zho: mono telephone calls, ~10 min annotated each, utterance timing and
+speaker only. 301 calls written (es 104 / 15.6 h, ja 112 / 17.3 h, zh 85 / 12.0 h); 99 skipped where a
+third speaker holds > 5% of the speech. Per call: utterances intersected with Silero VAD on the mix (so
+pauses inside an utterance are silences), rule labels (`rule_labels.py`: Turn / Backchannel by timing)
+through the pinned TurnBench gold builder, exactly as oto's labels are built, and pseudo-stereo
+(`pseudo_stereo.gated_stereo`) encoded per channel with the r019 FastConformer.
+
+Rule labels checked against oto's human labels (40 oto conversations, labels stripped and rebuilt
+from timing): EOT events precision 0.62 / recall 0.79 at 0.3 s; backchannel precision 0.72. Longer
+backchannel limits trade recall for precision without improving both.
+
+## Training
+
+r019 recipe (fine1_bal1: dim 192, 3 layers, 1000 steps, batch 64, all 131 oto train conversations),
+plus 80 CallHome calls per language with 30% of every batch drawn from them. Three arms in one run,
+two seeds each, all on the same batches:
+- **ctrl:** CallHome rows get zero weight (oto only, same oto crops).
+- **va:** CallHome rows train only the VAP voice-activity projection.
+- **rule:** CallHome rows train every target from the rule labels.
+
+## Results
+
+LiveKit eot-bench, harness metrics (mean latency at 5% / 10% false-cutoff budget, lower is better;
+AUC), mean of 2 seeds:
+
+| arm | en | es | ja | zh |
+|---|---|---|---|---|
+| ctrl (oto only) | 829 / 502 ms, 0.969 | 843 / 627 ms, 0.941 | 759 / 543 ms, 0.958 | 889 / 618 ms, 0.917 |
+| va (activity only) | 865 / 538 ms, 0.967 | 803 / 602 ms, 0.935 | 762 / 570 ms, 0.942 | 923 / 623 ms, 0.899 |
+| **rule** | **812 / 472 ms, 0.970** | **782 / 562 ms, 0.947** | **700 / 531 ms, 0.953** | 885 / 623 ms, 0.917 |
+
+Both rule seeds beat both control seeds at 5% in es (809, 756 vs 857, 829 ms) and ja (707, 693 vs
+765, 753 ms). zh does not move. Per-seed numbers: `/mnt/project-files/multilingual/r020/`.
+
+For reference, the published systems on eot-bench @ 5%: es LiveKit v1 642, Soniox 800, Deepgram Flux
+820 ms; ja LiveKit v1 321, ultraVAD 462, GPT Realtime 2 736 ms; zh LiveKit v1 799, Soniox 886 ms.
+The rule arm moves es from 4th to 2nd (ahead of Soniox and Deepgram Flux); ja stays 3rd, now ahead of GPT Realtime 2 by a wider margin but behind LiveKit v1 and ultraVAD.
+
+TurnBench dev (sweep at FP <= 0.10, `eot_q@r0.5+rc1.0` / `int_nobc@r0.5+rc1.0`, recall per seed):
+
+| arm | EOT | INT |
+|---|---|---|
+| ctrl | 0.941 / 0.934 | 0.983 / 0.983 |
+| va | 0.934 / 0.937 | 0.986 / 0.986 |
+| rule | 0.934 / 0.929 | 0.986 / 0.986 |
+
+English TurnBench is unchanged within seed noise.
+
+## Reading
+
+- **Rule labels help; voice activity alone does not.** The VAP-only arm is flat or worse, so the
+  multilingual signal has to reach the floor heads.
+- Gains are ~60 ms at the 5% budget in es and ja, with no TurnBench cost, despite labels that agree
+  with oto's annotators only 62% of the time on EOT. zh (the smallest set, 12 h) shows nothing yet.
+- Next levers: more calls (CallFriend es/zh/ja on TalkBank, RAMC for zh), better labels than timing
+  rules (ASR + LLM labeler, validated on oto first), and the eot-bench text cues LiveKit v1 uses.
+
+Cost: ~$5 Modal (CallHome prep ~4.5 L4-hours, training ~10 min A100-80GB, eot-bench scoring).
