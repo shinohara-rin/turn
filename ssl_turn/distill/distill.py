@@ -15,6 +15,7 @@ Volume layout (ssl-turn-work):
                                    bgmix.encode_aug_asr (far .5 / tv .2 / babble .2 / music .1)
   teacher/{tag}/{split}/{cid}.npz  the teacher head's logits on the cached features (exact causal
                                    chunked inference): floor, future, act, fine, vap, yld
+  audio16/pool/{sid}.npy           float16 [T * 1280] mono, the unlabeled pool (pool.py)
   runs/{run}/                      student checkpoints, train.json, probs.npz (score.py format:
                                    '{name}/{split}/{cid}/{post,silent,fine,yld}')
 
@@ -302,6 +303,32 @@ def _load(split, cids, tag, device, labels=True, aug=False, feats=True):
     return dict(A=A, Aa=Aa, F=Fz, T=Tch, Y=Yt, off=off)
 
 
+def _load_pool(cids, tag, device):
+    """Unlabeled pool (pool.py): mono user audio A [N * 1280] and the teacher's logits."""
+    import numpy as np
+    import torch
+    from concurrent.futures import ThreadPoolExecutor
+
+    def read(cid):
+        a = np.load(f'{WORK}/audio16/pool/{cid}.npy')
+        with np.load(f'{WORK}/teacher/{tag}/pool/{cid}.npz') as z:
+            T = min(len(a) // FRAME, len(z['floor']))
+            return a[:T * FRAME], {k: z[k][:T] for k in z.files}
+
+    with ThreadPoolExecutor(16) as pool:
+        rs = list(pool.map(read, cids))
+    off = np.concatenate([[0], np.cumsum([len(a) // FRAME for a, _ in rs])]).tolist()
+    N = off[-1]
+    A = torch.empty(N * FRAME, dtype=torch.float16, device=device)
+    Tch = {k: torch.empty((N,) + v.shape[1:], dtype=torch.float16, device=device) for k, v in rs[0][1].items()}
+    for a0, (a, t) in zip(off[:-1], rs):
+        T = len(a) // FRAME
+        A[a0 * FRAME:(a0 + T) * FRAME] = torch.from_numpy(a).to(device)
+        for k, v in t.items():
+            Tch[k][a0:a0 + T] = torch.from_numpy(v).to(device)
+    return dict(A=A, T=Tch, off=off)
+
+
 def soft_ce(s, t, w=None):
     """Soft cross-entropy of student logits s against teacher logits t (last dim), mean or w-weighted."""
     import torch
@@ -349,22 +376,32 @@ def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every
     dev_ids = [c for c in split['dev'] if c in have]
     bg_p = max(c.get('bg_aug', 0.0) for c in configs.values())
     eotb_p = max(c.get('eotb_aug', 0.0) for c in configs.values())
-    assert len({c.get('eotb_aug', 0.0) for c in configs.values()}) == 1, 'students in one run share batches'
+    pool_p = max(c.get('pool_aug', 0.0) for c in configs.values())
+    use_feat = any(c.get('feat', 0) > 0 for c in configs.values())
+    for k in ('eotb_aug', 'pool_aug'):
+        assert len({c.get(k, 0.0) for c in configs.values()}) == 1, 'students in one run share batches'
     t0 = time.time()
-    D = _load('oto', train_ids, tag, dev, aug=bg_p > 0)
-    Dd = _load('oto', dev_ids, tag, dev)
+    D = _load('oto', train_ids, tag, dev, aug=bg_p > 0, feats=use_feat)
+    Dd = _load('oto', dev_ids, tag, dev, feats=False)
     De = None
     if eotb_p > 0:  # voice-agent user turns (latency/eotb_data.py sessions), silent agent channel
         eids = sorted(f[:-4] for f in os.listdir(f'{WORK}/teacher/{tag}/eotb'))
-        De = _load('eotb', eids, tag, dev)
+        De = _load('eotb', eids, tag, dev, feats=use_feat)
         estarts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(De['off'][:-1], De['off'][1:])
                              if b - a > crop])
         print(f'eot-bench sessions: {len(eids)}, {De["off"][-1]} frames', flush=True)
+    Dp = None
+    if pool_p > 0:  # unlabeled pool (pool.py), silent agent channel, teacher logits only
+        pids = sorted(f[:-4] for f in os.listdir(f'{WORK}/teacher/{tag}/pool'))
+        Dp = _load_pool(pids, tag, dev)
+        pstarts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(Dp['off'][:-1], Dp['off'][1:])
+                             if b - a > crop])
+        print(f'pool sessions: {len(pids)}, {Dp["off"][-1] * 0.08 / 3600:.1f} h', flush=True)
     print(f'loaded {len(train_ids)} train ({D["off"][-1]} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
           f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
-    # standardization of the teacher's encoder frames (feature distillation target)
-    sample = D['F'][torch.randint(len(D['F']), (20000,), device=dev)].float().flatten(0, 1)
-    f_mu, f_sd = sample.mean(0), sample.std(0).clamp_min(1e-3)
+    if use_feat:  # standardization of the teacher's encoder frames (feature distillation target)
+        sample = D['F'][torch.randint(len(D['F']), (20000,), device=dev)].float().flatten(0, 1)
+        f_mu, f_sd = sample.mean(0), sample.std(0).clamp_min(1e-3)
 
     off = D['off']
     starts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(off[:-1], off[1:]) if b - a > crop])
@@ -423,18 +460,37 @@ def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every
     best = {n: (float('inf'), None, 0) for n in models}
     tstep = time.time()
     for step in range(1, steps + 1):
-        ne = int((torch.rand(batch) < eotb_p).sum()) if De is not None else 0
-        idx = starts[torch.randint(len(starts), (batch - ne,), device=dev)]
-        rows = torch.rand(batch - ne, device=dev) < bg_p if bg_p > 0 else None
-        ch = torch.randint(2, (batch - ne,), device=dev)
+        u = torch.rand(batch)
+        ne = int((u < eotb_p).sum()) if De is not None else 0
+        npl = int(((u >= eotb_p) & (u < eotb_p + pool_p)).sum()) if Dp is not None else 0
+        nl = batch - npl                                                # rows with gold labels
+        idx = starts[torch.randint(len(starts), (nl - ne,), device=dev)]
+        rows = torch.rand(nl - ne, device=dev) < bg_p if bg_p > 0 else None
+        ch = torch.randint(2, (nl - ne,), device=dev)
         wav, tb, y, f = crops(D, idx, rows, ch)
         if ne:  # append eot-bench rows to the batch
             we, tbe, ye, fe = crops(De, estarts[torch.randint(len(estarts), (ne,), device=dev)])
             wav = torch.cat([wav, we])
             tb = {k: torch.cat([tb[k], tbe[k]]) for k in tb}
             y = {k: torch.cat([y[k], ye[k]]) for k in y}
-            f = torch.cat([f, fe])
-        wav, tb, y, f = swap(wav, tb, y, f, torch.rand(batch, device=dev) < 0.5)
+            f = torch.cat([f, fe]) if f is not None else None
+        wav, tb, y, f = swap(wav, tb, y, f, torch.rand(nl, device=dev) < 0.5)
+        if npl:  # unlabeled pool rows last: user in channel 0, digital silence in channel 1
+            pidx = pstarts[torch.randint(len(pstarts), (npl,), device=dev)]
+            span = pidx[:, None] + torch.arange(crop, device=dev)
+            aspan = pidx[:, None] * FRAME + torch.arange(crop * FRAME, device=dev)
+            wp = torch.zeros(npl, crop * FRAME, 2, device=dev)
+            wp[..., 0] = Dp['A'][aspan].float()
+            if bg_p > 0:  # background: the residual (augmented - clean) of a random oto crop
+                bidx = starts[torch.randint(len(starts), (npl,), device=dev)]
+                bspan = bidx[:, None] * FRAME + torch.arange(crop * FRAME, device=dev)
+                bch = torch.randint(2, (npl,), device=dev)[:, None, None].expand(-1, crop * FRAME, 1)
+                res = (D['Aa'][bspan].float() - D['A'][bspan].float()).gather(-1, bch)[..., 0]
+                wp[..., 0] += res * (torch.rand(npl, 1, device=dev) < bg_p)
+            tbp = {k: v[span] for k, v in Dp['T'].items()}
+            wp, tbp, _, _ = swap(wp, tbp, None, None, torch.rand(npl, device=dev) < 0.5)
+            wav = torch.cat([wav, wp])
+            tb = {k: torch.cat([tb[k], tbp[k]]) for k in tb}
         wav = wav * 10 ** (torch.empty(batch, 1, 2, device=dev).uniform_(-6, 6) / 20)  # per-channel gain
         for name, net in models.items():
             cfg = configs[name]
@@ -444,11 +500,11 @@ def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every
             out = {k: v.float() for k, v in out.items()}
             loss, parts = kd_loss(out, tb, cfg.get('kd'))
             if cfg.get('gt', 0) > 0:
-                g, gp = m.loss({k: v for k, v in out.items() if k != 'feat'}, y)
+                g, gp = m.loss({k: v[:nl] for k, v in out.items() if k != 'feat'}, y)
                 loss = loss + cfg['gt'] * g
                 parts.update({f'gt_{k}': v for k, v in gp.items()})
             if cfg.get('feat', 0) > 0:
-                fl = ((out['feat'] - (f.float() - f_mu) / f_sd) ** 2).mean()
+                fl = ((out['feat'][:nl] - (f.float() - f_mu) / f_sd) ** 2).mean()
                 loss = loss + cfg['feat'] * fl
                 parts['feat'] = fl
             opts[name].zero_grad(set_to_none=True)
@@ -491,7 +547,7 @@ def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every
                    history=history, best_steps={n: b[2] for n, b in best.items()}, wall_s=time.time() - t0),
               open(f'{WORK}/runs/{run}/train.json', 'w'))
     work.commit()
-    del D, Dd, De
+    del D, Dd, De, Dp
     torch.cuda.empty_cache()
     if infer:
         _infer_into(run, models, configs)

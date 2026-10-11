@@ -76,23 +76,72 @@ pause-onset AUC at 0.1 / 0.3 s):
 | d002 s1m `yld_q` | 0.933 | 2062 | 1001 | 654 | 27.0% | 0.81 / 0.86 |
 | d002 s8m `eot_q` | 0.909 | 2005 | 1191 | 759 | 26.5% | 0.76 / 0.86 |
 
+### Re-scored on the causal policy (PR #12's fix, merged here)
+
+The table above used the policy before PR #12's causality fix (a speaker counted as talking
+during a short pause that would turn out to be a resumption). Re-selected on the fixed policy,
+dev R / FP / p50 ms; held-out R / FP:
+
+| model | EOT, FP <= 0.08 | INT, FP <= 0.10 |
+| --- | --- | --- |
+| teacher r019 bgaug_s2 | 0.977 / 0.072 / 532; 0.977 / 0.086 | 0.997 / 0.092 / 455; 0.990 / 0.096 |
+| d001 s3m | 0.979 / 0.074 / 566; 0.978 / 0.083 | 1.000 / 0.090 / 500; 0.994 / 0.094 |
+| teacher r025 eotb5_s2 | 0.977 / 0.069 / 548; 0.977 / 0.083 | 0.994 / 0.088 / 455; 0.987 / 0.096 |
+| d002 s3m | 0.976 / 0.078 / 646; 0.977 / 0.082 | 0.997 / 0.097 / 424; 0.991 / 0.098 |
+| d003 s3m | 0.981 / 0.079 / 513; 0.979 / 0.082 | 0.997 / 0.097 / 471; 0.993 / 0.099 |
+| d003 s8m | 0.978 / 0.080 / 535; 0.977 / 0.083 | 0.994 / 0.097 / 560; 0.988 / 0.096 |
+
+The students still match their teachers.
+
+## d003: a 146 h unlabeled pool (`pool.py`)
+
+d002's recipe (teacher r025 `eotb5_s2`) plus 146 h of People's Speech English (`clean`, 20 random
+shards, CC-BY / CC-BY-SA): ~15 s cuts put back in source order, cut into 4 min sessions, user in
+channel 0 and digital silence in channel 1, the teacher's logits as the only targets. Batch mix:
+45% otoSpeech, 20% voice-agent turns, 35% pool. Pool rows get a background with probability 0.5:
+the residual (augmented minus clean) of a random otoSpeech crop. Feature distillation off. 10000
+steps; s3m and s8m (best dev checkpoints at 3000 / 4000 steps again).
+
+| eot-bench en | AUC | 2% | 5% | 10% | cutoff @300 ms | onset AUC 0.1 / 0.3 s |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| teacher r025 eotb5_s2 | 0.982 | 1132 | 612 | 385 | 14.3% | 0.85 / 0.93 |
+| d002 s3m `yld_q` | 0.936 | 2169 | 1060 | 705 | 22.6% | 0.82 / 0.88 |
+| d003 s3m `yld_q` | 0.935 | 2092 | 1164 | 753 | 28.7% | 0.81 / 0.86 |
+| d003 s8m `yld_q` | 0.941 | 2016 | 1267 | 686 | 25.2% | 0.81 / 0.86 |
+
+| bgbench (user channel) | clean EOT / INT | playback EOT drop, false INT/min | music | near talker | babble |
+| --- | --- | --- | --- | --- | --- |
+| teacher r019 bgaug_s2 | 0.936 / 0.986 | -0.023, 1.1 | -0.009, 0.4 | -0.081, 8.4 | -0.057, 1.8 |
+| d001 s3m | 0.934 / 0.983 | -0.066, 1.8 | -0.070, 0.4 | -0.175, 10.3 | -0.094, 3.2 |
+| d003 s3m | 0.939 / 0.980 | -0.070, 1.1 | -0.075, 0.4 | -0.158, 7.2 | -0.083, 1.5 |
+| d003 s8m | 0.942 / 0.980 | -0.099, 1.0 | -0.107, 0.6 | -0.161, 6.4 | -0.133, 1.6 |
+
+- The pool did not help eot-bench: d003 is no better than d002 (1160-1270 ms at 5%), so
+  ~150 h more of varied English speech does not carry the encoder's generalization either.
+- It fixed the students' false interruptions under background audio: false INT/min is now at or
+  below the teacher's in every group (playback 1.0-1.1, babble 1.5-1.6, near talker 6.4-7.2 vs
+  the teacher's 8.4). EOT recall under background still drops 3-4x more than the teacher's.
+- Caveat: checkpoints are picked by otoSpeech-dev KD loss, which favours early steps (3-4k of
+  10k); a pick by out-of-domain loss might differ. Loading the pool onto the GPU took 27 min
+  (2,200 files from the volume), so a bigger pool needs packed shards first.
+
 ## Verdict
 
 - **On TurnBench the pipeline distills.** A 3.4M student (1/34 of the teacher's parameters, 20x
   faster on one CPU thread, 14 MB) matches the teacher on TB dev through the commit policy: EOT
   0.978-0.981 at FP 0.08, INT 0.994-1.000 at FP 0.10, held-out within 0.004 of the teacher, at
   similar or lower median latency. Even 1.7M holds up. Clean bgbench is also on par.
-- **It does not inherit the encoder's robustness.** With background audio the students lose
-  2-3x more EOT recall than the teacher and fire 1.5-4x more false interruptions (babble worst).
-- **Nor its generalization to new audio.** On eot-bench (16 kHz voice-agent recordings, a domain
-  none of the oto training audio covers) d001 is ~1.1-1.2 s at 5% vs the teacher's 0.8 s. Adding
-  the voice-agent turns to the student's data (d002) helps (cutoff @300 ms 41% -> 23%, 5% latency
-  -45 to -225 ms) but stays far from its teacher (612 ms). The 114M encoder's ASR pretraining on
-  thousands of hours carries this; ~45 h of audio does not transfer it.
-- Size barely matters between 1.7M and 9.2M on any benchmark; data does. Next lever, untested:
-  distill on a large unlabeled audio pool (teacher pseudo-labels need only the FastConformer
-  pass, ~$0.8 per 1000 channel-hours on an L4), with background mixing, before any architecture
-  change.
+- **It inherits only part of the encoder's robustness.** With background audio d001 students
+  lose 2-3x more EOT recall than the teacher and fire 1.5-4x more false interruptions. Adding a
+  146 h unlabeled pool with background mixing (d003) brings false interruptions down to the
+  teacher's level or below; the EOT recall drop stays 3-4x larger.
+- **Nor its generalization to new audio.** On eot-bench (16 kHz voice-agent recordings) d001 is
+  ~1.1-1.2 s at 5% vs the teacher's 0.8 s. Adding the voice-agent turns (d002) helps (cutoff
+  @300 ms 41% -> 23%) but stays far from its teacher (612 ms), and the 146 h pool (d003) adds
+  nothing. Neither more varied speech nor more steps transfers what the 114M encoder's ASR
+  pretraining gives; the remaining levers are an architecture change (a pretrained small
+  encoder) or English voice-agent-style data.
+- Size barely matters between 1.7M and 9.2M on any benchmark.
 - Feature distillation (`feat`) made no measurable difference at this data size (d001 s3m vs
   s3m_nofeat: TB dev and eot-bench within seed noise).
 
@@ -110,4 +159,9 @@ cd ../../bgspeech && modal run bench_modal.py::student --run d001 --members s3m
 python ssl_turn/distill/bench_onnx.py --out /tmp/onnx                   # CPU speed
 ```
 
-Modal cost for this part: about $5.6 (data prep, teacher dumps and two student runs $4.5, bgbench $1.1), plus $0.75 of CPU policy sweeps.
+d003: `modal run pool.py --shards 20`, then `distill.py::teacher ... --splits pool` and
+`distill.py::train --run d003 --configs configs/d003.json --teacher r025s2 --extra --steps 10000`.
+
+Modal cost for this part: about $5.6 (data prep, teacher dumps and two student runs $4.5, bgbench $1.1), plus $0.75 of CPU policy sweeps; d003 about $6 more
+(pool $0.6, teacher pass $0.4, training $3.5 of which $1.8 was the H100 waiting on the pool load,
+scoring $1.5).
