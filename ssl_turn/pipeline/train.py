@@ -391,7 +391,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         else:
             assert LOADED == [15, 23, 31] and not mtd, 'feats_aug holds taps 15/23/31 + final only'
             aug_dir, near = f'{WORK}/feats_aug/oto', any(c.get('near_aug') for c in configs.values())
-        Xa = X.clone()  # frames an augmented file lacks (if any) stay clean
+        # frames an augmented file lacks stay clean. That includes every pause-warped copy (warp_aug):
+        # there are no bg-augmented warped features, so a warped crop is always clean and the effective
+        # bg_aug rate is about bg_aug * (1 - warp_aug) (r020: 0.25).
+        Xa = X.clone()
         n_near = 0
         for cid, a, b in zip(train_ids, off[:-1], off[1:]):
             # near_aug: conversations that have a near-talker copy (bgmix.encode_aug style='near') use it

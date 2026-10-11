@@ -39,7 +39,9 @@ def build(labels, max_s=MAX_S, out_dir='labels_comp'):
         for spk, end, score, *_ in items:
             if score is None:
                 continue
-            c, i = spk - 1, int(np.ceil(end / FRAME_S - 1e-6))
+            # first frame whose centre is at/after the word end (activity marks frames by centre, prep.py);
+            # r021/r022 were trained on ceil(end / FRAME_S), which skipped that frame for ~half the pauses
+            c, i = spk - 1, max(0, int(np.ceil(end / FRAME_S - 0.5 - 1e-6)))
             stop = min(T, i + int(round(max_s / FRAME_S)))
             n = 0
             while i < stop and quiet[i]:

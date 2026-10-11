@@ -81,7 +81,9 @@ INT fire rate by backchannel length in words (bgaug_s2): TB dev 1 word 4.4%, 2 w
 Rin's proposal: adversarial augmentation so silence length stops predicting the label. Warped copies
 of the 131 training conversations stretch mid-turn holds (p 0.5, +0.3-2.0 s of the gap's own room
 tone, 5 ms crossfades) and shorten yield gaps (p 0.5, to 0.16 s up to their length); half of the
-training crops come from the warped copies (`warp_aug: 0.5`, `configs/r020_warp.json`). In the
+training crops come from the warped copies (`warp_aug: 0.5`, `configs/r020_warp.json`). There are no
+background-augmented warped features, so warped crops are always clean and r020's effective
+`bg_aug` rate is about 0.25 rather than r019's 0.5. In the
 original data, holds are shorter than yield gaps (median 0.44 vs 0.56 s on conversation 270).
 
 Cost: warp + encode 6 x L4 ~$0.39, training (H100, 1000 steps, 2 seeds) ~$0.17, eot-bench ~$0.13.
@@ -125,6 +127,9 @@ silence timeout left to the policy. Pipeline:
   `train.py` loads `labels_comp`, `score.py` adds `comp_q` = comp x p(SILENT), `eot_cmax`, `eot_cq`.
 - r021: target over the whole silence (up to 3 s). r022: only the first 0.32 s of each pause
   (`labels_comp_onset`), so pause length can never be evidence.
+  Both were trained on targets that started at `ceil(end / 0.08)`, which for about half the
+  pauses skips the first silent frame (activity marks frames by their centre); `comp_targets.py`
+  now starts at that frame, so rebuilt labels differ slightly from the ones behind these numbers.
 
 eot-bench (hold / end mean score, then latency at 2 / 5 / 10% cutoff):
 

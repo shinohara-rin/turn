@@ -195,8 +195,9 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits
     for name, members in (ensembles or {}).items():  # average posteriors across models
         members = [m_ for m_ in members if m_ in posts]
         keys = set.intersection(*(set(posts[m_]) for m_ in members))
-        avg = lambda key, i: (None if posts[members[0]][key][i] is None
-                              else np.mean([posts[m_][key][i] for m_ in members], 0))
+        def avg(key, i):  # over the members that have this track (e.g. only comp heads have comp)
+            have = [posts[m_][key][i] for m_ in members if posts[m_][key][i] is not None]
+            return np.mean(have, 0) if have else None
         posts[name] = {key: (avg(key, 0), avg(key, 1), avg(key, 2), avg(key, 3)) for key in keys}
     for model, items in posts.items():
         for (split, cid), (post, silent, fine, comp) in items.items():

@@ -99,6 +99,7 @@ def dump(run='r019_asr_bgaug', name='bgaug_s2', language='en'):
     meta = []
     for ti, r in enumerate(table):
         wav, sr = sf.read(io.BytesIO(r['audio']['bytes']), dtype='float32')
+        assert sr == 16000, sr  # encode_asr frames are 16 kHz samples
         wav = wav.mean(1) if wav.ndim > 1 else wav
         T = len(wav) // encode_asr.FRAME
         user = encode_asr.encode_channel(enc, wav[:T * encode_asr.FRAME], T)
