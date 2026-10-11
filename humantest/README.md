@@ -58,7 +58,7 @@ Reading these together:
 all 400 eot-bench en user turns in four shuffled blocks of 100 (~20 min each). The listener is the
 voice agent: they read the agent's last message, hear the caller, and press Space (or tap) when they
 would start replying. The caller keeps talking after a press in a mid-turn pause, so every pause gets
-its own decision as in the harness; a press after the real end stops the clip. A one-minute
+its own decision as in the harness; a press after the real end stops the clip. A separate key (B / "mm-hm") logs backchannels without counting them as replies, so the urge to backchannel does not leak into the reply presses. A one-minute
 reaction baseline (press when a murmur stops) separates prediction from reaction.
 
 Scoring (`score.py`, same rules in the page):

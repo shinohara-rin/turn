@@ -78,6 +78,7 @@ td.n{font-family:var(--f-mono);text-align:right;white-space:nowrap}
       <li>Use wired headphones or speakers. Bluetooth adds a delay the page cannot see.</li>
       <li>Read what the agent just said, then press <kbd>Enter</kbd> or <b>Play</b> to hear the caller.</li>
       <li>Press <kbd>Space</kbd> or tap the big pad when you would start replying. If the caller was only pausing, they carry on talking and you can press again at a later pause. Once the caller has really stopped, a press ends the clip.</li>
+      <li>Want to say "mm-hm"? Press <kbd>B</kbd> or the <b>mm-hm</b> button. It is logged on its own and never counts as a reply.</li>
       <li>If you would not reply, just wait. The clip ends 3.5 s after the caller stops.</li>
     </ol>
     <div class="row">
@@ -87,6 +88,7 @@ td.n{font-family:var(--f-mono);text-align:right;white-space:nowrap}
     <div class="blocks" id="blocks"></div>
     <div class="row">
       <button class="primary" id="startBtn" disabled>Start block</button>
+      <button id="resetBtn" type="button" hidden>Start this block over</button>
       <span class="status" id="saveStatus">Connecting to the project store…</span>
     </div>
   </section>
@@ -102,6 +104,7 @@ td.n{font-family:var(--f-mono);text-align:right;white-space:nowrap}
     <button class="pad" id="pad" type="button"><span id="padMain">Press Enter to play</span><small id="padSub">then Space when you would speak</small></button>
     <div class="row">
       <button class="primary" id="playBtn">Play</button>
+      <button id="bcBtn" type="button" disabled>mm-hm <kbd>B</kbd></button>
       <span class="status" id="trialStatus"></span>
     </div>
   </section>
@@ -144,9 +147,9 @@ let ctx = null, db = null, downloads = null;
 let sid = null, blockNo = 1, clips = [], idx = 0, results = [], calibResults = [];
 const store = { get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
                 set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
-sid = store.get("tlt_sid") || ("s" + Date.now().toString(36) + Math.random().toString(36).slice(2,6));
-store.set("tlt_sid", sid);
-const done = store.get("tlt_done") || {};
+sid = store.get("tlt2_sid") || ("s" + Date.now().toString(36) + Math.random().toString(36).slice(2,6));
+store.set("tlt2_sid", sid);
+const done = store.get("tlt2_done") || {};
 
 // ---------- block picker ----------
 function renderBlocks(){
@@ -162,6 +165,7 @@ function renderBlocks(){
     box.append(btn);
   }
   $("startBtn").disabled = false;
+  $("resetBtn").hidden = !done[blockNo];
   $("startBtn").textContent = done[blockNo] && done[blockNo] < PER ? "Resume block " + blockNo : "Start block " + blockNo;
 }
 renderBlocks();
@@ -207,12 +211,20 @@ async function loadBlock(b){
 }
 async function decode(i){ return ensureCtx().decodeAudioData(b64ToBuf(clips[i].mp3)); }
 
+$("resetBtn").onclick = async () => {
+  const old = store.get("tlt2_res_" + blockNo) || [];
+  store.set("tlt2_res_" + blockNo, []); delete done[blockNo]; store.set("tlt2_done", done);
+  renderBlocks();
+  if (db) for (const r of old){ try { await db.collection("trials").doc(r.sid + "_b" + r.block + "_" + String(r.i).padStart(3, "0")).delete(); } catch {} }
+  $("saveStatus").textContent = "Block " + blockNo + " cleared. Start it again when ready.";
+};
+
 $("startBtn").onclick = async () => {
   ensureCtx();
   $("startBtn").disabled = true;
   try { clips = await loadBlock(blockNo); }
   catch(e){ $("saveStatus").textContent = String(e.message || e); $("saveStatus").className = "status warn"; $("startBtn").disabled = false; return; }
-  results = store.get("tlt_res_" + blockNo) || [];
+  results = store.get("tlt2_res_" + blockNo) || [];
   idx = results.length;
   if (idx >= PER){ results = []; idx = 0; }
   $("setup").hidden = true; $("results").hidden = true; $("trial").hidden = false;
@@ -239,14 +251,14 @@ function play(){
   t0 = ctx.currentTime + 0.15; src.start(t0);
   $("playBtn").disabled = true;
   $("pad").className = "pad live"; $("padMain").textContent = "Listening"; $("padSub").textContent = "Space or tap when you would reply";
-  presses = []; inputs = [];
+  presses = []; inputs = []; bcs = []; $("bcBtn").disabled = false;
   src.onended = () => { if (mode === "playing") finish(); };
 }
 
 // The caller keeps talking after a press, as they would if you had started to reply and they
 // went on anyway: every pause gets its own decision, as in the harness. A press after the caller
 // has stopped is final, so the clip ends there.
-let presses = [], inputs = [], flashT = null;
+let presses = [], inputs = [], bcs = [], flashT = null;
 function respond(ev){
   if (mode !== "playing") return;
   const p = heardAt(ev) - t0;
@@ -259,13 +271,23 @@ function respond(ev){
   flashT = setTimeout(() => { if (mode === "playing"){ $("pad").className = "pad live"; $("padMain").textContent = "Listening"; } }, 350);
 }
 
+function backchannel(ev){
+  if (mode !== "playing") return;
+  const p = heardAt(ev) - t0;
+  if (p < 0) return;
+  bcs.push(Math.round(p * 1000) / 1000);
+  $("trialStatus").textContent = "mm-hm";
+  setTimeout(() => { if ($("trialStatus").textContent === "mm-hm") $("trialStatus").textContent = ""; }, 400);
+}
+
 async function finish(){
   mode = "between";
+  $("bcBtn").disabled = true;
   const c = clips[idx];
-  const rec = { sid, block: blockNo, i: idx, id: c.id, trim: c.trim, presses: presses.slice(), input: inputs[0] || null,
+  const rec = { sid, block: blockNo, i: idx, id: c.id, trim: c.trim, presses: presses.slice(), bc: bcs.slice(), input: inputs[0] || null,
                 outLat: ctx.outputLatency || null, baseLat: ctx.baseLatency || null, at: new Date().toISOString() };
-  results.push(rec); store.set("tlt_res_" + blockNo, results);
-  done[blockNo] = results.length; store.set("tlt_done", done);
+  results.push(rec); store.set("tlt2_res_" + blockNo, results);
+  done[blockNo] = results.length; store.set("tlt2_done", done);
   save("trials", sid + "_b" + blockNo + "_" + String(idx).padStart(3, "0"), rec);
   idx++;
   if (idx >= clips.length){ showResults(); return; }
@@ -275,6 +297,7 @@ async function finish(){
 }
 
 $("playBtn").onclick = play;
+$("bcBtn").addEventListener("pointerdown", ev => { ev.preventDefault(); backchannel(ev); });
 $("pad").addEventListener("pointerdown", ev => { if (mode === "playing") { ev.preventDefault(); respond(ev); } else if (mode === "ready") play(); });
 $("pauseBtn").onclick = () => {
   if (mode === "playing"){ try { src.onended = null; src.stop(); } catch {} mode = "ready"; } // clip restarts, nothing recorded
@@ -284,6 +307,7 @@ document.addEventListener("keydown", ev => {
   if (ev.repeat) return;
   if (ev.code === "Space"){ if (mode === "playing" || mode.startsWith("calib")) { ev.preventDefault(); mode.startsWith("calib") ? calibRespond(ev) : respond(ev); } else if (mode === "ready") ev.preventDefault(); }
   else if (ev.code === "Enter" && mode === "ready"){ ev.preventDefault(); play(); }
+  else if (ev.code === "KeyB" && mode === "playing"){ ev.preventDefault(); backchannel(ev); }
 });
 
 // ---------- scoring (eot-bench harness rules) ----------
