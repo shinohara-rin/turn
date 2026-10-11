@@ -64,7 +64,12 @@ def load_split(split, cids, device, cols=None, workers=16, labeled=None, feat_di
             z = np.load(f'{WORK}/{label_dir}/{split}/{cid}.npz')
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
             if 'fine' in z.files:
-                lab['fine'], lab['fine_w'] = z['fine'][:T], z['act_w'][:T]
+                lab['fine'], lab['fine_w'] = z['fine'][:T], (z['fine_w'] if 'fine_w' in z.files else z['act_w'])[:T]
+            # frames whose VAP target is meaningful (latency/eotb_data.py turns have no agent behaviour)
+            lab['vap_mask'] = z['vap_mask'][:T] if 'vap_mask' in z.files else np.ones(T, bool)
+            setup_path()
+            import labels as lb
+            lab.update(lb.pause_targets(lab['floor'], lab['floor_w'], lab['act']))  # yld head (latency)
             if COMP:  # completion targets (comp_targets.py); conversations without them get zero weight
                 path = f'{WORK}/{COMP}/{split}/{cid}.npz'
                 if label_dir == 'labels' and os.path.exists(path):
@@ -99,9 +104,13 @@ def stack_labels(lab, device):
     setup_path()
     import model as m
     out = {k: torch.from_numpy(np.concatenate([l[k] for l in lab])).to(device) for k in lab[0]}
+    if 'yld_t' in out:  # frames since the offset: small integers or 1e4, exact in fp16
+        out['yld_t'] = out['yld_t'].half()
     vap, valid = zip(*[m.vap_labels(l['activity']) for l in lab])
     out['vap'] = torch.from_numpy(np.concatenate(vap)).to(device)
     out['vap_valid'] = torch.from_numpy(np.concatenate(valid)).to(device)
+    if 'vap_mask' in out:
+        out['vap_valid'] &= out.pop('vap_mask')
     return out
 
 
@@ -179,7 +188,7 @@ def infer_all(models, configs, splits, dev, enrolls=None):
                         with torch.autocast('cuda', dtype=torch.bfloat16):
                             o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None].to(dev), enroll=e)
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items()
-                                     if k in ('floor', 'future', 'act', 'fine', 'comp')})
+                                     if k in ('floor', 'future', 'act', 'fine', 'comp', 'yld')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
                 future = torch.cat([o['future'] for o in outs]).softmax(-1)
                 silent = torch.cat([o['act'] for o in outs]).softmax(-1)[..., 0]  # [T, 2] p(SILENT)
@@ -188,9 +197,10 @@ def infer_all(models, configs, splits, dev, enrolls=None):
                 if 'fine' in outs[0]:  # [T, 2, len(FINE)] fine-label posteriors
                     out[f'{name}/{split}/{cid}/fine'] = torch.cat([o['fine'] for o in outs]).softmax(-1) \
                         .cpu().numpy().astype(np.float16)
-                if 'comp' in outs[0]:  # [T, 2] p(speaker has semantically finished)
-                    out[f'{name}/{split}/{cid}/comp'] = torch.cat([o['comp'] for o in outs]).sigmoid() \
-                        .cpu().numpy().astype(np.float16)
+                for k in ('comp', 'yld'):  # [T, 2] p(semantically finished) / p(this pause yields)
+                    if k in outs[0]:
+                        out[f'{name}/{split}/{cid}/{k}'] = torch.cat([o[k] for o in outs]).sigmoid() \
+                            .cpu().numpy().astype(np.float16)
     return out
 
 
@@ -274,7 +284,7 @@ def build_head(cfg):
                        window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1),
                        enroll_dim=(192 if cfg.get('enroll') == 'ecapa' else
                                    (len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0),
-                       comp=bool(cfg.get('comp')))
+                       comp=bool(cfg.get('comp')), yld=bool(cfg.get('yld')))
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
@@ -350,6 +360,20 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         lab = lab + labw
         reps += [1] * len(warp_ids)
         print(f'pause-warped copies: {len(warp_ids)} conversations, {offw[-1]} frames', flush=True)
+    eotb_p = max(c.get('eotb_aug', 0.0) for c in configs.values())
+    n_pre_eotb = len(off) - 1
+    if eotb_p > 0:  # voice-agent user turns (latency/eotb_data.py): crops drawn from them with probability eotb_p
+        assert mtd == 'asr' and not tb_train, 'eotb_aug needs feats asr and no TB-dev training'
+        assert len({c.get('eotb_aug', 0.0) for c in configs.values()}) == 1, \
+            'models in one run share batches, so they must share eotb_aug'
+        eids = sorted(f[:-4] for f in os.listdir(f'{WORK}/feats_asr/eotb') if not f.endswith('.tmp.npy'))
+        Xe, offe, labe = load_split('eotb', eids, feats_on, cols, labeled=True)
+        X = torch.cat([X, Xe])
+        del Xe
+        off = off + [off[-1] + o for o in offe[1:]]
+        lab = lab + labe
+        reps += [1] * len(eids)
+        print(f'eot-bench turn sessions: {len(eids)}, {offe[-1]} frames', flush=True)
     Y = stack_labels(lab, dev)
     if dev_ids:
         Xd, offd, labd = load_split('oto', dev_ids, feats_on, cols)
@@ -428,7 +452,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         return torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r)
                           for a, b, r in zip(off[lo:hi], off[lo + 1:hi + 1], reps[lo:hi]) if b - a > crop + WARM])
     starts = crop_starts(0, n_orig)
-    starts_w = crop_starts(n_orig, len(off) - 1) if warp_p > 0 else None
+    starts_w = crop_starts(n_orig, n_pre_eotb) if warp_p > 0 else None
+    starts_e = crop_starts(n_pre_eotb, len(off) - 1) if eotb_p > 0 else None
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = build_model(cfg).to(dev)
@@ -448,6 +473,30 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         print(name, cfg, f'{n_train_p / 1e6:.2f}M trainable / {sum(p.numel() for p in net.parameters()) / 1e6:.1f}M params',
               flush=True)
 
+    SIL = None
+    if any(c.get('mute') for c in configs.values()):  # eot-bench's silent agent channel (latency/silent_feats.py)
+        SIL = torch.from_numpy(np.load(f'{WORK}/silent_asr.npy')).to(dev)
+
+    def mute(xb, yb, p):
+        """Replace one random channel of a random p of the rows with silent-channel features, as on
+        eot-bench. Only the other speaker's own targets stay supervised (acts, fine labels, yld): the
+        joint floor, its projections and VAP describe the muted speaker too."""
+        B, T = xb.shape[:2]
+        rows = torch.rand(B, device=dev) < p
+        ch = torch.randint(2, (B,), device=dev)
+        pick = rows[:, None] & (torch.arange(2, device=dev)[None] == ch[:, None])        # [B, 2]
+        sil = SIL[:T] if len(SIL) >= T else SIL[torch.arange(T, device=dev) % len(SIL)]
+        xb = torch.where(pick[:, None, :, None], sil[None, :, None].to(xb.dtype), xb)
+        y = dict(yb)
+        keep_row = (~rows).to(yb['floor_w'].dtype)
+        y['floor_w'] = yb['floor_w'] * keep_row[:, None]
+        y['future_w'] = yb['future_w'] * keep_row[:, None, None]
+        y['vap_valid'] = yb['vap_valid'] & ~rows[:, None]
+        for k in ('act_w', 'fine_w', 'yld_w'):
+            if k in yb:
+                y[k] = yb[k] * (~pick)[:, None].to(yb[k].dtype)
+        return xb, y
+
     def crops(Xs, Ys, idx):
         """Features for [idx - WARM, idx + crop), labels for [idx, idx + crop)."""
         span = idx[:, None] + torch.arange(-WARM, crop, device=dev)
@@ -461,7 +510,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         """Channel-swap augmentation on rows in `mask`: features, acts, floor holders, VAP bits."""
         xb = torch.where(mask[:, None, None, None], xb.flip(2), xb)
         out = dict(yb)
-        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w', 'comp', 'comp_w') if k in yb]:
+        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w', 'comp', 'comp_w', 'yld', 'yld_w', 'yld_t')
+                  if k in yb]:
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k].flip(-1), yb[k])
         for k in ('floor', 'future'):
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k][..., SWAP], yb[k])
@@ -512,6 +562,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         if starts_w is not None:
             idx = torch.where(torch.rand(batch, device=dev) < warp_p,
                               starts_w[torch.randint(len(starts_w), (batch,), device=dev)], idx)
+        if starts_e is not None:
+            idx = torch.where(torch.rand(batch, device=dev) < eotb_p,
+                              starts_e[torch.randint(len(starts_e), (batch,), device=dev)], idx)
         xb, yb = crops(X, Y, idx)
         xb_aug = None
         if Xa is not None:  # background speech on one random channel of a random subset of crops
@@ -534,11 +587,23 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             net.train()
             cfg = configs[name]
             x_in = xb_aug if (xb_aug is not None and cfg.get('bg_aug')) else xb
+            target = yb
+            if cfg.get('mute'):
+                x_in, target = mute(x_in, target, cfg['mute'])
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 out = run_net(net, cfg, regularize(x_in, cfg), WARM, enroll=eb)
-            target = yb
             if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
-                target = dict(target, fine_w=yb['fine_w'] * fine_cw[name][yb['fine']])
+                target = dict(target, fine_w=target['fine_w'] * fine_cw[name][yb['fine']])
+            if cfg.get('yld'):  # latency head: onset frames of each pause weigh (1 + boost)
+                y = cfg['yld']
+                t = target['yld_t'].float() * m.FRAME_S
+                w = (t < y.get('max_s', 2.0)).float() * (1 + y.get('boost', 0.0) * (t < y.get('onset_s', 0.4)).float())
+                target = dict(target, yld_w=target['yld_w'] * w)
+            if cfg.get('onset_floor'):  # boost the floor loss on the first onset_s of every pause
+                y = cfg['onset_floor']
+                t = target['yld_t'].float().min(-1).values * m.FRAME_S
+                boost = 1 + y.get('boost', 3.0) * (t < y.get('onset_s', 0.4)).float()
+                target = dict(target, floor_w=target['floor_w'] * boost, future_w=target['future_w'] * boost[..., None])
             if cfg.get('blur_frames', 0) > 1:  # temporal label smoothing of the floor targets
                 k = cfg['blur_frames']
                 kern = torch.bartlett_window(k + 2, periodic=False, device=dev)[1:-1]

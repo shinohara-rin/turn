@@ -235,6 +235,50 @@ def asr_group(cids, run, members):
     return len(cids)
 
 
+student_image = _code(modal.Image.debian_slim(python_version='3.11')
+                      .apt_install('libsndfile1')
+                      .pip_install('torch==2.8.0', 'numpy==2.2.6', 'scipy==1.15.3', 'soundfile==0.13.1')
+                      .env({'SSL_TURN_WORK': '/work'}))
+work_vol = modal.Volume.from_name('ssl-turn-work')
+
+
+@app.function(image=student_image, volumes={V: vol, '/work': work_vol}, gpu='L4', cpu=8, memory=32768, timeout=7200)
+def student_group(cids, run, members):
+    """Distilled students (ssl_turn/distill): 16 kHz stereo audio straight into one small network."""
+    import numpy as np
+    import torch
+    _paths()
+    sys.path.insert(0, '/root/ssl_turn/distill')
+    import bench
+    import distill as ds
+    import encode_asr as ea
+    models, configs = ds.load_students(run, members)
+    plan, music = _plan(), _music()
+    os.makedirs(f'{V}/runs/{run}', exist_ok=True)
+    for cid in cids:
+        if os.path.exists(f'{V}/runs/{run}/{cid}.npz'):
+            continue
+        t0, out = time.time(), {}
+        for cond, x in _conditions(cid, plan, music, list(bench.CONDITIONS)):
+            chans = [ea.to16k(x[:, c]) for c in (0, 1)]
+            T = min(len(c) for c in chans) // ea.FRAME
+            wav = torch.from_numpy(np.stack([c[:T * ea.FRAME] for c in chans], 1)).cuda().float()
+            for m, net in models.items():
+                for k, v in ds._student_probs(net, configs[m], wav).items():
+                    out[f'{m}@{cond}/tbdev/{cid}/{k}'] = v
+        np.savez_compressed(f'{V}/runs/{run}/{cid}.npz', **out)
+        vol.commit()
+        print(cid, f'{time.time() - t0:.0f}s', flush=True)
+    return len(cids)
+
+
+@app.local_entrypoint()
+def student(run: str, members: str, groups: int = 8, limit: int = 0):
+    """modal run bench_modal.py::student --run d001 --members s3m,s8m"""
+    gs = _groups(groups, limit)
+    print(sum(student_group.starmap([(g, run, members.split(',')) for g in gs])), 'conversations')
+
+
 def _groups(k, limit=0):
     ids = read_plan.remote()['ids'][:limit or None]
     return [g for g in (ids[i::k] for i in range(k)) if g]

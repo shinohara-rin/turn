@@ -1,0 +1,254 @@
+{
+ "ctrl_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "seed_tag": 1
+ },
+ "yld_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "yld": {
+   "max_s": 2.0,
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "seed_tag": 1
+ },
+ "yldon_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "yld": {
+   "max_s": 0.4,
+   "onset_s": 0.4,
+   "boost": 0.0
+  },
+  "seed_tag": 1
+ },
+ "yldmute_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "yld": {
+   "max_s": 2.0,
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "mute": 0.3,
+  "seed_tag": 1
+ },
+ "onfl_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "onset_floor": {
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "seed_tag": 1
+ },
+ "onfl_yldmute_s1": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "onset_floor": {
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "yld": {
+   "max_s": 2.0,
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "mute": 0.3,
+  "seed_tag": 1
+ },
+ "ctrl_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "seed_tag": 2
+ },
+ "yld_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "yld": {
+   "max_s": 2.0,
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "seed_tag": 2
+ },
+ "yldon_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "yld": {
+   "max_s": 0.4,
+   "onset_s": 0.4,
+   "boost": 0.0
+  },
+  "seed_tag": 2
+ },
+ "yldmute_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "yld": {
+   "max_s": 2.0,
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "mute": 0.3,
+  "seed_tag": 2
+ },
+ "onfl_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "onset_floor": {
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "seed_tag": 2
+ },
+ "onfl_yldmute_s2": {
+  "feats": "asr",
+  "taps": [],
+  "final": true,
+  "dim": 192,
+  "layers": 3,
+  "dropout": 0.2,
+  "feat_dropout": 0.1,
+  "time_mask": 2,
+  "loss_weights": {
+   "fine": 1.0
+  },
+  "fine_balance": 1.0,
+  "bg_aug": 0.5,
+  "onset_floor": {
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "yld": {
+   "max_s": 2.0,
+   "onset_s": 0.4,
+   "boost": 3.0
+  },
+  "mute": 0.3,
+  "seed_tag": 2
+ }
+}
