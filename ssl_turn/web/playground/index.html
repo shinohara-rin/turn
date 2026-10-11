@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turn-Taking Playground</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Turn-taking playground</h1>
+    <p class="lede">A streaming turn-taking model running entirely in your browser (WebGPU, or CPU as a fallback).
+      Feed it two speakers, from your microphone or audio files, and watch it decide, every 80 ms, when a speaker
+      has <b class="k-eot">finished their turn</b> and when a speaker is <b class="k-int">taking the floor</b>.
+      Nothing is uploaded: audio stays on your device.</p>
+  </header>
+
+  <section class="card">
+    <div class="row">
+      <label>Backend
+        <select id="backend" data-lock>
+          <option value="auto" id="auto-label">Auto</option>
+          <option value="webgpu">WebGPU</option>
+          <option value="wasm">CPU (WASM)</option>
+        </select>
+      </label>
+      <button id="load">Load model</button>
+      <div class="progress"><div id="bar"></div></div>
+    </div>
+    <p id="status" class="status">The model is about 225 MB and is cached after the first load. Start also loads it.</p>
+    <p id="note-iso" class="note" hidden>This page is not cross-origin isolated, so the CPU backend runs on one thread and will be slow.</p>
+  </section>
+
+  <section class="card">
+    <h2>Sources</h2>
+    <div class="row">
+      <label class="radio"><input type="radio" name="mode" value="two" checked data-lock> One source per speaker</label>
+      <label class="radio"><input type="radio" name="mode" value="stereo" data-lock> One stereo file (left = A, right = B)</label>
+    </div>
+    <div id="two" class="speakers">
+      <div class="speaker">
+        <h3>Speaker A</h3>
+        <select id="src-0" data-lock>
+          <option value="mic">Microphone</option>
+          <option value="file">Audio file</option>
+          <option value="off">Silent</option>
+        </select>
+        <input type="file" id="file-0" accept="audio/*,video/*" data-lock>
+      </div>
+      <div class="speaker">
+        <h3>Speaker B</h3>
+        <select id="src-1" data-lock>
+          <option value="mic">Microphone</option>
+          <option value="file">Audio file</option>
+          <option value="off">Silent</option>
+        </select>
+        <input type="file" id="file-1" accept="audio/*,video/*" data-lock>
+      </div>
+    </div>
+    <div id="stereo" hidden>
+      <input type="file" id="stereo-file" accept="audio/*,video/*" data-lock>
+      <p class="note">A two-channel recording with one speaker per channel, like a call recording.</p>
+    </div>
+    <details>
+      <summary>Background noise and options</summary>
+      <div class="opts">
+        <label>Background audio mixed into speaker A (TV, music, other talkers; loops)
+          <span class="row"><input type="file" id="bg-file" accept="audio/*,video/*" data-lock>
+          <button id="bg-clear" class="small" hidden data-lock>Remove</button></span>
+        </label>
+        <label>Background level <input type="range" id="bg-gain" min="0.01" max="1" step="0.01" value="0.3"> <span id="bg-gain-v"></span></label>
+        <label class="radio"><input type="checkbox" id="monitor" checked data-lock> Play files through the speakers (the microphone is never played back)</label>
+        <label class="radio"><input type="checkbox" id="mic-proc" data-lock> Browser noise suppression and auto gain on the microphone</label>
+      </div>
+    </details>
+    <div class="row actions">
+      <button id="start" class="primary">Start</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="live">
+      <div class="who">A <span class="chip k-eot" id="chip-eot-0">end of turn</span><span class="chip k-int" id="chip-int-0">takes the floor</span> <span class="count" id="cnt-0"></span></div>
+      <div class="who">B <span class="chip k-eot" id="chip-eot-1">end of turn</span><span class="chip k-int" id="chip-int-1">takes the floor</span> <span class="count" id="cnt-1"></span></div>
+    </div>
+    <canvas id="timeline"></canvas>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--speak)"></i>speaking</span>
+      <span><i class="sw" style="background:#8a8f98"></i>input level</span>
+      <span><i class="sw" style="background:#3a7bd5"></i>end-of-turn score</span>
+      <span><i class="sw" style="background:#e0742a"></i>take-the-floor score</span>
+      <span>dashed: thresholds; markers: committed events</span>
+    </div>
+    <div class="row sliders">
+      <label>End-of-turn threshold <input type="range" id="th-eot" min="0.05" max="0.95" step="0.01" value="0.64"> <span id="th-eot-v">0.64</span></label>
+      <label>Take-the-floor threshold <input type="range" id="th-int" min="0.02" max="0.9" step="0.01" value="0.18"> <span id="th-int-v">0.18</span></label>
+    </div>
+    <dl class="stats">
+      <dt>Backend</dt><dd id="st-backend">not loaded</dd>
+      <dt>Time per call</dt><dd id="st-ms">–</dd>
+      <dt>Real-time factor</dt><dd id="st-rtf">–</dd>
+      <dt>Latency in pipeline</dt><dd id="st-lag">–</dd>
+      <dt>Stream time</dt><dd id="st-time">–</dd>
+    </dl>
+  </section>
+
+  <section class="about">
+    <h2>About</h2>
+    <p>The model is a causal FastConformer encoder (NVIDIA <code>stt_en_fastconformer_hybrid_large_streaming_multi</code>,
+      CC-BY-4.0) feeding a small cross-speaker turn head trained on two-channel conversations, with background-speech
+      augmentation. It sees 80 ms frames with no lookahead. The default thresholds are the operating points on the
+      TurnBench dev set (end of turn: recall 0.93 at 10% false fires; take the floor: recall 0.98 at 9%).
+      Events are committed on a rising edge above the threshold with a 0.5 s refractory, as TurnBench scores them.</p>
+    <p>Two scores per speaker: <b class="k-eot">end of turn</b> rises when that speaker has stopped and is handing over the
+      floor (not a mid-sentence pause); <b class="k-int">take the floor</b> rises when that speaker starts a real turn,
+      not a backchannel like "mm-hm". The model is English-only and a research preview, for non-commercial use.</p>
+  </section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
