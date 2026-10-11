@@ -290,7 +290,7 @@ def build_head(cfg):
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
 def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=250, seed=0, extra=False,
           use_dev=True, train_from=None, infer=True, feats_on='cuda', tb_train=(), tb_eval=None, tb_repeat=1,
-          init_from=None, select_last=False):
+          init_from=None, select_last=False, extra_split=None, extra_n=0, extra_frac=0.3):
     """feats_on='cpu' keeps features in host RAM and moves each batch to the GPU (for
     feature sets larger than VRAM, e.g. MTD 4096-d on a 24 GB card).
 
@@ -298,7 +298,13 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     conversations (labels/tbdev) to the training set, their crop starts repeated tb_repeat
     times; n_train=0 trains on them alone. tb_eval restricts TB dev inference to the held-out
     conversations. init_from=RUN starts each model from RUN/{name}.pt; select_last keeps the
-    final step instead of the best oto-dev checkpoint."""
+    final step instead of the best oto-dev checkpoint.
+
+    Unlabeled-convention data (multilingual/callhome_modal.py): extra_split names a feature/label split
+    (e.g. 'callhome'); extra_n conversations per language prefix (cid '<lang>_...') are loaded and
+    extra_frac of every batch is drawn from them. Each config's 'extra' key decides what it learns
+    from those rows: 'rule' (all targets, i.e. the timing-rule labels), 'va' (VAP voice-activity
+    projection only) or 'none' (all weights zeroed: an in-run control that sees the same oto crops)."""
     import os, threading
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')  # before the first CUDA allocation
     import numpy as np
@@ -346,7 +352,27 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         off = off + [off[-1] + o for o in offb[1:]]
         lab = lab + labb
         reps += [tb_repeat] * len(tb_train)
-    n_orig = len(off) - 1
+    n_main = len(off) - 1
+    extra_ids = []
+    if extra_split:
+        if extra_n <= 0:
+            raise ValueError('extra_split needs extra_n > 0 (conversations per language)')
+        if any(c.get('enroll') for c in configs.values()):
+            raise NotImplementedError('extra_split with speaker-enrolled configs: no enrollment for extra conversations')
+        avail = sorted({f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/{extra_split}') if not f.endswith('.tmp.npy')}
+                       & {f[:-4] for f in os.listdir(f'{WORK}/labels/{extra_split}')})
+        for lang in sorted({c.split('_')[0] for c in avail}):
+            extra_ids += [c for c in avail if c.split('_')[0] == lang][:extra_n]
+        Xe, offe, labe = load_split(extra_split, extra_ids, feats_on, cols, labeled=True)
+        for l in labe:
+            l['fine_w'] = np.zeros_like(l['fine_w'])  # no fine labels in rule-labeled data
+        X = Xe if X is None else torch.cat([X, Xe])
+        off = off + [off[-1] + o for o in offe[1:]]
+        lab = lab + labe
+        reps += [1] * len(extra_ids)
+        del Xe
+        print(f'extra {extra_split}: {len(extra_ids)} conversations, {offe[-1]} frames', flush=True)
+    n_orig = len(off) - 1  # main split (+ TB dev) + extra split
     warp_p = max(c.get('warp_aug', 0.0) for c in configs.values())
     if warp_p > 0:  # pause-warped copies (pausewarp.py): crops drawn from them with probability warp_p
         assert mtd == 'asr' and not tb_train, 'warp_aug needs feats asr and no TB-dev training'
@@ -436,7 +462,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     # normalized to mean 1 over training frames, clipped at 20x).
     fine_cw = None
     if 'fine' in Y:
-        counts = torch.bincount(Y['fine'].flatten(), minlength=len(lb.FINE)).float().clamp_min(1)
+        main_frames = off[n_main]  # oto (and tb_train) frames only: extra rows carry no fine labels
+        counts = torch.bincount(Y['fine'][:main_frames].flatten(), minlength=len(lb.FINE)).float().clamp_min(1)
         freq = counts / counts.sum()
         fine_cw = {}
         for name, cfg in configs.items():
@@ -451,7 +478,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     def crop_starts(lo, hi):
         return torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r)
                           for a, b, r in zip(off[lo:hi], off[lo + 1:hi + 1], reps[lo:hi]) if b - a > crop + WARM])
-    starts = crop_starts(0, n_orig)
+    starts = crop_starts(0, n_main)
+    starts_x = crop_starts(n_main, n_orig) if extra_ids else None
+    n_x = int(round(batch * extra_frac)) if extra_ids else 0
     starts_w = crop_starts(n_orig, n_pre_eotb) if warp_p > 0 else None
     starts_e = crop_starts(n_pre_eotb, len(off) - 1) if eotb_p > 0 else None
     models, opts, scheds = {}, {}, {}
@@ -558,13 +587,17 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     best = {n: (float('inf'), None, 0) for n in models}
     tstep = time.time()
     for step in range(1, steps + 1):
-        idx = starts[torch.randint(len(starts), (batch,), device=dev)]
+        n_m = batch - n_x
+        idx = starts[torch.randint(len(starts), (n_m,), device=dev)]
         if starts_w is not None:
-            idx = torch.where(torch.rand(batch, device=dev) < warp_p,
-                              starts_w[torch.randint(len(starts_w), (batch,), device=dev)], idx)
+            idx = torch.where(torch.rand(n_m, device=dev) < warp_p,
+                              starts_w[torch.randint(len(starts_w), (n_m,), device=dev)], idx)
         if starts_e is not None:
-            idx = torch.where(torch.rand(batch, device=dev) < eotb_p,
-                              starts_e[torch.randint(len(starts_e), (batch,), device=dev)], idx)
+            idx = torch.where(torch.rand(n_m, device=dev) < eotb_p,
+                              starts_e[torch.randint(len(starts_e), (n_m,), device=dev)], idx)
+        if n_x:
+            idx = torch.cat([idx, starts_x[torch.randint(len(starts_x), (n_x,), device=dev)]])
+        row_x = torch.arange(batch, device=dev) >= batch - n_x  # rows drawn from the extra split
         xb, yb = crops(X, Y, idx)
         xb_aug = None
         if Xa is not None:  # background speech on one random channel of a random subset of crops
@@ -592,6 +625,13 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
                 x_in, target = mute(x_in, target, cfg['mute'])
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 out = run_net(net, cfg, regularize(x_in, cfg), WARM, enroll=eb)
+            if n_x:  # what this config learns from extra-split rows
+                mode = cfg.get('extra', 'none')
+                assert mode in ('none', 'va', 'rule'), mode
+                drop = ('floor_w', 'future_w', 'act_w', 'fine_w') + (('vap_valid',) if mode == 'none' else ())
+                if mode != 'rule':
+                    target = dict(target, **{k: torch.where(row_x.view(-1, *[1] * (yb[k].dim() - 1)),
+                                                            torch.zeros_like(target[k]), target[k]) for k in drop})
             if fine_cw is not None and cfg.get('fine_balance', 0) > 0:
                 target = dict(target, fine_w=target['fine_w'] * fine_cw[name][yb['fine']])
             if cfg.get('yld'):  # latency head: onset frames of each pause weigh (1 + boost)
@@ -617,7 +657,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             if cfg.get('pause_weight', 0) > 0:  # up-weight frames where nobody is claiming the floor
                 quiet = (yb['act'] != lb.A['CLAIM']).all(-1).float()
                 boost = 1 + cfg['pause_weight'] * quiet
-                target = dict(yb, floor_w=yb['floor_w'] * boost, future_w=yb['future_w'] * boost[..., None])
+                target = dict(target, floor_w=target['floor_w'] * boost, future_w=target['future_w'] * boost[..., None])
             loss, parts = m.loss({k: v.float() for k, v in out.items()}, target, cfg.get('loss_weights'))
             opts[name].zero_grad(set_to_none=True)
             loss.backward()
@@ -691,7 +731,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     np.savez_compressed(f'{WORK}/runs/{run}/probs.npz', **probs)
     for name, net in models.items():
         torch.save(dict(cfg=configs[name], state=cat_top.trainable_state(net)), f'{WORK}/runs/{run}/{name}.pt')
-    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, tb_train=list(tb_train), tb_eval=tb_eval, init_from=init_from, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
+    json.dump(dict(configs=configs, loaded_taps=LOADED, train_ids=train_ids, extra_split=extra_split,
+                   extra_ids=extra_ids, extra_frac=extra_frac, tb_train=list(tb_train), tb_eval=tb_eval, init_from=init_from, history=history, best_steps={n: b[2] for n, b in best.items()}, n_train=len(train_ids), steps=steps, batch=batch, crop=crop,
                    wall_s=time.time() - t0, gpu_util=[u for u, _ in stats]), open(f'{WORK}/runs/{run}/train.json', 'w'))
     work.commit()
     stop.set()
@@ -701,7 +742,8 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 @app.local_entrypoint()
 def main(run: str, configs: str, n_train: int = 32, steps: int = 1500, batch: int = 64, gpu: str = 'A100',
          extra: bool = False, seed: int = 0, no_dev: bool = False, train_from: str = '', eval_every: int = 250,
-         no_infer: bool = False):
+         no_infer: bool = False, extra_split: str = '', extra_n: int = 0, extra_frac: float = 0.3):
     cfgs = json.load(open(configs))
     print(train.with_options(gpu=gpu).remote(run, cfgs, n_train, steps, batch, 375, eval_every, seed, extra,
-                                             not no_dev, train_from or None, not no_infer))
+                                             not no_dev, train_from or None, not no_infer,
+                                             extra_split=extra_split or None, extra_n=extra_n, extra_frac=extra_frac))
