@@ -61,6 +61,16 @@ would start replying. The caller keeps talking after a press in a mid-turn pause
 its own decision as in the harness; a press after the real end stops the clip. A separate key (B / "mm-hm") logs backchannels without counting them as replies, so the urge to backchannel does not leak into the reply presses. A one-minute
 reaction baseline (press when a murmur stops) separates prediction from reaction.
 
+Several annotators can run it at the same time. Each person types a name or initials (people
+sharing one account and browser get separate progress by name). Answers go to
+`runs/<account>/trials` and `runs/<account>/calib` in the artifact's store, where only the owner can
+read other people's answers, so annotators stay blind to each other; a `progress` document per
+account shows everyone which blocks are done. Anyone who should save answers needs Contributor
+access or above (people outside the organisation: an email invite as Editor); everyone else can use
+"Save results file". `score.py` groups records by account and name, scores each annotator, the
+pooled set and a majority-vote "crowd" listener (a hold counts as cut when more than half cut it;
+latency is the median), the same construction as Skantze's three-judge crowd.
+
 Scoring (`score.py`, same rules in the page):
 
 - A press commits a reply that lands at least 0.2 s into a pause (the harness's shortest action
@@ -81,8 +91,8 @@ for wired audio. A key press also carries ~100-200 ms of motor time that a model
 the human latency is a slightly pessimistic estimate of the human decision.
 
 Rebuild the clips: `python build_clips.py en.parquet OUT` (eot-bench en parquet from
-`livekit/eot-bench-data`, CC BY 4.0). Score: export the artifact's `trials` collection (or the page's
-saved file) and run `python score.py 'trials/*.json'`.
+`livekit/eot-bench-data`, CC BY 4.0). Score: export `runs/<account>/trials` with ArtifactData (`out_dir`), or use the page's saved files, and run
+`python score.py 'export/runs/**/*.json'`.
 
 ## Backchannels
 

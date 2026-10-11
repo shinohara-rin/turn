@@ -82,10 +82,16 @@ td.n{font-family:var(--f-mono);text-align:right;white-space:nowrap}
       <li>If you would not reply, just wait. The clip ends 3.5 s after the caller stops.</li>
     </ol>
     <div class="row">
+      <label for="annName" class="eyebrow">Annotator</label>
+      <input id="annName" type="text" maxlength="40" autocomplete="off" placeholder="your name or initials" style="font:inherit;padding:.45rem .6rem;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);min-width:0;flex:1 1 12rem;max-width:18rem">
+      <span class="status" id="annStatus">Each person gets their own progress. Several people can run blocks at the same time.</span>
+    </div>
+    <div class="row">
       <button id="calibBtn">Reaction baseline (1 min)</button>
       <span class="status" id="calibStatus">Measures how fast you react to a sound stopping, so prediction can be told apart from reaction.</span>
     </div>
     <div class="blocks" id="blocks"></div>
+    <p class="note" id="crew"></p>
     <div class="row">
       <button class="primary" id="startBtn" disabled>Start block</button>
       <button id="resetBtn" type="button" hidden>Start this block over</button>
@@ -145,11 +151,28 @@ const REF = [ // eot-bench en, mean latency (ms) at 5% / 10% cut-off, from the p
 
 let ctx = null, db = null, downloads = null;
 let sid = null, blockNo = 1, clips = [], idx = 0, results = [], calibResults = [];
+let uid = null, user = null, ann = "", crew = {};
 const store = { get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
                 set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 sid = store.get("tlt2_sid") || ("s" + Date.now().toString(36) + Math.random().toString(36).slice(2,6));
 store.set("tlt2_sid", sid);
-const done = store.get("tlt2_done") || {};
+let done = {};
+ann = store.get("tlt2_ann") || "";
+const key = k => "tlt2_" + (ann ? ann + "_" : "") + k;   // per-annotator progress on a shared browser
+function loadLocal(){ done = store.get(key("done")) || {}; }
+loadLocal();
+$("annName").value = ann;
+$("annName").addEventListener("change", () => {
+  const prev = ann;
+  ann = $("annName").value.trim().slice(0, 40); store.set("tlt2_ann", ann);
+  // The first name typed in this browser takes over answers given before names existed.
+  if (prev === "" && ann && !store.get("tlt2_adopted") && !store.get(key("done")) && store.get("tlt2_done")){
+    store.set(key("done"), store.get("tlt2_done"));
+    for (let b = 1; b <= NBLOCK; b++){ const r = store.get("tlt2_res_" + b); if (r) store.set(key("res_" + b), r.map(x => ({ ...x, ann }))); }
+  }
+  if (ann) store.set("tlt2_adopted", true);
+  loadLocal(); renderBlocks(); pushProgress(); migrate();
+});
 
 // ---------- block picker ----------
 function renderBlocks(){
@@ -159,7 +182,8 @@ function renderBlocks(){
     btn.setAttribute("aria-pressed", String(b === blockNo));
     const s = document.createElement("span"); s.textContent = "Block " + b;
     const sm = document.createElement("small");
-    const d = done[b]; sm.textContent = d ? (d >= PER ? "done" : d + " / " + PER) : "100 clips · ~20 min";
+    const d = done[b], others = Object.values(crew).filter(p => p.who !== whoKey() && (p.blocks || {})[b] >= PER).length;
+    sm.textContent = (d ? (d >= PER ? "you: done" : "you: " + d + " / " + PER) : "100 clips · ~20 min") + (others ? " · " + others + " other" + (others > 1 ? "s" : "") + " done" : "");
     btn.append(s, sm);
     btn.onclick = () => { blockNo = b; renderBlocks(); };
     box.append(btn);
@@ -176,14 +200,57 @@ renderBlocks();
   const use = n => (window.claude && window.claude.use) ? window.claude.use(n) : Promise.resolve(null);
   try { db = await use("db"); } catch { db = null; }
   try { downloads = await use("downloads"); } catch { downloads = null; }
+  try { user = await use("user"); uid = user ? await user.id() : null; } catch { uid = null; }
+  if (db && !uid) db = null;   // signed out: nowhere of our own to write
+  if (db){
+    db.collection("progress").onSnapshot(snap => {
+      crew = {}; snap.docs.forEach(d => { const v = d.data() || {}; for (const [lab, p] of Object.entries(v.labels || {})) crew[d.id + "/" + lab] = { ...p, who: d.id + "/" + lab }; });
+      renderBlocks(); renderCrew();
+    }, () => {});
+    migrate();
+  }
   const st = $("saveStatus");
   if (db){ st.textContent = "Each answer is saved to the project as you go."; st.className = "status ok"; }
   else { st.textContent = "Not connected to the project store. Use “Save results file” at the end."; st.className = "status warn"; }
   $("dlBtn").hidden = !downloads;
 })();
+function whoKey(){ return (uid || "anon") + "/" + (ann || "-"); }
+function renderCrew(){
+  const ps = Object.values(crew).filter(p => Object.values(p.blocks || {}).some(n => n > 0));
+  if (!ps.length){ $("crew").textContent = ""; return; }
+  const txt = ps.map(p => (p.who === whoKey() ? "you" : (p.label && p.label !== "-" ? p.label : "someone")) + ": " +
+    Object.entries(p.blocks).filter(([, n]) => n > 0).map(([b, n]) => "block " + b + (n >= PER ? " done" : " " + n + "/" + PER)).join(", "));
+  $("crew").textContent = "Progress so far. " + txt.join("; ") + ".";
+}
+// One progress document per account, one entry per annotator label on it.
+let progT = null;
+function pushProgress(){
+  if (!db) return;
+  clearTimeout(progT);
+  progT = setTimeout(async () => {
+    const ref = db.collection("progress").doc(uid);
+    try {
+      const cur = (await ref.get()).data() || {};
+      const labels = cur.labels || {};
+      labels[ann || "-"] = { label: ann || "-", blocks: { ...done }, updated: new Date().toISOString() };
+      await ref.set({ labels });
+    } catch {}
+  }, 300);
+}
+// Answers kept in this browser (including ones saved before per-annotator storage) are copied to the
+// annotator's own area once; set() is idempotent, so repeating it is harmless.
+async function migrate(){
+  if (!db) return;
+  for (let b = 1; b <= NBLOCK; b++){
+    for (const r of (store.get(key("res_" + b)) || [])){
+      await save("trials", r.sid + "_b" + r.block + "_" + String(r.i).padStart(3, "0"), r);
+    }
+  }
+  pushProgress();
+}
 async function save(coll, id, data){
   if (!db) return;
-  try { await db.collection(coll).doc(id).set(data); }
+  try { await db.collection("runs/" + uid + "/" + coll).doc(id).set({ ...data, uid, ann: ann || null }); }
   catch(e){ $("saveStatus").textContent = "Saving failed (" + (e && e.code || "error") + "). Keep this tab open and save the file at the end."; $("saveStatus").className = "status warn"; }
 }
 
@@ -212,10 +279,11 @@ async function loadBlock(b){
 async function decode(i){ return ensureCtx().decodeAudioData(b64ToBuf(clips[i].mp3)); }
 
 $("resetBtn").onclick = async () => {
-  const old = store.get("tlt2_res_" + blockNo) || [];
-  store.set("tlt2_res_" + blockNo, []); delete done[blockNo]; store.set("tlt2_done", done);
+  const old = store.get(key("res_" + blockNo)) || [];
+  store.set(key("res_" + blockNo), []); delete done[blockNo]; store.set(key("done"), done);
   renderBlocks();
-  if (db) for (const r of old){ try { await db.collection("trials").doc(r.sid + "_b" + r.block + "_" + String(r.i).padStart(3, "0")).delete(); } catch {} }
+  pushProgress();
+  if (db) for (const r of old){ try { await db.collection("runs/" + uid + "/trials").doc(r.sid + "_b" + r.block + "_" + String(r.i).padStart(3, "0")).delete(); } catch {} }
   $("saveStatus").textContent = "Block " + blockNo + " cleared. Start it again when ready.";
 };
 
@@ -224,10 +292,11 @@ $("startBtn").onclick = async () => {
   $("startBtn").disabled = true;
   try { clips = await loadBlock(blockNo); }
   catch(e){ $("saveStatus").textContent = String(e.message || e); $("saveStatus").className = "status warn"; $("startBtn").disabled = false; return; }
-  results = store.get("tlt2_res_" + blockNo) || [];
+  results = store.get(key("res_" + blockNo)) || [];
   idx = results.length;
   if (idx >= PER){ results = []; idx = 0; }
   $("setup").hidden = true; $("results").hidden = true; $("trial").hidden = false;
+  pushProgress();
   curBuf = await decode(idx);
   showReady();
 };
@@ -284,11 +353,12 @@ async function finish(){
   mode = "between";
   $("bcBtn").disabled = true;
   const c = clips[idx];
-  const rec = { sid, block: blockNo, i: idx, id: c.id, trim: c.trim, presses: presses.slice(), bc: bcs.slice(), input: inputs[0] || null,
+  const rec = { sid, ann: ann || null, block: blockNo, i: idx, id: c.id, trim: c.trim, presses: presses.slice(), bc: bcs.slice(), input: inputs[0] || null,
                 outLat: ctx.outputLatency || null, baseLat: ctx.baseLatency || null, at: new Date().toISOString() };
-  results.push(rec); store.set("tlt2_res_" + blockNo, results);
-  done[blockNo] = results.length; store.set("tlt2_done", done);
+  results.push(rec); store.set(key("res_" + blockNo), results);
+  done[blockNo] = results.length; store.set(key("done"), done);
   save("trials", sid + "_b" + blockNo + "_" + String(idx).padStart(3, "0"), rec);
+  pushProgress();
   idx++;
   if (idx >= clips.length){ showResults(); return; }
   $("trialStatus").textContent = presses.length ? "" : "No reply.";
@@ -377,7 +447,7 @@ $("againBtn").onclick = () => { $("results").hidden = true; $("setup").hidden = 
 $("dlBtn").onclick = async () => {
   if (!downloads) return;
   try {
-    await downloads.save({ filename: "turn-listening-" + sid + "-block" + blockNo + ".json", data: JSON.stringify({ sid, block: blockNo, trials: results, calib: calibResults }, null, 1) });
+    await downloads.save({ filename: "turn-listening-" + (ann || sid) + "-block" + blockNo + ".json", data: JSON.stringify({ sid, ann, block: blockNo, trials: results, calib: calibResults }, null, 1) });
     $("dlStatus").textContent = "Saved.";
   } catch(e){ $("dlStatus").textContent = e && e.code === "declined" ? "Not saved." : "Could not save (" + (e && e.code || "error") + ")."; }
 };
