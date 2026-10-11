@@ -115,6 +115,7 @@ def install_modal_stub():
         if p not in sys.path:
             sys.path.insert(0, p)
     os.environ['SSL_TURN_SRC'] = SRC
+    os.environ.setdefault('SSL_TURN_WORK', WORK)   # without root (no /work link) the paths come from here
 
 
 def _link(target, link):
@@ -128,6 +129,9 @@ def _link(target, link):
 def cmd_setup(a):
     os.makedirs(WORK, exist_ok=True)
     os.makedirs(BGVOL, exist_ok=True)
+    if os.geteuid() != 0:  # e.g. a Ray job on a desktop: SSL_TURN_WORK and bench_modal.V are set at runtime
+        print('not root: skipping the /work, /vol and /root links')
+        return
     _link(WORK, '/work')
     _link(BGVOL, '/vol')
     os.makedirs('/root', exist_ok=True)
@@ -225,6 +229,7 @@ def cmd_sweep(a):
 def cmd_bg(a):
     import bench_modal as bm
     import numpy as np
+    bm.V = BGVOL
     plan = bm._plan()
     bm.student_group(plan['ids'], a.run, a.names.split(','))
     out = os.path.join(os.path.dirname(BGVOL), 'bg')
