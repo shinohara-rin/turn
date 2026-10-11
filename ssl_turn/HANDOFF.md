@@ -3,7 +3,7 @@
 Context for continuing this work in a fresh conversation. [`README.md`](README.md) holds the
 design. [`RESULTS.md`](RESULTS.md) holds every experiment with numbers. This file holds what
 lives in neither: the user's goals and preferences, how to operate the environment, the
-current state, and the open threads. Last updated 2026-10-09.
+current state, and the open threads. Last updated 2026-10-10.
 
 ## What the user wants (in their words, condensed)
 
@@ -93,7 +93,21 @@ current state, and the open threads. Last updated 2026-10-09.
 
 ## Current state (TurnBench dev; details in RESULTS.md)
 
-- **Best system:**
+- **Best system (2026-10-10): voice activity + commit policy + r019 scores** (`policy.py`,
+  RESULTS.md "Commit policy"). After P99Lab's turn-1-mini (TurnBench leader), whose own
+  ablation shows two-channel EOT is carried by VAD + rules.
+  - Inputs: Silero VAD per channel (`pipeline/vad.py`, `/work/vad/tbdev`) and the
+    FastConformer head `r019_asr_bgaug/bgaug_s1` tracks `eot_q` and `int_ft`.
+  - TB dev at the `Policy()` defaults: **EOT 0.977 / FP 0.078 / p50 493 ms, INT 0.997 / FP
+    0.094 / p50 435 ms** (split-half held-out EOT 0.971 / 0.095, INT 0.991 / 0.098).
+  - On EOT the model adds no recall over VAD rules (0.978 / 0.078 / 620 ms); it only buys
+    latency. The earlier "EOT is at the label ceiling" reading below was about the commit
+    rule, not the encoder.
+  - INT: score `int_ft` (fine floor-taking probability) fires about 400 ms earlier than
+    `int_nobc` at the same recall.
+  - Scoring: `modal run policy_score.py::main --run R --model M`; reselect with `::sweep`;
+    official dev JSON with `::export`.
+- **Previous best (Cat, superseded):**
   - Model: frozen Cat taps 15/23/31 + final, into the floor-ownership head (r012
     `fine1_bal1`: fine 18-class head, inverse-frequency balanced).
   - Scores: `eot_q` = (p(OPEN) + p(HELD_other)) × p(SILENT); `int_nobc` = int_spk × (1 −
@@ -130,6 +144,10 @@ current state, and the open threads. Last updated 2026-10-09.
    pipeline in README ("Podcasts", "Mixed-source training"; `podcast_subset.py`,
    `pseudo_stereo.py` exist). Start with a small separation-quality pilot (calibrate on
    otoSpeech mono mixes) before spending budget.
+0. **Earlier INT at onset:** a dedicated onset classifier on FastConformer features
+   (`pipeline/onset.py`, trained on oto) matched `int_ft` but did not beat it (AUC 0.80 at
+   0.24 s; turn-1-mini reports 0.92 at 0.2 s on their own data). Next would be more
+   interruption examples or better features, not another head.
 2. **Prosody features** (F0, energy, rate per 80 ms) next to Cat features, aimed at EOT
    false fires in unanimous holds. About a $1 run.
 3. Backbone: a causal MTD student, or distill MTD into the Cat head (MTD is ~150 ms faster).
