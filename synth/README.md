@@ -158,6 +158,16 @@ better than none, and `--text-emotion` is clearly worse: exaggerated,
 unnatural emotion, so more pitch movement is not the goal and the flag
 stays off by default.
 
+### Catching glitches
+
+IndexTTS sometimes puts a noise burst or a laugh into a line. Scored on
+2 s windows with SQUIM's reference-free PESQ estimate, the worst window of
+a line finds them (quality.py): on the casual example the two lowest
+windows, 1.5 and 2.6, were the two spots heard as broken. A line whose
+worst window is under `--retry-below` (2.9) is synthesized again on its
+own, up to twice, and the best take kept; after that the example's worst
+window was 2.7.
+
 ### Reading several lines in one pass
 
 Per-line calls still start every line from scratch. `--index-pass` (default `floor`) lets

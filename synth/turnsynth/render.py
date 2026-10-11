@@ -309,6 +309,27 @@ def _block_delivery(script: Script, block: list[Item]) -> tuple[dict[str, float]
     return {k: v for k, v in emotion.items() if v > 0} or None, speed
 
 
+def _redo_glitches(tts: TTS, script: Script, voices: dict[str, str], timing: Timing,
+                   rng: np.random.Generator, speeches: dict[int, Speech], tries: int = 2) -> None:
+    """Re-synthesize lines whose worst 2 s stretch sounds broken; keep the best take."""
+    from turnsynth.quality import worst_window
+
+    for it in script.items:
+        sp = speeches[it.id]
+        score = worst_window(sp.audio, sp.sample_rate)
+        if score is None or score >= tts.retry_below:
+            continue
+        for _ in range(tries):
+            alt = synthesize_item(tts, it, voices[it.speaker], timing, rng, Context(emotion=it.emotion),
+                                  script.language, speed=item_speed(script, it))
+            q = worst_window(alt.audio, alt.sample_rate)
+            if q is not None and q > score:
+                sp, score = alt, q
+            if score >= tts.retry_below:
+                break
+        speeches[it.id] = sp
+
+
 def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timing: Timing,
                           rng: np.random.Generator, max_words: int | None = None) -> dict[int, Speech]:
     """Read each speaker's lines in long passes, then cut the pass back into items.
@@ -404,6 +425,8 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
         speeches = synthesize_by_speaker(tts, script, voices, timing, rng)
     else:
         speeches = synthesize_by_item(tts, script, voices, timing, rng)
+    if getattr(tts, "retry_below", None):
+        _redo_glitches(tts, script, voices, timing, rng, speeches)
 
     # Pass 1: the floor sequence.
     prev: Placed | None = None

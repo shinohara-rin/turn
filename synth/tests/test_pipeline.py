@@ -341,3 +341,17 @@ def test_replies_wait_for_the_last_word(path):
                 assert b.start >= a.words[-1].start
                 if a.item.text.endswith("?"):
                     assert b.start >= a.speech_end - 0.1 - 1e-9
+
+
+def test_glitchy_lines_are_resynthesized(monkeypatch):
+    from turnsynth import quality
+
+    class RetryTTS(WholeTurnTTS):
+        retry_below = 2.9
+
+    scores = iter([2.0] + [3.5] * 1000)  # the first line scored is glitchy, its retake and the rest are fine
+    monkeypatch.setattr(quality, "worst_window", lambda audio, sr: next(scores))
+    tts = RetryTTS()
+    script = load(EXAMPLES[0])
+    render(script, tts, conversation_id="1")
+    assert len(tts.calls) == len(script.items) + 1

@@ -171,7 +171,7 @@ class IndexTTS:
     def __init__(self, model_dir: str, bank: str, *, version: str = "2.5", device: str | None = None,
                  half: bool = True, anchor_s: float = 8.0, history_s: float = 3.0, entrain: float = 0.0,
                  emo_alpha: float = 0.8, context: bool = True, pass_mode: str = "floor", pass_words: int = 60,
-                 text_emotion: bool = False):
+                 text_emotion: bool = False, retry_below: float | None = 2.9):
         import soundfile as sf
 
         from turnsynth.align import Aligner
@@ -197,6 +197,8 @@ class IndexTTS:
         self.bank = load_bank(bank)
         self.anchor_s, self.history_s = anchor_s, history_s
         self.entrain, self.emo_alpha, self.text_emotion = entrain, emo_alpha, text_emotion
+        # Lines whose worst 2 s window scores under this (SQUIM PESQ) are re-synthesized (quality.py).
+        self.retry_below = retry_below
         self.aligner = Aligner(device="cpu" if device in (None, "cpu") else device)
         self._sf = sf
         self._tmp = Path(tempfile.mkdtemp(prefix="turnsynth-itts-"))

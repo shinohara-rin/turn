@@ -51,7 +51,8 @@ def cmd_render(args) -> None:
         tts_kwargs = {"model_dir": args.index_model_dir, "bank": args.voice_bank, "version": args.index_version,
                       "device": None if args.device == "auto" else args.device, "entrain": args.entrain,
                       "context": not args.no_dialogue_context, "pass_mode": args.index_pass,
-                      "emo_alpha": args.emo_alpha, "text_emotion": args.text_emotion}
+                      "emo_alpha": args.emo_alpha, "text_emotion": args.text_emotion,
+                      "retry_below": args.retry_below or None}
     tts = make_tts(args.tts, **tts_kwargs)
     transcriber = Transcriber(args.asr, device=args.device) if args.asr else None
     judge = None
@@ -159,6 +160,8 @@ def main(argv=None) -> None:
                    help="IndexTTS: strength of script (or text-derived) emotion vectors; the rest comes from the speaker prompt")
     r.add_argument("--text-emotion", action="store_true",
                    help="IndexTTS: for lines without a script emotion, read one off the text with IndexTTS's QwenEmotion")
+    r.add_argument("--retry-below", type=float, default=2.9,
+                   help="IndexTTS: re-synthesize a line whose worst 2 s window scores under this estimated PESQ; 0 = off")
     r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en; a multilingual one such as small for ja/zh); empty = script text")
     r.add_argument("--device", default="auto")
     r.add_argument("--judge", default="rules", choices=["rules", "llm"])
