@@ -1,7 +1,8 @@
 """Shared Modal definitions for the ssl_turn pipeline.
 
 Volumes:
-  turnbench-datasets (read only): pinned otoSpeech, TurnBench dev/test, staged by attempt 1.
+  turnbench-datasets (read only): otoSpeech and TurnBench dev, staged by stage.py (attempt 1 staged
+    the original copy in an older workspace).
   ssl-turn-work: this attempt's split, labels, resampled audio, features, runs.
 
 TurnBench test audio is never opened by this pipeline.
@@ -14,7 +15,7 @@ import modal
 HERE = Path(__file__).resolve().parent
 SRC = HERE.parent  # ssl_turn/
 
-datasets = modal.Volume.from_name('turnbench-datasets')
+datasets = modal.Volume.from_name('turnbench-datasets', create_if_missing=True)  # staged by stage.py
 work = modal.Volume.from_name('ssl-turn-work', create_if_missing=True)
 VOLUMES = {'/datasets': datasets, '/work': work}
 
