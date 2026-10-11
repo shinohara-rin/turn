@@ -112,7 +112,7 @@ class TurnModel(nn.Module):
     speaker) or C=1 (mixed mono), plus optional source ids [B] (default REAL_STEREO)."""
 
     def __init__(self, tap_layers=4, tap_dim=1280, final_dim=768, dim=256, heads=4, layers=4,
-                 window_s=20.0, dropout=0.1, sources=SOURCES, slots=2, enroll_dim=0):
+                 window_s=20.0, dropout=0.1, sources=SOURCES, slots=2, enroll_dim=0, comp=False):
         super().__init__()
         window = int(round(window_s / FRAME_S))
         self.context = context_frames(layers, window_s)
@@ -134,6 +134,9 @@ class TurnModel(nn.Module):
         self.shared = nn.Linear(dim, 2 * steps)      # OPEN, CONTESTED per step, from own + other
         self.act = nn.Linear(2 * dim, len(ACTS))
         self.fine = nn.Linear(2 * dim, len(FINE))   # per-speaker fine annotator label (labels.FINE)
+        # per-speaker semantic completion logit: "has this speaker finished what they meant to say",
+        # supervised only in the silence after their own speech (semantics/complete_labels.py)
+        self.comp = nn.Linear(2 * dim, 1) if comp else None
         self.slots = slots
         self.slot_floor = nn.Linear(dim, steps * (slots + 2))
         self.slot_act = nn.Linear(dim, slots * len(ACTS))
@@ -197,8 +200,11 @@ class TurnModel(nn.Module):
         held = self.held(pair).permute(0, 1, 3, 2)                 # [B, T, steps, 2]
         shared = self.shared(x.sum(2)).view(B, T, self.steps, 2)   # [B, T, steps, 2]
         floor = torch.cat([held, shared], -1)                      # HELD_0, HELD_1, OPEN, CONTESTED
-        return dict(floor=floor[:, :, 0], future=floor[:, :, 1:], act=self.act(pair), fine=self.fine(pair),
-                    vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)))
+        out = dict(floor=floor[:, :, 0], future=floor[:, :, 1:], act=self.act(pair), fine=self.fine(pair),
+                   vap=self.vap(torch.cat([x[:, :, 0], x[:, :, 1]], -1)))
+        if self.comp is not None:
+            out['comp'] = self.comp(pair)[..., 0]                   # [B, T, 2] logits
+        return out
 
 
 def vap_speaker_probabilities(vap_logits, near_bins=2):
@@ -230,13 +236,17 @@ def loss(outputs, batch, weights=None):
     pseudo) is folded into the weights by the loader. Each term is normalized by its own
     weight mass, so the sampler's mixing ratio, not raw volume, sets each source's share.
     """
-    weights = {**dict(vap=1.0, floor=1.0, future=1.0, act=0.5, fine=0.5, slot_activity=1.0), **(weights or {})}
+    weights = {**dict(vap=1.0, floor=1.0, future=1.0, act=0.5, fine=0.5, slot_activity=1.0, comp=1.0),
+               **(weights or {})}
     terms = {}
     if 'vap' in outputs and 'vap' in batch:
         terms['vap'] = _weighted_ce(outputs['vap'], batch['vap'], batch['vap_valid'].float())
     for name in ('floor', 'future', 'act', 'fine'):
         if name in batch and name in outputs and weights.get(name, 0) > 0:
             terms[name] = _weighted_ce(outputs[name], batch[name], batch[name + '_w'])
+    if 'comp' in outputs and 'comp' in batch and weights.get('comp', 0) > 0:  # soft completion target
+        bce = F.binary_cross_entropy_with_logits(outputs['comp'], batch['comp'], reduction='none')
+        terms['comp'] = (bce * batch['comp_w']).sum() / batch['comp_w'].sum().clamp_min(1e-6)
     if 'slot_activity' in outputs and 'slot_activity' in batch:
         w = batch['slot_activity_w']
         bce = F.binary_cross_entropy_with_logits(outputs['slot_activity'], batch['slot_activity'], reduction='none')

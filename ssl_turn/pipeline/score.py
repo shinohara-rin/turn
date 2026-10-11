@@ -38,7 +38,7 @@ def cache_tbdev_gold():
     return len(out)
 
 
-def score_variants(post, silent=None, fine=None):
+def score_variants(post, silent=None, fine=None, comp=None):
     """post [T, 1 + H, 4]: floor now and at 0.4/0.8/1.6 s (HELD_0, HELD_1, OPEN, CONTESTED)
     -> per-speaker [T, 2] score tracks."""
     import numpy as np
@@ -84,6 +84,10 @@ def score_variants(post, silent=None, fine=None):
         out['int_claim'] = clip(holds(f04) * (grp['floor_taking'] + grp['turn']))
         other_bc = (grp['backchannel'] + grp['noncontent'])[:, ::-1]
         out['eot_nobc'] = clip(eot_now * silent * np.clip(1 - other_bc, 0, 1))
+    if comp is not None and silent is not None:  # semantic completion head [T, 2]
+        out['comp_q'] = clip(comp * silent)
+        out['eot_cq'] = clip((eot_now * silent + comp * silent) / 2)
+        out['eot_cmax'] = clip(np.maximum(eot_now, comp) * silent)
     return out
 
 
@@ -97,10 +101,11 @@ def load_tracks(run, model, task, split):
         m_, sp, cid, t = k.split('/')
         if m_ == model and sp == split:
             if t == 'post':
-                sk, fk = k[:-len('post')] + 'silent', k[:-len('post')] + 'fine'
+                sk, fk, ck = (k[:-len('post')] + t for t in ('silent', 'fine', 'comp'))
                 tracks[cid] = score_variants(z[k].astype(np.float32),
                                              z[sk].astype(np.float32) if sk in z.files else None,
-                                             z[fk].astype(np.float32) if fk in z.files else None)[task]
+                                             z[fk].astype(np.float32) if fk in z.files else None,
+                                             z[ck].astype(np.float32) if ck in z.files else None)[task]
             elif t == task:
                 tracks[cid] = z[k]
     return tracks
@@ -180,21 +185,22 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits
     for k in z.files:
         model, split, cid, task = k.split('/')
         if task == 'post':
-            sk, fk = k[:-len('post')] + 'silent', k[:-len('post')] + 'fine'
+            sk, fk, ck = (k[:-len('post')] + t for t in ('silent', 'fine', 'comp'))
             posts.setdefault(model, {})[(split, cid)] = (z[k].astype(np.float32),
                                                          z[sk].astype(np.float32) if sk in z.files else None,
-                                                         z[fk].astype(np.float32) if fk in z.files else None)
-        elif task not in ('silent', 'fine'):
+                                                         z[fk].astype(np.float32) if fk in z.files else None,
+                                                         z[ck].astype(np.float32) if ck in z.files else None)
+        elif task not in ('silent', 'fine', 'comp'):
             by.setdefault((model, task), {}).setdefault(split, {})[cid] = z[k]
     for name, members in (ensembles or {}).items():  # average posteriors across models
         members = [m_ for m_ in members if m_ in posts]
         keys = set.intersection(*(set(posts[m_]) for m_ in members))
         avg = lambda key, i: (None if posts[members[0]][key][i] is None
                               else np.mean([posts[m_][key][i] for m_ in members], 0))
-        posts[name] = {key: (avg(key, 0), avg(key, 1), avg(key, 2)) for key in keys}
+        posts[name] = {key: (avg(key, 0), avg(key, 1), avg(key, 2), avg(key, 3)) for key in keys}
     for model, items in posts.items():
-        for (split, cid), (post, silent, fine) in items.items():
-            for name, v in score_variants(post, silent, fine).items():
+        for (split, cid), (post, silent, fine, comp) in items.items():
+            for name, v in score_variants(post, silent, fine, comp).items():
                 by.setdefault((model, name), {}).setdefault(split, {})[cid] = v
     jobs = {}
     with ProcessPoolExecutor(8) as pool:
@@ -206,7 +212,7 @@ def score_run(run, variants=None, refractories=(2.0,), ensembles=None, recommits
                     for rc in recommits:
                         name = (task if r == 2.0 else f'{task}@r{r}') + (f'+rc{rc}' if rc else '')
                         jobs[(model, name, split)] = pool.submit(sweep_task, probs, load_gold(split, list(probs)),
-                                                                 'eot' if task.startswith('eot') else 'int', None,
+                                                                 'eot' if task.startswith(('eot', 'comp')) else 'int', None,
                                                                  12.5, r, rc)
         rows = {k: f.result() for k, f in jobs.items()}
     report = []
@@ -253,7 +259,7 @@ def analyze(run, model, task, theta, split='tbdev', refractory_s=2.0):
     probs = load_tracks(run, model, task, split)
     gold = load_gold(split, list(probs))
     types = json.load(open(f'{WORK}/gold/tbdev_types.json')) if split == 'tbdev' else {}
-    key = 'eot' if task.startswith('eot') else 'int'
+    key = 'eot' if task.startswith(('eot', 'comp')) else 'int'
     by_type, fp_len, neg_len, lat = {}, [], [], []
     for cid, p in probs.items():
         e = gold[cid]['events']

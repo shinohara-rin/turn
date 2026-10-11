@@ -23,6 +23,7 @@ FEAT_DIR = 'feats'   # 'feats' (Cat), 'feats_mtd' (MOSS-Transcribe-Diarize, 4096
 NO_TAP_FEATS = {'mtd': ('feats_mtd', 4096), 'asr': ('feats_asr', 1024)}  # config feats -> (dir, dim); no taps
 FUSE_MTD = False     # Cat columns + MTD 4096-d appended (config feats='cat+mtd')
 WARM = 0             # context-only frames before each training crop (encoder-tuning runs: CatTop window)
+COMP = False         # completion target dir under WORK (configs with comp: true or a dir name), or False
 CAT_DIR = f'{WORK}/models/cat'
 _CAT = None
 
@@ -40,6 +41,7 @@ def load_split(split, cids, device, cols=None, workers=16, labeled=None, feat_di
     straight into one preallocated GPU tensor; peak VRAM is the final size, not 2x.
     Labels are read for oto by default, and for tbdev only when asked (labeled=True).
     feat_dir / label_dir override the feature and label directories (pausewarp.py copies)."""
+    import os
     import numpy as np
     import torch
     from concurrent.futures import ThreadPoolExecutor
@@ -63,6 +65,14 @@ def load_split(split, cids, device, cols=None, workers=16, labeled=None, feat_di
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
             if 'fine' in z.files:
                 lab['fine'], lab['fine_w'] = z['fine'][:T], z['act_w'][:T]
+            if COMP:  # completion targets (comp_targets.py); conversations without them get zero weight
+                path = f'{WORK}/{COMP}/{split}/{cid}.npz'
+                if label_dir == 'labels' and os.path.exists(path):
+                    with np.load(path) as zc:
+                        lab['comp'], lab['comp_w'] = zc['comp'][:T], zc['comp_w'][:T]
+                else:
+                    lab['comp'] = np.zeros((T, 2), np.float32)
+                    lab['comp_w'] = np.zeros((T, 2), np.float32)
         x = np.ascontiguousarray(f[:T]) if cols is None else np.ascontiguousarray(f[:T][..., cols])
         if FUSE_MTD:  # append the 4096-d MOSS-Transcribe-Diarize features after the Cat columns
             g = np.load(f'{WORK}/feats_mtd/{split}/{cid}.npy', mmap_mode='r')
@@ -169,7 +179,7 @@ def infer_all(models, configs, splits, dev, enrolls=None):
                         with torch.autocast('cuda', dtype=torch.bfloat16):
                             o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None].to(dev), enroll=e)
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items()
-                                     if k in ('floor', 'future', 'act', 'fine')})
+                                     if k in ('floor', 'future', 'act', 'fine', 'comp')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
                 future = torch.cat([o['future'] for o in outs]).softmax(-1)
                 silent = torch.cat([o['act'] for o in outs]).softmax(-1)[..., 0]  # [T, 2] p(SILENT)
@@ -177,6 +187,9 @@ def infer_all(models, configs, splits, dev, enrolls=None):
                 out[f'{name}/{split}/{cid}/silent'] = silent.cpu().numpy().astype(np.float16)
                 if 'fine' in outs[0]:  # [T, 2, len(FINE)] fine-label posteriors
                     out[f'{name}/{split}/{cid}/fine'] = torch.cat([o['fine'] for o in outs]).softmax(-1) \
+                        .cpu().numpy().astype(np.float16)
+                if 'comp' in outs[0]:  # [T, 2] p(speaker has semantically finished)
+                    out[f'{name}/{split}/{cid}/comp'] = torch.cat([o['comp'] for o in outs]).sigmoid() \
                         .cpu().numpy().astype(np.float16)
     return out
 
@@ -260,7 +273,8 @@ def build_head(cfg):
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
                        window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1),
                        enroll_dim=(192 if cfg.get('enroll') == 'ecapa' else
-                                   (len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0))
+                                   (len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0),
+                       comp=bool(cfg.get('comp')))
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
@@ -291,7 +305,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     train_ids = [c for c in split['train'] if c in have][:n_train]
     if extra:  # labeled data-scaling ablation: gate-free cross-partition conversations
         train_ids += [c for c in json.load(open(f'{WORK}/extra_no_gate.json')) if c in have]
-    global LOADED, FEAT_DIR, FUSE_MTD, WARM
+    global LOADED, FEAT_DIR, FUSE_MTD, WARM, COMP
+    comp_dirs = {c['comp'] if isinstance(c['comp'], str) else 'labels_comp' for c in configs.values() if c.get('comp')}
+    assert len(comp_dirs) <= 1, 'models in one run share batches, so they must share comp targets'
+    COMP = comp_dirs.pop() if comp_dirs else False  # completion target dir, e.g. labels_comp
     setup_path()
     import cat_top
     WARM = cat_top.WINDOW if any(c.get('tune') for c in configs.values()) else 0
@@ -444,7 +461,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         """Channel-swap augmentation on rows in `mask`: features, acts, floor holders, VAP bits."""
         xb = torch.where(mask[:, None, None, None], xb.flip(2), xb)
         out = dict(yb)
-        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w') if k in yb]:
+        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w', 'comp', 'comp_w') if k in yb]:
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k].flip(-1), yb[k])
         for k in ('floor', 'future'):
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k][..., SWAP], yb[k])
