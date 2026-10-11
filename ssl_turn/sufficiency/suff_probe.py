@@ -34,10 +34,7 @@ def main(lab, feats, comp=None):
     X = F['X'].astype(np.float32)
     rows = [(cid, *x) for cid in sorted(d) for x in d[cid]]
     assert len(rows) == len(X)
-    start = {}
-    for cid, s, t, kind, sc, n, N, end, *_ in rows:
-        k = (cid, s, end)
-        start[k] = min(start.get(k, t), t - n * 0.3)  # rough turn start: ~0.3 s per word before the first candidate
+    start = {(r[0], r[1], r[7]): r[10] for r in rows}   # real turn start (first segment onset)
     keep = np.array([r[3] != 'end' and r[4] is not None for r in rows])
     y = np.array([(r[4] or 0) >= 8 for r in rows])
     g = np.array([r[0] for r in rows])

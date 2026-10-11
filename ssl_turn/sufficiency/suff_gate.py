@@ -34,16 +34,14 @@ def main():
     data = {**{f'tb/{k}': v for k, v in ann['tbdev'].items()}, **{f'oto/{k}': v for k, v in ann['oto'].items()}}
     items = []
     for cid in sorted(data):
-        prev = {1: '', 2: ''}
+        conv = L.conversation(data[cid])
         lab = {(x[0], x[6], x[4]): x for x in d.get(cid, [])}
-        for turn in L.turns(data[cid]):
-            s, end = turn[0][0], turn[-1][3]
-            words, cands = L.candidates(turn)
-            for n, t, kind in cands:
-                x = lab.get((s, end, n))
+        for tr in conv:
+            for n, t, kind in tr['cands']:
+                x = lab.get((tr['s'], tr['end'], n))
                 if kind != 'end' and x and x[3] is not None:
-                    items.append(dict(cid=cid, s=s, end=end, ctx=prev[s], prefix=' '.join(words[:n]), y=x[3], kind=kind))
-            prev[3 - s] = ' '.join(words)
+                    items.append(dict(cid=cid, s=tr['s'], end=tr['end'], ctx=L.context_at(conv, tr['s'], t),
+                                      prefix=' '.join(tr['words'][:n]), y=x[3], kind=kind))
     random.Random(2).shuffle(items)
     items = items[:a.n]
     fmt = lambda it: f'context: "{it["ctx"][-200:] or "(none)"}"  speaker so far: "{" ".join(it["prefix"].split()[-80:])}"'  # noqa: E731

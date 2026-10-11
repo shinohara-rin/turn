@@ -19,7 +19,9 @@ drafting. Two batched calls through the RunInfra gateway (the egress proxy injec
   2. judge: 0-10, is reply(prefix) as good a response to the full turn as reply(full)?
 
 Output JSON: {cid: [[speaker, t, kind, score_or_None, words_before, words_total, turn_end_t,
-                     prefix_tail, reply], ...]}
+                     prefix_tail, reply, turn_start_t], ...]}
+Context is what the other speaker has said by the candidate's time (overlapping turns are cut);
+the judge, which works in hindsight, gets the context at the turn end.
 Input: the annotation dump from semantics/dump_annotations.py ({'tbdev': ..., 'oto': ...} or a
 plain {cid: rows}). Rows are [speaker, ann, start, end, label, text]; only annotator 'a' is used.
 
@@ -86,8 +88,9 @@ def turns(rows):
 
 
 def candidates(turn):
-    """(words, [(n_words, t, kind)]) for one turn."""
-    words, cands = [], []
+    """(words, word end times, [(n_words, t, kind)]) for one turn. The turn end is always kept:
+    it is the full-turn reference every earlier draft is judged against."""
+    words, times, cands = [], [], []
     for k, (_, _, a, b, _, text) in enumerate(turn):
         text = re.sub(r'\[[^]]*\]', ' ', text)
         L = max(1, len(text))
@@ -96,18 +99,41 @@ def candidates(turn):
             if not w:
                 continue
             words.append(w)
+            times.append(a + (b - a) * m.end() / L)
             if re.search(r'[,.?!;]$', m.group()) and m.end() < len(text.rstrip()) - 1:
-                cands.append((len(words), a + (b - a) * m.end() / L, 'mid'))
-        cands.append((len(words), b, 'end' if k == len(turn) - 1 else 'pause'))
-    seen, uniq = set(), []
+                cands.append((len(words), times[-1], 'mid'))
+        if k < len(turn) - 1:
+            cands.append((len(words), b, 'pause'))
+    end = (len(words), turn[-1][3], 'end')
+    seen, uniq = {end[0]}, []
     for c in cands:
         if c[0] >= MIN_WORDS and c[0] not in seen:
             seen.add(c[0])
             uniq.append(c)
-    if len(uniq) > MAX_CAND:
-        keep = sorted({round(i * (len(uniq) - 2) / (MAX_CAND - 2)) for i in range(MAX_CAND - 1)})
-        uniq = [uniq[i] for i in keep] + [uniq[-1]]
-    return words, uniq
+    uniq.sort()
+    if len(uniq) > MAX_CAND - 1:
+        keep = sorted({round(i * (len(uniq) - 1) / (MAX_CAND - 2)) for i in range(MAX_CAND - 1)})
+        uniq = [uniq[i] for i in keep]
+    return words, times, uniq + [end]
+
+
+def conversation(rows):
+    """Turns of one conversation with words, word times and candidates."""
+    out = []
+    for turn in turns(rows):
+        words, times, cands = candidates(turn)
+        out.append(dict(s=turn[0][0], start=turn[0][2], end=turn[-1][3], words=words, times=times, cands=cands))
+    return out
+
+
+def context_at(conv, s, t, n=40):
+    """What the other speaker has said by time t: their latest turn that started before t, cut at t.
+    Overlapping turns are cut, so a candidate never sees the other speaker's later words."""
+    prev = [tr for tr in conv if tr['s'] != s and tr['start'] < t]
+    if not prev:
+        return ''
+    tr = prev[-1]
+    return ' '.join([w for w, wt in zip(tr['words'], tr['times']) if wt <= t][-n:])
 
 
 def call(prompt, lines, parse):
@@ -133,22 +159,28 @@ def score_of(s):
     return min(10, int(m.group())) if m else None
 
 
-def spread(items):
-    """Order items so that one batch never holds two prefixes of the same turn: otherwise the
-    model reads a later prefix in a neighbouring item and the draft leaks words it must not see."""
-    rank, seen = [], {}
-    for it in items:
-        key = (it['cid'], it['s'], it['end'])
-        rank.append(seen.get(key, 0))
-        seen[key] = rank[-1] + 1
+def batches(items):
+    """Batches in which no two items come from the same turn: otherwise the model reads a later
+    prefix in a neighbouring item and the draft leaks words it must not see."""
     rnd = random.Random(0)
-    order = sorted(range(len(items)), key=lambda i: (rank[i], rnd.random()))
-    return order
+    order = list(range(len(items)))
+    rnd.shuffle(order)
+    out, keys = [], []
+    for i in order:
+        k = (items[i]['cid'], items[i]['s'], items[i]['end'])
+        for b, ks in zip(out, keys):
+            if len(b) < BATCH and k not in ks:
+                b.append(i)
+                ks.add(k)
+                break
+        else:
+            out.append([i])
+            keys.append({k})
+    return out
 
 
 def run_batches(prompt, items, fmt, parse, workers=24):
-    order = spread(items)
-    chunks = [order[i:i + BATCH] for i in range(0, len(order), BATCH)]
+    chunks = batches(items)
     cost, out = 0.0, [None] * len(items)
     with ThreadPoolExecutor(workers) as pool:
         for n, (ch, (res, c)) in enumerate(zip(chunks, pool.map(
@@ -174,16 +206,14 @@ def main():
 
     items = []   # one per candidate
     for cid in cids:
-        prev_other = {1: '', 2: ''}
-        for turn in turns(data[cid]):
-            s = turn[0][0]
-            words, cands = candidates(turn)
-            ctx = prev_other[s]
-            full = ' '.join(words)
-            for n, t, kind in cands:
-                items.append(dict(cid=cid, s=s, t=t, kind=kind, n=n, N=len(words), end=turn[-1][3], ctx=ctx,
-                                  prefix=' '.join(words[:n]), full=full))
-            prev_other[3 - s] = full
+        conv = conversation(data[cid])
+        for tr in conv:
+            full = ' '.join(tr['words'])
+            ctx_end = context_at(conv, tr['s'], tr['end'])
+            for n, t, kind in tr['cands']:
+                items.append(dict(cid=cid, s=tr['s'], t=t, kind=kind, n=n, N=len(tr['words']), end=tr['end'],
+                                  start=tr['start'], ctx=context_at(conv, tr['s'], t), ctx_end=ctx_end,
+                                  prefix=' '.join(tr['words'][:n]), full=full))
     print(len(items), 'candidates,', sum(i['kind'] != 'end' for i in items), 'before turn ends', flush=True)
 
     fmt_d = lambda it: f'context: "{it["ctx"][-200:] or "(none)"}"  speaker so far: "{" ".join(it["prefix"].split()[-80:])}"'  # noqa: E731
@@ -194,7 +224,7 @@ def main():
 
     todo = [it for it in items if it['kind'] != 'end' and it['reply']
             and full_reply.get((it['cid'], it['s'], it['end']))]
-    fmt_j = lambda it: (f'context: "{it["ctx"][-200:] or "(none)"}"  full turn: "{" ".join(it["full"].split()[-150:])}"  '  # noqa: E731
+    fmt_j = lambda it: (f'context: "{it["ctx_end"][-200:] or "(none)"}"  full turn: "{" ".join(it["full"].split()[-150:])}"  '  # noqa: E731
                         f'A: "{it["reply"]}"  B: "{full_reply[(it["cid"], it["s"], it["end"])]}"')
     scores, c2 = run_batches(JUDGE, todo, fmt_j, score_of)
     for it, sc in zip(todo, scores):
@@ -204,7 +234,7 @@ def main():
     for it in items:
         sc = 10 if it['kind'] == 'end' else it.get('score')
         out.setdefault(it['cid'], []).append([it['s'], round(it['t'], 3), it['kind'], sc, it['n'], it['N'],
-                                              it['end'], ' '.join(it['prefix'].split()[-12:]), it['reply']])
+                                              it['end'], ' '.join(it['prefix'].split()[-12:]), it['reply'], it['start']])
     json.dump(out, open(a.dst, 'w'))
     miss = sum(1 for it in todo if it.get('score') is None)
     print(f'done: {len(items)} candidates, {miss} unscored, ${c1 + c2:.3f}')

@@ -73,19 +73,18 @@ def main(ann: str, labels: str, out: str = 'rescore.json', n: int = 4000):
     data = {**{f'tb/{k}': v for k, v in a['tbdev'].items()}, **{f'oto/{k}': v for k, v in a['oto'].items()}}
     items = []
     for cid in sorted(data):
-        prev = {1: '', 2: ''}
+        conv = L.conversation(data[cid])
         lab = {(x[0], x[6], x[4]): x for x in d.get(cid, [])}
-        for turn in L.turns(data[cid]):
-            s, end = turn[0][0], turn[-1][3]
-            words, cands = L.candidates(turn)
-            pre = [(n_, lab.get((s, end, n_))) for n_, t, kind in cands if kind != 'end']
-            pre = [(n_, x) for n_, x in pre if x and x[3] is not None]
+        for tr in conv:
+            s, end, words = tr['s'], tr['end'], tr['words']
+            pre = [(n_, t, lab.get((s, end, n_))) for n_, t, kind in tr['cands'] if kind != 'end']
+            pre = [(n_, t, x) for n_, t, x in pre if x and x[3] is not None]
             for j in range(1, len(pre)):
-                (n0, x0), (n1, _) = pre[j - 1], pre[j]
-                items.append(dict(key=f'{cid}|{s}|{end}|{n1}', ctx=' '.join(prev[s].split()[-40:]),
+                (n0, _, x0), (n1, t1, _) = pre[j - 1], pre[j]
+                # both prompts use the context at the newer candidate, so only the speaker's words differ
+                items.append(dict(key=f'{cid}|{s}|{end}|{n1}', ctx=L.context_at(conv, s, t1),
                                   prev_prefix=' '.join(words[:n0][-80:]), prefix=' '.join(words[:n1][-80:]),
                                   prev_reply=x0[8] or ''))
-            prev[3 - s] = ' '.join(words)
     random.Random(3).shuffle(items)
     items = items[:n]
     chunks = [items[i:i + 1000] for i in range(0, len(items), 1000)]

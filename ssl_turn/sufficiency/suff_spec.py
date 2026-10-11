@@ -37,7 +37,7 @@ def load(src):
     d = json.load(open(src))
     turns = defaultdict(list)
     for cid, v in d.items():
-        for s, t, kind, sc, n, N, end, tail, reply in v:
+        for s, t, kind, sc, n, N, end, tail, reply, *_ in v:
             turns[(cid, s, end)].append(dict(t=t, kind=kind, sc=sc, n=n, N=N, reply=reply or ''))
     for c in turns.values():
         c.sort(key=lambda x: x['n'])
