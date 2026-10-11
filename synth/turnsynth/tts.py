@@ -10,6 +10,8 @@ Backends:
   indextts IndexTTS2 / IndexTTS-2.5 (MultiTalk's choice). Zero-shot from a
           voice-prompt bank, emotion vectors, GPU. Synthesizes whole turns
           with dialogue context (see IndexTTS and render.synthesize_item).
+  fish    Fish Audio S2 over the hosted API (fish.py): zero-shot from the
+          same bank, whole-turn passes, word timings from the API.
   dummy   Shaped noise bursts per word. No model; for tests.
 """
 
@@ -339,4 +341,8 @@ def make_tts(name: str, **kwargs) -> TTS:
         return KokoroTTS(**kwargs)
     if name == "indextts":
         return IndexTTS(**kwargs)
+    if name == "fish":
+        from turnsynth.fish import FishTTS
+
+        return FishTTS(**kwargs)
     raise ValueError(f"unknown TTS backend {name!r}")

@@ -263,6 +263,67 @@ clip): AISHELL-3 PESQ 3.41 / SI-SDR 21.9 dB, Emilia-YODAS JA 3.38 / 21.2 dB,
 against LibriTTS-R 4.09 / 26.7 dB, so the ja/zh voices are a little less
 clean than the English ones.
 
+## Fish Audio S2 backend (2026-10-11)
+
+`--tts fish` (`turnsynth/fish.py`) renders through the Fish Audio API
+(`s2.1-pro-free` by default, `--fish-model`), so it needs no GPU. It plugs
+into the same pipeline as IndexTTS: same voice banks (the bank clip plus its
+transcript is an inline reference; clips are transcribed once with
+faster-whisper into the bank's `transcripts.json`), floor passes, the
+speaker's previous line as a second reference, the SQUIM glitch retry. Script
+emotion becomes an S2 tag (`[happy]`, `[surprised]`, ...) on the pass when its
+strongest axis is >= 0.3; S2 does not speak tags and the timestamps omit them.
+
+**Speed.** The script's per-line speed is not passed on by default. S2's
+`prosody.speed` time-stretches the output: the same sentence went from SQUIM
+PESQ 4.3 (speed 1) to 2.8-3.1 (0.92 or 1.1), barely changing its length at
+0.92. With speed on, the casual example scored PESQ 2.6 and the glitch retry
+re-synthesized about half the lines; the emotion tags made no difference
+(2.61 with, 2.62 without). `--fish-speed` turns it back on.
+
+**Word timings.** The API's `/v1/tts/stream/with-timestamp` returns word
+(en) or character-run (ja/zh) times on an 80 ms grid. `map_segments` maps them
+onto the script words (character matching, so ja/zh runs are split by
+character); every one of ~380 calls mapped, MMS_FA is the fallback
+(`--fish-timings mms` forces it). Against MMS_FA on the same audio, Fish starts
+are ~40 ms earlier and ends ~30 ms later (median). At pauses (a quiet run of
+>= 150 ms, 35 dB under the line's peak), the silence's own edges show which is
+closer:
+
+| error vs the pause edge, median (mean abs) | en (65 pauses) | zh (78) | ja (157) |
+|---|---|---|---|
+| word end, Fish | -140 ms (144) | +5 ms (69) | +20 ms (63) |
+| word end, MMS_FA | -232 ms (239) | -196 ms (212) | -163 ms (169) |
+| next word start, Fish | +10 ms (45) | -25 ms (53) | -25 ms (40) |
+| next word start, MMS_FA | +76 ms (86) | +18 ms (38) | +30 ms (51) |
+
+So Fish's ends are much closer to where the sound stops (MMS_FA ends early,
+which is why `_trim` cuts at acoustic decay), and starts are comparable.
+
+**Fish vs IndexTTS.** Same scripts as the v4 IndexTTS samples, scored the
+same way from the stereo audio (`--asr small.en` / `small`; error rate per
+channel against that speaker's script words, so it is higher than the
+pipeline's own WER; SQUIM on 2 s windows of speech). One conversation each,
+so read these as a first look; SQUIM is trained on English. The ja Fish
+render drew different Emilia voices than the IndexTTS one.
+
+| | WER/CER | SQUIM PESQ median | PESQ p10 | windows < 2.9 |
+|---|---|---|---|---|
+| casual en, IndexTTS v4 | 8.3% | 3.61 | 3.21 | 3% |
+| casual en, Fish | **3.4%** | **4.22** | **3.89** | 0% |
+| casual en, Fish with speed | 4.2% | 2.61 | 1.82 | 63% |
+| argumentative en, IndexTTS (natural ends) | 16.2% | 3.42 | 2.65 | 22% |
+| argumentative en, Fish | **9.1%** | **4.22** | **3.91** | 0% |
+| Chengdu zh, IndexTTS v4 | 8.0% | 3.59 | 2.74 | 12% |
+| Chengdu zh, Fish | **4.1%** | **3.96** | **3.68** | 0% |
+| Kyoto ja, IndexTTS v4 | **12.5%** | 3.17 | 2.73 | 23% |
+| Kyoto ja, Fish | 15.8% | **3.86** | **3.40** | 0% |
+
+Pipeline numbers for the Fish renders: WER 2.4% (casual), 5.9%
+(argumentative), CER 2.8% (zh), 12.3% (ja); agreement 0.96-1.0. Rendering ran
+at about real time (one sequential call at a time, 2-5 s per line), with no
+GPU. Samples: `synth-samples/fishaudio/` in the project files.
+
 ## Results so far
 
 Two hand-written scripts in `examples/scripts/` (one Casual, one
@@ -342,6 +403,7 @@ landed, word by word, for dense training targets) and `render_report.jsonl`
 | `turnsynth/script.py` | script schema, parser, four-layer filter with reason codes |
 | `turnsynth/config.py` | TurnBench conversation types and the timing model |
 | `turnsynth/tts.py` | IndexTTS (contextual), Kokoro and dummy backends with word timings |
+| `turnsynth/fish.py` | Fish Audio S2 API backend; maps the API's word timestamps onto script words |
 | `turnsynth/align.py` | MMS_FA forced alignment of script words (IndexTTS reports no timings) |
 | `turnsynth/voicebank.py` | voice-prompt banks: LibriTTS-R, GLOBE_V2 (en), Emilia-YODAS (ja), AISHELL-3 (zh) |
 | `turnsynth/lang.py` | per-language words, punctuation, error-rate units, romanization, backchannel lists |

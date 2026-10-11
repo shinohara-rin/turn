@@ -53,6 +53,10 @@ def cmd_render(args) -> None:
                       "context": not args.no_dialogue_context, "pass_mode": args.index_pass,
                       "emo_alpha": args.emo_alpha, "text_emotion": args.text_emotion,
                       "retry_below": args.retry_below or None}
+    if args.tts == "fish":
+        tts_kwargs = {"bank": args.voice_bank, "model": args.fish_model, "pass_mode": args.index_pass,
+                      "timings": args.fish_timings, "emotion_tags": not args.no_emotion_tags, "speed": args.fish_speed,
+                      "retry_below": args.retry_below or None}
     tts = make_tts(args.tts, **tts_kwargs)
     transcriber = Transcriber(args.asr, device=args.device) if args.asr else None
     judge = None
@@ -145,7 +149,7 @@ def main(argv=None) -> None:
 
     r = sub.add_parser("render", help="TTS + annotate + export TurnBench parquet")
     r.add_argument("scripts", help="a script JSON or a directory of them")
-    r.add_argument("--tts", default="kokoro", choices=["kokoro", "indextts", "dummy"])
+    r.add_argument("--tts", default="kokoro", choices=["kokoro", "indextts", "fish", "dummy"])
     r.add_argument("--index-model-dir", default="checkpoints/IndexTTS-2.5", help="IndexTTS weights (with config.yaml)")
     r.add_argument("--index-version", default="2.5", choices=["2.5", "2"])
     r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices); several comma-separated, e.g. one per language")
@@ -162,6 +166,12 @@ def main(argv=None) -> None:
                    help="IndexTTS: for lines without a script emotion, read one off the text with IndexTTS's QwenEmotion")
     r.add_argument("--retry-below", type=float, default=2.9,
                    help="IndexTTS: re-synthesize a line whose worst 2 s window scores under this estimated PESQ; 0 = off")
+    r.add_argument("--fish-model", default="s2.1-pro-free", help="Fish Audio model header (--tts fish)")
+    r.add_argument("--fish-timings", default="fish", choices=["fish", "mms"],
+                   help="word times from the Fish API's alignment, or MMS_FA forced alignment as for IndexTTS")
+    r.add_argument("--fish-speed", action="store_true",
+                   help="--tts fish: pass line speed to prosody.speed (off: it time-stretches and costs quality)")
+    r.add_argument("--no-emotion-tags", action="store_true", help="--tts fish: no [emotion] tag from the script emotion")
     r.add_argument("--asr", default="", help="faster-whisper model for the judge's transcripts (e.g. base.en; a multilingual one such as small for ja/zh); empty = script text")
     r.add_argument("--device", default="auto")
     r.add_argument("--judge", default="rules", choices=["rules", "llm"])
