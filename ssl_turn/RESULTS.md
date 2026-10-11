@@ -603,3 +603,16 @@ The r015 recipe with `feats: asr` (`configs/r016_asr.json`): the streaming FastC
   full data, so the single-frame probe advantage over Cat only partly carries over to the head.
 - **Verdict:** a real-time causal encoder with word content gets MTD-level EOT for about 1/70
   of the encode cost, but not MTD's INT. MTD stays the accuracy reference.
+
+## Silence-driven EOT, semantics probes, backchannels, pause-warp r020 (2026-10-11)
+
+Details in [`semantics/README.md`](semantics/README.md).
+- On eot-bench, r019's EOT score climbs with silence on both ends and holds (end 0.25 -> 0.76,
+  hold 0.05 -> 0.41 from 0.1 to 1.5 s), while LiveKit v1 decides within 100 ms (AUC 0.96).
+- Pause-onset probes (CV on eot-bench): FastConformer features 0.91 AUC at 100 ms vs r019's
+  0.85; the RNNT decoder state (0.62) and a text EOU model on true words (0.76) add nothing on
+  top. The lever is the head's objective and data, not a text branch.
+- Backchannel INT fires are lexical (multi-word reactions), not an otoSpeech speaker overfit:
+  TB dev 11-14% vs oto dev 26% of backchannels.
+- r020 pause-warp augmentation (stretch holds, cut yield gaps; `pausewarp.py`): neutral on TB dev,
+  oto dev and eot-bench at 5-10% cutoff, better only at 2%. The hold ramp barely flattens.
