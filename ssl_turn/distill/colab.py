@@ -154,9 +154,19 @@ def _get(volume, remote, root):
     if os.path.exists(dst):
         print('have', dst, flush=True)
         return
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    print('modal volume get', volume, remote, flush=True)
-    subprocess.run(['modal', 'volume', 'get', volume, remote, os.path.dirname(dst) or '.'], check=True)
+    import shutil
+    import time
+    part = dst + '.part'   # downloaded here first, so an interrupted pull is never taken as complete
+    for attempt in range(5):
+        shutil.rmtree(part, ignore_errors=True)
+        os.makedirs(part)
+        print('modal volume get', volume, remote, flush=True)
+        if subprocess.run(['modal', 'volume', 'get', volume, remote, part]).returncode == 0:
+            os.replace(os.path.join(part, os.path.basename(remote)), dst)
+            os.rmdir(part)
+            return
+        time.sleep(30 * 2 ** attempt)
+    raise RuntimeError(f'modal volume get {volume} {remote} failed')
 
 
 def cmd_pull(a):
