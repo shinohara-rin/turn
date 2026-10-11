@@ -28,7 +28,7 @@ class Committer {
 }
 
 // --- state ---------------------------------------------------------------------------------
-let worker = null, ready = null, framesPerCall = 2, ctx = null, graph = null, running = false;
+let worker = null, ready = null, framesPerCall = 2, gen = 0, ctx = null, graph = null, running = false;
 let hist = null, events = null, commits = null, lastT = -1, stats = null;
 const spk = [
   { name: 'A', src: 'mic', file: null },
@@ -101,7 +101,7 @@ function onWorker(e) {
   } else if (m.type === 'overload') {
     setStatus('This device cannot keep up in real time with this backend, so the stream was stopped. Try the other backend.', true);
     stop(false);
-  } else if (m.type === 'frames') onFrames(m);
+  } else if (m.type === 'frames' && m.gen === gen && running) onFrames(m);
 }
 
 const debug = new URLSearchParams(location.search).has('debug');
@@ -148,6 +148,12 @@ async function micStream() {
 }
 
 async function buildGraph() {
+  // check the inputs before asking for the microphone
+  if (mode === 'stereo' && !stereoFile) throw new Error('Choose a stereo file first.');
+  if (mode === 'two') {
+    if (spk[0].src === 'mic' && spk[1].src === 'mic') throw new Error('Only one speaker can use the microphone.');
+    for (const sp of spk) if (sp.src === 'file' && !sp.file) throw new Error(`Choose an audio file for speaker ${sp.name}, or set it to Silent.`);
+  }
   ctx = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
   await ctx.audioWorklet.addModule('capture.js');
   const merger = ctx.createChannelMerger(2);
@@ -157,6 +163,16 @@ async function buildGraph() {
   merger.connect(node).connect(mute).connect(ctx.destination);
   const g = { merger, node, sources: [], stream: null, files: 0, ended: 0 };
   const monitor = $('monitor').checked;
+  try {
+    await addSources(g, merger, monitor);
+  } catch (e) {
+    if (g.stream) g.stream.getTracks().forEach((t) => t.stop());
+    throw e;
+  }
+  return g;
+}
+
+async function addSources(g, merger, monitor) {
 
   const playFile = (audioBuf, dests) => {
     const s = ctx.createBufferSource();
@@ -164,13 +180,12 @@ async function buildGraph() {
     for (const d of dests) s.connect(...d);
     g.sources.push(s);
     g.files++;
-    s.onended = () => { if (++g.ended >= g.files && !g.stream && running) setTimeout(() => stop(), 1200); };
+    s.onended = () => { if (++g.ended >= g.files && !g.stream && running) setTimeout(() => { if (graph === g) stop(); }, 1200); };
     return s;
   };
   const toChannel = (c) => [merger, 0, c];
 
   if (mode === 'stereo') {
-    if (!stereoFile) throw new Error('Choose a stereo file first.');
     const b = await decode(stereoFile);
     const split = ctx.createChannelSplitter(2);
     const s = playFile(b, [[split]]);
@@ -178,14 +193,12 @@ async function buildGraph() {
     split.connect(merger, b.numberOfChannels > 1 ? 1 : 0, 1);
     if (monitor) s.connect(ctx.destination);
   } else {
-    if (spk[0].src === 'mic' && spk[1].src === 'mic') throw new Error('Only one speaker can use the microphone.');
     for (let c = 0; c < 2; c++) {
       const sp = spk[c];
       if (sp.src === 'mic') {
         g.stream = await micStream();
         ctx.createMediaStreamSource(g.stream).connect(merger, 0, c);
       } else if (sp.src === 'file') {
-        if (!sp.file) throw new Error(`Choose an audio file for speaker ${sp.name}, or set it to Silent.`);
         const s = playFile(await decode(sp.file), [toChannel(c)]);
         if (monitor) s.connect(ctx.destination);
       }
@@ -204,7 +217,6 @@ async function buildGraph() {
     if (monitor) gain.connect(ctx.destination);
     g.sources.push(s);
   }
-  return g;
 }
 
 async function start() {
@@ -216,7 +228,7 @@ async function start() {
     const ch = new MessageChannel();
     // capture and file playback both start at t0, so a file's first sample is the stream's first
     const t0 = ctx.currentTime + 0.15;
-    worker.postMessage({ type: 'start', port: ch.port2 }, [ch.port2]);
+    worker.postMessage({ type: 'start', gen: ++gen, port: ch.port2 }, [ch.port2]);
     graph.node.port.postMessage({ port: ch.port1, startFrame: Math.round(t0 * ctx.sampleRate) }, [ch.port1]);
     running = true;
     for (const s of graph.sources) s.start(t0);

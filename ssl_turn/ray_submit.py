@@ -69,6 +69,7 @@ def main():
     ap.add_argument('--wait', action='store_true')
     ap.add_argument('--python', default='python', help="interpreter on the node, e.g. a venv that already has torch")
     ap.add_argument('--setup', default='', help='shell command run on the node before the entrypoint')
+    ap.add_argument('--script', default='ray_run.py', help='script in the working dir to run (e.g. distill/node.py)')
     ap.add_argument('args', nargs=argparse.REMAINDER)
     a = ap.parse_args()
     url = a.url.rstrip('/')
@@ -84,7 +85,7 @@ def main():
     name, data = package([tuple(x.split(':', 1)) for x in a.add])
     call(url, f'/api/packages/gcs/{name}', data, method='PUT', raw=True)
     args = [x for x in a.args if x != '--']
-    entry = f'{a.python} ray_run.py ' + ' '.join(args)
+    entry = f'{a.python} {a.script} ' + ' '.join(args)
     job = {'entrypoint': f'{a.setup} && {entry}' if a.setup else entry, 'entrypoint_num_gpus': a.gpus,
            'runtime_env': {'working_dir': f'gcs://{name}', 'env_vars': {k: os.environ[k] for k in a.forward_env}}}
     if ENVS[a.env]:

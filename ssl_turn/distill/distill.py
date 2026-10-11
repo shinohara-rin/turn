@@ -390,15 +390,41 @@ def soft_ce(s, t, w=None):
 KD = dict(floor=1.0, future=1.0, act=0.5, fine=0.5, vap=0.5, yld=1.0)
 
 
-def kd_loss(out, tb, weights=None):
+def pause_frames(tb_act, window=31):
+    """[B, T] bool: either speaker is in a pause, i.e. the teacher says SILENT (act class 0) now and
+    that speaker was not silent at some frame in the previous `window` frames (2.5 s). Causal; it is
+    the student's analogue of a VAD candidate (residual/README.md)."""
+    import torch.nn.functional as F
+    silent = tb_act.float().softmax(-1)[..., 0] > 0.5                       # [B, T, 2]
+    talk = (~silent).float().transpose(1, 2)                                 # [B, 2, T]
+    recent = F.max_pool1d(F.pad(talk, (window, 0)), window, stride=1)[..., :talk.shape[-1]] > 0  # frames t-window..t-1
+    return (silent & recent.transpose(1, 2)).any(-1)
+
+
+def kd_loss(out, tb, weights=None, pause_w=0.0):
+    """Soft KD over every head. pause_w > 0 up-weights the floor / future / yld terms on pause
+    frames (pause_frames) by 1 + pause_w, a weighted mean over frames."""
     import torch.nn.functional as F
     w = {**KD, **(weights or {})}
+    fw = None
+    if pause_w > 0 and 'act' in tb:
+        fw = 1.0 + pause_w * pause_frames(tb['act']).float()                 # [B, T]
     parts = {}
     for k in ('floor', 'future', 'act', 'fine', 'vap'):
         if k in out and k in tb and w.get(k, 0) > 0:
-            parts[k] = soft_ce(out[k], tb[k])
+            if fw is not None and k == 'floor':
+                parts[k] = soft_ce(out[k], tb[k], fw)
+            elif fw is not None and k == 'future':
+                parts[k] = soft_ce(out[k], tb[k], fw[..., None])
+            else:
+                parts[k] = soft_ce(out[k], tb[k])
     if 'yld' in out and 'yld' in tb and w.get('yld', 0) > 0:
-        parts['yld'] = F.binary_cross_entropy_with_logits(out['yld'].float(), tb['yld'].float().sigmoid())
+        bce = F.binary_cross_entropy_with_logits(out['yld'].float(), tb['yld'].float().sigmoid(), reduction='none')
+        if fw is None:
+            parts['yld'] = bce.mean()
+        else:
+            ww = fw.view(*fw.shape, *[1] * (bce.dim() - 2)).expand_as(bce)
+            parts['yld'] = (bce * ww).sum() / ww.sum()
     return sum(w[k] * v for k, v in parts.items()), parts
 
 
@@ -588,7 +614,7 @@ def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every
             with torch.autocast(dev, dtype=torch.bfloat16, enabled=dev == 'cuda'):
                 out = net(x, with_feat=cfg.get('feat', 0) > 0, vad=v)
             out = {k: o.float() for k, o in out.items()}
-            loss, parts = kd_loss(out, tb, cfg.get('kd'))
+            loss, parts = kd_loss(out, tb, cfg.get('kd'), cfg.get('pause_w', 0.0))
             if cfg.get('gt', 0) > 0:
                 g, gp = m.loss({k: o[:nl] for k, o in out.items() if k != 'feat'}, y)
                 loss = loss + cfg['gt'] * g

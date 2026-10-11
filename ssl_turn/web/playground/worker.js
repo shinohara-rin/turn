@@ -6,14 +6,20 @@ import { TurnStream } from './turn_stream.js';
 ort.env.wasm.wasmPaths = new URL('./ort/', import.meta.url).href;
 ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
 
-const CACHE = 'turn-playground-v1';
+// Bump MODEL when the ONNX files change: the cache is keyed by it, so encoder and head always come
+// from the same release, and caches of older releases are deleted.
+const MODEL = 'r019-bgaug-s1';
+const CACHE = `turn-playground-${MODEL}`;
 const MAX_BACKLOG = 40;          // blocks (3.2 s) of unprocessed audio before we give up
-let ts = null, queue = [], busy = false, stopped = true, blocks = 0;
+let ts = null, queue = [], busy = null, stopped = true, blocks = 0, gen = 0;
 const levels = new Array(64);
 
 async function fetchCached(url, label) {
   let cache = null;
-  try { cache = await caches.open(CACHE); } catch { /* no Cache API */ }
+  try {
+    for (const k of await caches.keys()) if (k.startsWith('turn-playground-') && k !== CACHE) await caches.delete(k);
+    cache = await caches.open(CACHE);
+  } catch { /* no Cache API */ }
   const hit = cache && await cache.match(url);
   if (hit) {
     postMessage({ type: 'progress', label, done: 1, total: 1, cached: true });
@@ -53,27 +59,30 @@ async function init({ ep, encoder, frames }) {
 
 const rms = (x) => { let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i]; return Math.sqrt(s / x.length); };
 
-async function pump() {
-  if (busy) return;
-  busy = true;
-  while (queue.length && !stopped) {
-    if (queue.length > MAX_BACKLOG) {
-      stopped = true;
-      queue = [];
-      postMessage({ type: 'overload' });
-      break;
+function pump() {
+  if (!busy) busy = run(gen).finally(() => { busy = null; });
+}
+
+async function run(g) {
+  try {
+    while (queue.length && !stopped && g === gen) {
+      const blk = queue.shift();
+      const s = performance.now();
+      levels[blocks++ % 64] = [rms(blk.a), rms(blk.b)];
+      const outs = await ts.push(blk.a, blk.b);
+      if (g !== gen) return;                // stopped or restarted meanwhile: drop
+      if (!outs.length) continue;
+      // frame t's newest audio is block t - 1 (0-based), so show that block's level with it
+      const lv = (t) => (t >= 1 && t <= blocks ? levels[(t - 1) % 64] : [0, 0]);
+      postMessage({ type: 'frames', gen: g, outs: outs.map((o) => ({ t: o.t, eot: o.eot, int: o.int, silent: o.silent, level: lv(o.t) })),
+                    ms: performance.now() - s, lag: performance.now() - blk.recv, backlog: queue.length });
     }
-    const blk = queue.shift();
-    const s = performance.now();
-    levels[blocks++ % 64] = [rms(blk.a), rms(blk.b)];
-    const outs = await ts.push(blk.a, blk.b);
-    if (!outs.length) continue;
-    // frame t's newest audio is block t - 1 (0-based), so show that block's level with it
-    const lv = (t) => (t >= 1 && t <= blocks ? levels[(t - 1) % 64] : [0, 0]);
-    postMessage({ type: 'frames', outs: outs.map((o) => ({ t: o.t, eot: o.eot, int: o.int, silent: o.silent, level: lv(o.t) })),
-                  ms: performance.now() - s, lag: performance.now() - blk.recv, backlog: queue.length });
+  } catch (err) {
+    if (g !== gen) return;
+    stopped = true;
+    queue = [];
+    postMessage({ type: 'error', text: `inference failed: ${err && err.message ? err.message : err}` });
   }
-  busy = false;
 }
 
 onmessage = async (e) => {
@@ -81,17 +90,22 @@ onmessage = async (e) => {
   try {
     if (m.type === 'init') await init(m);
     else if (m.type === 'start') {
+      gen = m.gen;
+      stopped = true;
+      if (busy) await busy;                 // let an in-flight step of the previous run finish
       ts.reset();
       queue = [];
       blocks = 0;
       stopped = false;
+      const g = gen;
       m.port.onmessage = (ev) => {
-        if (stopped) return;
+        if (stopped || g !== gen) return;
         queue.push({ ...ev.data, recv: performance.now() });
         if (queue.length > MAX_BACKLOG) { stopped = true; queue = []; postMessage({ type: 'overload' }); return; }
         pump();
       };
     } else if (m.type === 'stop') {
+      gen++;
       stopped = true;
       queue = [];
     }

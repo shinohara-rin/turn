@@ -156,7 +156,8 @@ def _get(volume, remote, root):
         return
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     print('modal volume get', volume, remote, flush=True)
-    subprocess.run(['modal', 'volume', 'get', volume, remote, os.path.dirname(dst) or '.'], check=True)
+    subprocess.run([sys.executable, '-m', 'modal', 'volume', 'get', volume, remote, os.path.dirname(dst) or '.'],
+                   check=True)
 
 
 def cmd_pull(a):
