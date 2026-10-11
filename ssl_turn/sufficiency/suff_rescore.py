@@ -81,7 +81,7 @@ def main(ann: str, labels: str, out: str = 'rescore.json', n: int = 4000):
             pre = [(n_, lab.get((s, end, n_))) for n_, t, kind in cands if kind != 'end']
             pre = [(n_, x) for n_, x in pre if x and x[3] is not None]
             for j in range(1, len(pre)):
-                (n0, x0), (n1, x1) = pre[j - 1], pre[j]
+                (n0, x0), (n1, _) = pre[j - 1], pre[j]
                 items.append(dict(key=f'{cid}|{s}|{end}|{n1}', ctx=' '.join(prev[s].split()[-40:]),
                                   prev_prefix=' '.join(words[:n0][-80:]), prefix=' '.join(words[:n1][-80:]),
                                   prev_reply=x0[8] or ''))
