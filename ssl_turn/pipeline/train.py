@@ -326,6 +326,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     n_main = len(off) - 1
     extra_ids = []
     if extra_split:
+        if extra_n <= 0:
+            raise ValueError('extra_split needs extra_n > 0 (conversations per language)')
+        if any(c.get('enroll') for c in configs.values()):
+            raise NotImplementedError('extra_split with speaker-enrolled configs: no enrollment for extra conversations')
         avail = sorted({f[:-4] for f in os.listdir(f'{WORK}/{FEAT_DIR}/{extra_split}') if not f.endswith('.tmp.npy')}
                        & {f[:-4] for f in os.listdir(f'{WORK}/labels/{extra_split}')})
         for lang in sorted({c.split('_')[0] for c in avail}):
@@ -550,7 +554,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
             if cfg.get('pause_weight', 0) > 0:  # up-weight frames where nobody is claiming the floor
                 quiet = (yb['act'] != lb.A['CLAIM']).all(-1).float()
                 boost = 1 + cfg['pause_weight'] * quiet
-                target = dict(yb, floor_w=yb['floor_w'] * boost, future_w=yb['future_w'] * boost[..., None])
+                target = dict(target, floor_w=target['floor_w'] * boost, future_w=target['future_w'] * boost[..., None])
             loss, parts = m.loss({k: v.float() for k, v in out.items()}, target, cfg.get('loss_weights'))
             opts[name].zero_grad(set_to_none=True)
             loss.backward()
