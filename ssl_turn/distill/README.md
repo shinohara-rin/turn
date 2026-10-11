@@ -145,6 +145,27 @@ steps; s3m and s8m (best dev checkpoints at 3000 / 4000 steps again).
 - Feature distillation (`feat`) made no measurable difference at this data size (d001 s3m vs
   s3m_nofeat: TB dev and eot-bench within seed noise).
 
+## Variants on one GPU (`colab.py`, `colab_variants.ipynb`)
+
+Cheap follow-ups, set up to run on a Colab A100 (High-RAM) instead of Modal. `colab.py` runs the
+Modal functions locally behind a stand-in `modal` module and pulls the prepared data from the
+volumes (~46 GB: 16 kHz audio, background copies, teacher r025s2 logits, labels, VAD), so nothing is
+re-encoded. Training data now stays in host RAM (`data_device='cpu'`), with batches built in
+background threads.
+
+| run | config | change vs. d003 |
+| --- | --- | --- |
+| c1 | `c1_aug.json` | s3m control and `acoustic` 0.5: synthetic room reverb, random mic EQ and 3.4-7 kHz band limits on the student's input only (`augment.acoustic`) |
+| c2 | `c2_vad.json` | `vad_in`: Silero VAD per 80 ms frame (`augment.vad_frames`) added to the student's encoder output; the control shares its batches (no pool background, since VAD is precomputed on clean pool audio) |
+| c3 | `c3_feat.json` | feature distillation (`feat` 1) on every row including the pool (`pull --feats`) |
+| c4 | `c4_fc.json` | `arch: fc` (`student_fc.py`): the bottom 4 / 2 layers of the pretrained FastConformer, fine-tuned at lr 1e-4, under the floor head (27M / 15M) |
+| all | `--select ood --keep-all` | checkpoint picked by KD loss summed over otoSpeech dev, 10% held-out voice-agent sessions and 2.5% held-out pool; every checkpoint kept |
+
+`xasr_probe.py` adds GilgameshWind/X-ASR-zh-en (streaming Zipformer, ~148M encoder, 160 ms
+chunks + 130 ms subsampling right context) to the multilingual thread's eot-bench encoder probe.
+Tested on CPU here: every variant trains and infers on a fake data tree, the FastConformer student
+is causal (`test_student.py`), and X-ASR features extract.
+
 ## Reproduce
 
 ```bash

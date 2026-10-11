@@ -65,3 +65,47 @@ def test_stream_step_matches_offline():
         assert torch.allclose(post[:, 0], ref['floor'][0].softmax(-1), atol=1e-4), K
         assert torch.allclose(yld, ref['yld'][0].sigmoid(), atol=1e-4), K
         assert torch.allclose(silent, ref['act'][0].softmax(-1)[..., 0], atol=1e-4), K
+
+
+def test_vad_input_and_frames():
+    """vad_in students read Silero per 80 ms frame; augment.to_frames maps 32 ms chunks causally."""
+    import augment
+    p = np.linspace(0, 1, 25)[:, None]                       # 25 chunks = 0.8 s
+    f = augment.to_frames(p, 10)
+    assert f.shape == (10, 1, 2)
+    # frame t: last chunk ending by (t + 1) * 80 ms is floor(2.5 (t + 1)) - 1
+    assert f[3, 0, 0] == np.round(p[int(2.5 * 4) - 1, 0] * 255)
+    net = st.build(dict(preset='s1m', vad_in=True, window_s=0.8, head_window_s=0.8)).eval()
+    wav = torch.randn(1, 20 * st.FRAME, 2) * 0.1
+    v = torch.randint(0, 255, (1, 20, 2, 2), dtype=torch.uint8)
+    with torch.no_grad():
+        a, b = net(wav, vad=v)['floor'], net(wav, vad=torch.zeros_like(v))['floor']
+    assert not torch.allclose(a, b)
+
+
+def test_acoustic_keeps_shape_and_silence():
+    import augment
+    torch.manual_seed(0)
+    wav = torch.randn(3, 30 * st.FRAME, 2) * 0.1
+    wav[:, :, 1] = 0                                          # a silent agent channel stays silent
+    out = augment.acoustic(wav, p=1.0)
+    assert out.shape == wav.shape and torch.all(out[:, :, 1] == 0)
+    assert not torch.allclose(out[:, :, 0], wav[:, :, 0])
+
+
+def test_fc_student_causal():
+    """FastConformer-initialised student (needs NeMo): frame t uses audio before (t + 1) * 80 ms."""
+    import importlib.util
+    import pytest
+    if importlib.util.find_spec('nemo') is None:
+        pytest.skip('NeMo not installed')
+    net = st.build(dict(arch='fc', layers=2, head_dim=96, head_layers=1, head_window_s=0.8)).eval()
+    T, cut = 40, 25
+    wav = torch.randn(1, T * st.FRAME, 2) * 0.1
+    wav2 = wav.clone()
+    wav2[:, cut * st.FRAME:] = torch.randn_like(wav2[:, cut * st.FRAME:])
+    with torch.no_grad():
+        a, b = net(wav)['floor'], net(wav2)['floor']
+    assert a.shape == (1, T, 4)
+    assert torch.allclose(a[:, :cut], b[:, :cut], atol=1e-4), (a[:, :cut] - b[:, :cut]).abs().max()
+    assert not torch.allclose(a[:, cut + 1], b[:, cut + 1], atol=1e-4)

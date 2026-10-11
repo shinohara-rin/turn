@@ -1,0 +1,3 @@
+{
+ "s3m_feat": {"preset": "s3m", "gt": 0.5, "feat": 1.0, "bg_aug": 0.5, "dropout": 0.1, "eotb_aug": 0.2, "pool_aug": 0.35}
+}

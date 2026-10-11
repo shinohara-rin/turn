@@ -124,20 +124,24 @@ class Student(nn.Module):
     """forward(wav [B, S, C]) with C = 2 channels (one per speaker) -> TurnModel outputs + 'feat'."""
 
     def __init__(self, dim=256, layers=6, heads=4, window_s=5.6, kernel=9, head_dim=192, head_layers=3,
-                 head_window_s=20.0, feat_dim=1024, dropout=0.1, yld=True):
+                 head_window_s=20.0, feat_dim=1024, dropout=0.1, yld=True, vad_in=False):
         super().__init__()
         self.encoder = Encoder(dim, layers, heads, window_s, kernel, dropout=dropout)
         self.head = m.TurnModel(tap_layers=0, final_dim=dim, dim=head_dim, heads=4, layers=head_layers,
                                 window_s=head_window_s, dropout=dropout, yld=yld)
         self.feat = nn.Linear(dim, feat_dim) if feat_dim else None
+        self.vad_proj = nn.Linear(2, dim) if vad_in else None  # Silero VAD per frame (augment.vad_frames)
 
     def encode(self, wav):
         B, S, C = wav.shape
         z = self.encoder(wav.permute(0, 2, 1).reshape(B * C, S))
         return z.view(B, C, z.shape[1], -1).permute(0, 2, 1, 3)  # [B, T, C, D]
 
-    def forward(self, wav, with_feat=False):
+    def forward(self, wav, with_feat=False, vad=None):
+        """vad: uint8 [B, T, C, 2] (augment.vad_frames), required when built with vad_in."""
         z = self.encode(wav)
+        if self.vad_proj is not None:
+            z = z + self.vad_proj(vad[:, :z.shape[1]].to(z.dtype) / 255)
         out = self.head(None, z)
         if with_feat and self.feat is not None:
             out['feat'] = self.feat(z)
@@ -159,14 +163,20 @@ PRESETS = {  # name: Student kwargs
 
 def context_frames(cfg):
     """Left context (80 ms frames) after which a Student output equals the full-sequence one."""
+    if cfg.get('arch') == 'fc':
+        import student_fc
+        return student_fc.context_frames(cfg)
     enc = cfg.get('layers', 6) * (int(round(cfg.get('window_s', 5.6) / m.FRAME_S)) - 1 + cfg.get('kernel', 9) - 1) + 2
     return enc + m.context_frames(cfg.get('head_layers', 3), cfg.get('head_window_s', 20.0))
 
 
 def build(cfg):
+    if cfg.get('arch') == 'fc':  # bottom layers of the pretrained FastConformer (needs NeMo)
+        import student_fc
+        return student_fc.build(cfg)
     kw = {**PRESETS.get(cfg.get('preset', ''), {}), **{k: v for k, v in cfg.items() if k in (
         'dim', 'layers', 'heads', 'window_s', 'kernel', 'head_dim', 'head_layers', 'head_window_s', 'feat_dim',
-        'dropout', 'yld')}}
+        'dropout', 'yld', 'vad_in')}}
     return Student(**kw)
 
 

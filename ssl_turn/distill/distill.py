@@ -237,9 +237,18 @@ def teacher(run: str = 'r019_asr_bgaug', name: str = 'bgaug_s2', tag: str = 'r01
 
 # ---- 3. student training --------------------------------------------------------------------------
 
-def _load(split, cids, tag, device, labels=True, aug=False, feats=True):
-    """Concatenated per-frame arrays on `device`: audio A [N * 1280, 2] (and the augmented copy),
-    teacher logits, gold labels (+ pause targets), teacher features [N, 2, 1024]."""
+def _np(x):
+    import numpy as np
+    return np.ascontiguousarray(x)
+
+
+def _load(split, cids, tag, device, labels=True, aug=False, feats=False, vad=False, mono=False):
+    """One data source, frames concatenated over conversations (crops never cross a boundary):
+      A  [N * 1280, C] float16 audio on `device` (C = 1 with mono, the pool), Aa its background copy
+      T  teacher logits, Y gold labels (+ pause targets) on `device`
+      F  the teacher's FastConformer frames, lazily: one memory map per conversation
+      V / Va  Silero VAD per frame, uint8 [N, C, 2] ({WORK}/vadf/{split}[_aug]/{cid}.npy)
+    `off` holds the frame offsets."""
     import numpy as np
     import torch
     from concurrent.futures import ThreadPoolExecutor
@@ -255,17 +264,24 @@ def _load(split, cids, tag, device, labels=True, aug=False, feats=True):
         if labels:
             with np.load(f'{WORK}/labels/{split}/{cid}.npz') as z:
                 T = min(T, len(z['floor']))
+        if feats:
+            T = min(T, np.load(f'{WORK}/feats_asr/{split}/{cid}.npy', mmap_mode='r').shape[0])
         return T
 
     def read(cid, T):
-        r = dict(a=np.load(f'{WORK}/audio16/{split}/{cid}.npy', mmap_mode='r')[:T * FRAME])
+        a = np.load(f'{WORK}/audio16/{split}/{cid}.npy', mmap_mode='r')[:T * FRAME]
+        r = dict(a=a[:, None] if a.ndim == 1 else a)
         if aug:
             p = f'{WORK}/audio16_aug/{split}/{cid}.npy'
             r['aug'] = np.load(p, mmap_mode='r')[:T * FRAME] if os.path.exists(p) else r['a']
-        if feats:
-            r['feat'] = np.load(f'{WORK}/feats_asr/{split}/{cid}.npy', mmap_mode='r')[:T]
         with np.load(f'{WORK}/teacher/{tag}/{split}/{cid}.npz') as z:
             r['t'] = {k: z[k][:T] for k in z.files}
+        if vad:
+            v = np.load(f'{WORK}/vadf/{split}/{cid}.npy')[:T]
+            r['v'] = v[:, None] if v.ndim == 2 else v
+            if aug:
+                p = f'{WORK}/vadf/{split}_aug/{cid}.npy'
+                r['va'] = np.load(p)[:T] if os.path.exists(p) else r['v']
         if labels:
             with np.load(f'{WORK}/labels/{split}/{cid}.npz') as z:
                 lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
@@ -279,17 +295,21 @@ def _load(split, cids, tag, device, labels=True, aug=False, feats=True):
         lengths = list(pool.map(length, cids))
         off = np.concatenate([[0], np.cumsum(lengths)]).tolist()
         N = off[-1]
-        A = torch.empty((N * FRAME, 2), dtype=torch.float16, device=device)
-        Aa = torch.empty((N * FRAME, 2), dtype=torch.float16, device=device) if aug else None
-        Fz = torch.empty((N, 2, 1024), dtype=torch.float16, device=device) if feats else None
+        C = 1 if mono else 2
+        A = torch.empty((N * FRAME, C), dtype=torch.float16, device=device)
+        Aa = torch.empty((N * FRAME, C), dtype=torch.float16, device=device) if aug else None
+        V = torch.empty((N, C, 2), dtype=torch.uint8, device=device) if vad else None
+        Va = torch.empty((N, C, 2), dtype=torch.uint8, device=device) if vad and aug else None
         Tch, Y = {}, []
         for a, r in zip(off[:-1], pool.map(read, cids, lengths)):
             T = len(r['a']) // FRAME
-            A[a * FRAME:(a + T) * FRAME] = torch.from_numpy(np.ascontiguousarray(r['a'])).to(device)
+            A[a * FRAME:(a + T) * FRAME] = torch.from_numpy(_np(r['a'])).to(device)
             if aug:
-                Aa[a * FRAME:(a + T) * FRAME] = torch.from_numpy(np.ascontiguousarray(r['aug'])).to(device)
-            if feats:
-                Fz[a:a + T] = torch.from_numpy(np.ascontiguousarray(r['feat'])).to(device)
+                Aa[a * FRAME:(a + T) * FRAME] = torch.from_numpy(_np(r['aug'])).to(device)
+            if vad:
+                V[a:a + T] = torch.from_numpy(_np(r['v'])).to(device)
+                if aug:
+                    Va[a:a + T] = torch.from_numpy(_np(r['va'])).to(device)
             for k, v in r['t'].items():
                 if k not in Tch:
                     Tch[k] = torch.empty((N,) + v.shape[1:], dtype=torch.float16, device=device)
@@ -300,33 +320,60 @@ def _load(split, cids, tag, device, labels=True, aug=False, feats=True):
     if labels:
         import train as tr
         Yt = tr.stack_labels(Y, device)
-    return dict(A=A, Aa=Aa, F=Fz, T=Tch, Y=Yt, off=off)
+    Fz = [np.load(f'{WORK}/feats_asr/{split}/{c}.npy', mmap_mode='r') for c in cids] if feats else None
+    return dict(A=A, Aa=Aa, F=Fz, T=Tch, Y=Yt, V=V, Va=Va, off=off, n=len(cids))
 
 
-def _load_pool(cids, tag, device):
-    """Unlabeled pool (pool.py): mono user audio A [N * 1280] and the teacher's logits."""
+def _load_pool(cids, tag, device, feats=False, vad=False):
+    """Unlabeled pool (pool.py): mono user audio, the teacher's logits (agent channel: digital silence)."""
+    return _load('pool', cids, tag, device, labels=False, feats=feats, vad=vad, mono=True)
+
+
+def _starts(off, crop, step=1):
+    import torch
+    return torch.cat([torch.arange(a, b - crop, step) for a, b in zip(off[:-1], off[1:]) if b - a > crop])
+
+
+def _gather(x, starts, crop, scale=1):
+    """Rows x[s * scale:(s + crop) * scale] for each start (plain slices: fast on CPU and GPU)."""
+    import torch
+    return torch.stack([x[s * scale:(s + crop) * scale] for s in starts])
+
+
+def _gather_feats(S, starts, crop):
+    """The lazily mapped teacher frames of each crop: [B, crop, 2, 1024] float16 (CPU)."""
+    import bisect
     import numpy as np
     import torch
-    from concurrent.futures import ThreadPoolExecutor
+    out = np.empty((len(starts), crop, 2, 1024), np.float16)
+    for j, s in enumerate(starts):
+        i = bisect.bisect_right(S['off'], s) - 1
+        lo = s - S['off'][i]
+        out[j] = S['F'][i][lo:lo + crop]
+    return torch.from_numpy(out)
 
-    def read(cid):
-        a = np.load(f'{WORK}/audio16/pool/{cid}.npy')
-        with np.load(f'{WORK}/teacher/{tag}/pool/{cid}.npz') as z:
-            T = min(len(a) // FRAME, len(z['floor']))
-            return a[:T * FRAME], {k: z[k][:T] for k in z.files}
 
-    with ThreadPoolExecutor(16) as pool:
-        rs = list(pool.map(read, cids))
-    off = np.concatenate([[0], np.cumsum([len(a) // FRAME for a, _ in rs])]).tolist()
-    N = off[-1]
-    A = torch.empty(N * FRAME, dtype=torch.float16, device=device)
-    Tch = {k: torch.empty((N,) + v.shape[1:], dtype=torch.float16, device=device) for k, v in rs[0][1].items()}
-    for a0, (a, t) in zip(off[:-1], rs):
-        T = len(a) // FRAME
-        A[a0 * FRAME:(a0 + T) * FRAME] = torch.from_numpy(a).to(device)
-        for k, v in t.items():
-            Tch[k][a0:a0 + T] = torch.from_numpy(v).to(device)
-    return dict(A=A, T=Tch, off=off)
+def _crops(S, starts, crop, dev, aug_rows=None, aug_ch=None, feats=False):
+    """Crops of one source moved to `dev`: wav [B, crop * 1280, 2] float, teacher dict, labels dict,
+    teacher frames, VAD frames [B, crop, 2, 2]. Mono sources get a silent second channel."""
+    import torch
+    starts = [int(s) for s in starts]
+    wav = _gather(S['A'], starts, crop, FRAME).to(dev, non_blocking=True).float()
+    v = _gather(S['V'], starts, crop).to(dev) if S['V'] is not None else None
+    if aug_rows is not None:
+        pick = (aug_rows[:, None] & (torch.arange(wav.shape[-1], device=dev)[None] == aug_ch[:, None]))
+        wa = _gather(S['Aa'], starts, crop, FRAME).to(dev, non_blocking=True).float()
+        wav = torch.where(pick[:, None], wa, wav)
+        if v is not None:
+            v = torch.where(pick[:, None, :, None], _gather(S['Va'], starts, crop).to(dev), v)
+    if wav.shape[-1] == 1:
+        wav = torch.cat([wav, torch.zeros_like(wav)], -1)
+        if v is not None:
+            v = torch.cat([v, torch.zeros_like(v)], 2)
+    tb = {k: _gather(t, starts, crop).to(dev, non_blocking=True) for k, t in S['T'].items()}
+    y = {k: _gather(t, starts, crop).to(dev, non_blocking=True) for k, t in S['Y'].items()} if S['Y'] is not None else None
+    f = _gather_feats(S, starts, crop).to(dev, non_blocking=True) if feats else None
+    return wav, tb, y, f, v
 
 
 def soft_ce(s, t, w=None):
@@ -355,156 +402,199 @@ def kd_loss(out, tb, weights=None):
     return sum(w[k] * v for k, v in parts.items()), parts
 
 
+def _cat(a, b):
+    if a is None or b is None:
+        return None
+    if isinstance(a, dict):
+        return {k: _cat(a[k], b[k]) for k in a}
+    import torch
+    return torch.cat([a, b])
+
+
 @app.function(image=image, volumes=VOLUMES, gpu='H100', cpu=8, memory=65536, timeout=4 * 3600)
 def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every=500, lr=1e-3, seed=0,
-                   infer=True, extra_ids=()):
+                   infer=True, extra_ids=(), data_device='cuda', select='oto', keep_all=False):
+    """Train every student in `configs` on shared batches.
+
+    Batch rows: otoSpeech crops (one channel from the background copy with probability bg_aug),
+    eot-bench voice-agent rows (eotb_aug), unlabeled pool rows (pool_aug). Per-config options:
+    gt / feat loss weights, acoustic (augment.acoustic probability, student input only), vad_in
+    (Silero VAD per frame as input; needs {WORK}/vadf, see colab.py vad), arch 'fc' (student_fc.py).
+    data_device 'cpu' keeps the data in host RAM (a 40 GB GPU); select 'ood' holds out 10% of the
+    eot-bench sessions and 2.5% of the pool and picks each student's checkpoint by its summed KD loss
+    on otoSpeech dev and those held-out sets (default: otoSpeech dev only). keep_all saves every
+    evaluated checkpoint to runs/{run}/ckpt/.
+    """
+    import queue
     import threading
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
     import numpy as np
     import torch
     _paths()
+    import augment
     import model as m
     import student as st
     torch.manual_seed(seed)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-    dev = 'cuda'
+    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     work.reload()
     split = json.load(open(f'{WORK}/split.json'))['splits']
     have = {f[:-4] for f in os.listdir(f'{WORK}/teacher/{tag}/oto')}
     train_ids = [c for c in split['train'] if c in have] + [c for c in extra_ids if c in have]
     dev_ids = [c for c in split['dev'] if c in have]
+
+    def shared(key, default=0.0):
+        vals = {json.dumps(c.get(key, default)) for c in configs.values()}
+        assert len(vals) == 1, f'students in one run share batches: {key} differs'
+        return configs[next(iter(configs))].get(key, default)
+
     bg_p = max(c.get('bg_aug', 0.0) for c in configs.values())
-    eotb_p = max(c.get('eotb_aug', 0.0) for c in configs.values())
-    pool_p = max(c.get('pool_aug', 0.0) for c in configs.values())
+    eotb_p, pool_p = shared('eotb_aug'), shared('pool_aug')
     use_feat = any(c.get('feat', 0) > 0 for c in configs.values())
-    for k in ('eotb_aug', 'pool_aug'):
-        assert len({c.get(k, 0.0) for c in configs.values()}) == 1, 'students in one run share batches'
+    use_vad = any(c.get('vad_in') for c in configs.values())
     t0 = time.time()
-    D = _load('oto', train_ids, tag, dev, aug=bg_p > 0, feats=use_feat)
-    Dd = _load('oto', dev_ids, tag, dev, feats=False)
-    De = None
+    D = _load('oto', train_ids, tag, data_device, aug=bg_p > 0, feats=use_feat, vad=use_vad)
+    Dd = _load('oto', dev_ids, tag, data_device, vad=use_vad)
+    evals = {'oto': (Dd, _starts(Dd['off'], crop, crop))}
+    De = Dp = None
     if eotb_p > 0:  # voice-agent user turns (latency/eotb_data.py sessions), silent agent channel
         eids = sorted(f[:-4] for f in os.listdir(f'{WORK}/teacher/{tag}/eotb'))
-        De = _load('eotb', eids, tag, dev, feats=use_feat)
-        estarts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(De['off'][:-1], De['off'][1:])
-                             if b - a > crop])
-        print(f'eot-bench sessions: {len(eids)}, {De["off"][-1]} frames', flush=True)
-    Dp = None
+        held = eids[::10] if select == 'ood' else []
+        De = _load('eotb', [e for e in eids if e not in held], tag, data_device, feats=use_feat, vad=use_vad)
+        estarts = _starts(De['off'], crop)
+        if held:
+            Dh = _load('eotb', held, tag, data_device, vad=use_vad)
+            evals['eotb_ho'] = (Dh, _starts(Dh['off'], crop, crop))
+        print(f'eot-bench sessions: {len(eids) - len(held)} train, {len(held)} held out', flush=True)
     if pool_p > 0:  # unlabeled pool (pool.py), silent agent channel, teacher logits only
         pids = sorted(f[:-4] for f in os.listdir(f'{WORK}/teacher/{tag}/pool'))
-        Dp = _load_pool(pids, tag, dev)
-        pstarts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(Dp['off'][:-1], Dp['off'][1:])
-                             if b - a > crop])
-        print(f'pool sessions: {len(pids)}, {Dp["off"][-1] * 0.08 / 3600:.1f} h', flush=True)
-    print(f'loaded {len(train_ids)} train ({D["off"][-1]} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s; '
-          f'VRAM {torch.cuda.memory_allocated() / 2**30:.1f} GiB', flush=True)
+        held = pids[::40] if select == 'ood' else []
+        Dp = _load_pool([p for p in pids if p not in held], tag, data_device, feats=use_feat, vad=use_vad)
+        pstarts = _starts(Dp['off'], crop)
+        if held:
+            Dh = _load_pool(held, tag, data_device, vad=use_vad)
+            evals['pool_ho'] = (Dh, _starts(Dh['off'], crop, crop)[::4])
+        print(f'pool sessions: {Dp["n"]} train ({Dp["off"][-1] * 0.08 / 3600:.1f} h), {len(held)} held out', flush=True)
+    pool_bg = bg_p > 0 and not use_vad  # VAD inputs are precomputed on clean pool audio
+    print(f'loaded {len(train_ids)} train ({D["off"][-1]} frames) / {len(dev_ids)} dev in {time.time() - t0:.0f}s '
+          f'on {data_device}; VRAM {torch.cuda.memory_allocated() / 2**30 if dev == "cuda" else 0:.1f} GiB', flush=True)
     if use_feat:  # standardization of the teacher's encoder frames (feature distillation target)
-        sample = D['F'][torch.randint(len(D['F']), (20000,), device=dev)].float().flatten(0, 1)
+        s_all = _starts(D['off'], crop)
+        sample = _gather_feats(D, [int(s) for s in s_all[torch.randint(len(s_all), (64,))]], crop)
+        sample = sample.float().flatten(0, 2).to(dev)
         f_mu, f_sd = sample.mean(0), sample.std(0).clamp_min(1e-3)
 
-    off = D['off']
-    starts = torch.cat([torch.arange(a, b - crop, device=dev) for a, b in zip(off[:-1], off[1:]) if b - a > crop])
-    dstarts = torch.cat([torch.arange(a, b - crop, crop, device=dev) for a, b in zip(Dd['off'][:-1], Dd['off'][1:])])
+    starts = _starts(D['off'], crop)
     SWAP = torch.tensor([1, 0, 2, 3], device=dev)
     VAPN = len(m.VAP_BINS)
     cls = torch.arange(m.VAP_CLASSES, device=dev)
     VAP_PERM = ((cls & ((1 << VAPN) - 1)) << VAPN) | (cls >> VAPN)    # class index after a speaker swap
 
-    def crops(S, idx, aug_rows=None, aug_ch=None):
-        span = idx[:, None] + torch.arange(crop, device=dev)
-        aspan = (idx[:, None] * FRAME + torch.arange(crop * FRAME, device=dev))
-        wav = S['A'][aspan].float()                                    # [B, crop * 1280, 2]
-        if aug_rows is not None:
-            wa = S['Aa'][aspan].float()
-            pick = (aug_rows[:, None] & (torch.arange(2, device=dev)[None] == aug_ch[:, None]))[:, None]
-            wav = torch.where(pick, wa, wav)
-        tb = {k: v[span] for k, v in S['T'].items()}
-        y = {k: v[span] for k, v in S['Y'].items()} if S['Y'] is not None else None
-        f = S['F'][span] if S['F'] is not None else None
-        return wav, tb, y, f
-
-    def swap(wav, tb, y, f, mask):
+    def swap(wav, tb, y, f, v, mask):
+        def w(x):
+            return mask.view(-1, *[1] * (x.dim() - 1))
         wav = torch.where(mask[:, None, None], wav.flip(-1), wav)
         tb = dict(tb)
         for k in ('act', 'fine', 'yld'):
             if k in tb:
-                tb[k] = torch.where(mask.view(-1, *[1] * (tb[k].dim() - 1)), tb[k].flip(2), tb[k])
+                tb[k] = torch.where(w(tb[k]), tb[k].flip(2), tb[k])
         for k in ('floor', 'future'):
-            tb[k] = torch.where(mask.view(-1, *[1] * (tb[k].dim() - 1)), tb[k][..., SWAP], tb[k])
+            tb[k] = torch.where(w(tb[k]), tb[k][..., SWAP], tb[k])
         tb['vap'] = torch.where(mask[:, None, None], tb['vap'][..., VAP_PERM], tb['vap'])
         if y is not None:
             y = dict(y)
             for k in ('act', 'act_w', 'activity', 'fine', 'fine_w', 'yld', 'yld_w', 'yld_t'):
-                y[k] = torch.where(mask.view(-1, *[1] * (y[k].dim() - 1)), y[k].flip(-1), y[k])
+                y[k] = torch.where(w(y[k]), y[k].flip(-1), y[k])
             for k in ('floor', 'future'):
-                y[k] = torch.where(mask.view(-1, *[1] * (y[k].dim() - 1)), y[k][..., SWAP], y[k])
-            v = y['vap']
-            y['vap'] = torch.where(mask[:, None], ((v & ((1 << VAPN) - 1)) << VAPN) | (v >> VAPN), v)
+                y[k] = torch.where(w(y[k]), y[k][..., SWAP], y[k])
+            u = y['vap']
+            y['vap'] = torch.where(mask[:, None], ((u & ((1 << VAPN) - 1)) << VAPN) | (u >> VAPN), u)
         if f is not None:
             f = torch.where(mask[:, None, None, None], f.flip(2), f)
-        return wav, tb, y, f
+        if v is not None:
+            v = torch.where(mask[:, None, None, None], v.flip(2), v)
+        return wav, tb, y, f, v
+
+    def make_batch():
+        u = torch.rand(batch)
+        ne = int((u < eotb_p).sum()) if De is not None else 0
+        npl = int(((u >= eotb_p) & (u < eotb_p + pool_p)).sum()) if Dp is not None else 0
+        nl = batch - npl                                               # rows with gold labels
+        idx = starts[torch.randint(len(starts), (nl - ne,))]
+        rows = torch.rand(nl - ne, device=dev) < bg_p if bg_p > 0 else None
+        ch = torch.randint(2, (nl - ne,), device=dev)
+        wav, tb, y, f, v = _crops(D, idx, crop, dev, rows, ch, feats=use_feat)
+        if ne:
+            we, tbe, ye, fe, ve = _crops(De, estarts[torch.randint(len(estarts), (ne,))], crop, dev, feats=use_feat)
+            wav, tb, y, f, v = torch.cat([wav, we]), _cat(tb, tbe), _cat(y, ye), _cat(f, fe), _cat(v, ve)
+        wav, tb, y, f, v = swap(wav, tb, y, f, v, torch.rand(nl, device=dev) < 0.5)
+        if npl:  # unlabeled pool rows last: user in channel 0, digital silence in channel 1
+            wp, tbp, _, fp, vp = _crops(Dp, pstarts[torch.randint(len(pstarts), (npl,))], crop, dev, feats=use_feat)
+            if pool_bg:  # background: the residual (augmented - clean) of a random otoSpeech crop
+                bidx = [int(s) for s in starts[torch.randint(len(starts), (npl,))]]
+                res = (_gather(D['Aa'], bidx, crop, FRAME).to(dev).float() - _gather(D['A'], bidx, crop, FRAME).to(dev).float())
+                bch = torch.randint(2, (npl,), device=dev)
+                res = torch.where(bch[:, None] == 0, res[..., 0], res[..., 1])
+                wp[..., 0] += res * (torch.rand(npl, 1, device=dev) < bg_p)
+            wp, tbp, _, fp, vp = swap(wp, tbp, None, fp, vp, torch.rand(npl, device=dev) < 0.5)
+            wav, tb, f, v = torch.cat([wav, wp]), _cat(tb, tbp), _cat(f, fp), _cat(v, vp)
+        wav = wav * 10 ** (torch.empty(batch, 1, 2, device=dev).uniform_(-6, 6) / 20)  # per-channel gain
+        return wav, tb, y, f, v, nl
+
+    q = queue.Queue(maxsize=3)
+    stop = threading.Event()
+
+    def producer():
+        while not stop.is_set():
+            b = make_batch()
+            while not stop.is_set():
+                try:
+                    q.put(b, timeout=1)
+                    break
+                except queue.Full:
+                    pass
+
+    workers = [threading.Thread(target=producer, daemon=True) for _ in range(2 if data_device == 'cpu' else 1)]
+    for t in workers:
+        t.start()
 
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = st.build(cfg).to(dev)
         models[name] = net
-        opts[name] = torch.optim.AdamW(net.parameters(), lr=cfg.get('lr', lr), weight_decay=cfg.get('wd', 0.05))
-        scheds[name] = torch.optim.lr_scheduler.OneCycleLR(opts[name], max_lr=cfg.get('lr', lr), total_steps=steps,
-                                                            pct_start=0.05)
+        enc = set(map(id, net.encoder_parameters())) if hasattr(net, 'encoder_parameters') else set()
+        groups = [dict(params=[p for p in net.parameters() if id(p) not in enc], lr=cfg.get('lr', lr))]
+        if enc:
+            groups.append(dict(params=net.encoder_parameters(), lr=cfg.get('enc_lr', 1e-4)))
+        opts[name] = torch.optim.AdamW(groups, weight_decay=cfg.get('wd', 0.05))
+        scheds[name] = torch.optim.lr_scheduler.OneCycleLR(opts[name], max_lr=[g['lr'] for g in groups],
+                                                            total_steps=steps, pct_start=0.05)
         print(name, cfg, f'{st.count_params(net) / 1e6:.2f}M inference params', flush=True)
 
-    stats, stop = [], threading.Event()
-    threading.Thread(target=gpu_monitor, args=(stats, stop), daemon=True).start()
+    stats, mon_stop = [], threading.Event()
+    if dev == 'cuda':
+        threading.Thread(target=gpu_monitor, args=(stats, mon_stop), daemon=True).start()
     history = {n: [] for n in models}
     best = {n: (float('inf'), None, 0) for n in models}
+    os.makedirs(f'{WORK}/runs/{run}' + ('/ckpt' if keep_all else ''), exist_ok=True)
     tstep = time.time()
     for step in range(1, steps + 1):
-        u = torch.rand(batch)
-        ne = int((u < eotb_p).sum()) if De is not None else 0
-        npl = int(((u >= eotb_p) & (u < eotb_p + pool_p)).sum()) if Dp is not None else 0
-        nl = batch - npl                                                # rows with gold labels
-        idx = starts[torch.randint(len(starts), (nl - ne,), device=dev)]
-        rows = torch.rand(nl - ne, device=dev) < bg_p if bg_p > 0 else None
-        ch = torch.randint(2, (nl - ne,), device=dev)
-        wav, tb, y, f = crops(D, idx, rows, ch)
-        if ne:  # append eot-bench rows to the batch
-            we, tbe, ye, fe = crops(De, estarts[torch.randint(len(estarts), (ne,), device=dev)])
-            wav = torch.cat([wav, we])
-            tb = {k: torch.cat([tb[k], tbe[k]]) for k in tb}
-            y = {k: torch.cat([y[k], ye[k]]) for k in y}
-            f = torch.cat([f, fe]) if f is not None else None
-        wav, tb, y, f = swap(wav, tb, y, f, torch.rand(nl, device=dev) < 0.5)
-        if npl:  # unlabeled pool rows last: user in channel 0, digital silence in channel 1
-            pidx = pstarts[torch.randint(len(pstarts), (npl,), device=dev)]
-            span = pidx[:, None] + torch.arange(crop, device=dev)
-            aspan = pidx[:, None] * FRAME + torch.arange(crop * FRAME, device=dev)
-            wp = torch.zeros(npl, crop * FRAME, 2, device=dev)
-            wp[..., 0] = Dp['A'][aspan].float()
-            if bg_p > 0:  # background: the residual (augmented - clean) of a random oto crop
-                bidx = starts[torch.randint(len(starts), (npl,), device=dev)]
-                bspan = bidx[:, None] * FRAME + torch.arange(crop * FRAME, device=dev)
-                bch = torch.randint(2, (npl,), device=dev)[:, None, None].expand(-1, crop * FRAME, 1)
-                res = (D['Aa'][bspan].float() - D['A'][bspan].float()).gather(-1, bch)[..., 0]
-                wp[..., 0] += res * (torch.rand(npl, 1, device=dev) < bg_p)
-            tbp = {k: v[span] for k, v in Dp['T'].items()}
-            wp, tbp, _, _ = swap(wp, tbp, None, None, torch.rand(npl, device=dev) < 0.5)
-            wav = torch.cat([wav, wp])
-            tb = {k: torch.cat([tb[k], tbp[k]]) for k in tb}
-        wav = wav * 10 ** (torch.empty(batch, 1, 2, device=dev).uniform_(-6, 6) / 20)  # per-channel gain
+        wav, tb, y, f, v, nl = q.get()
         for name, net in models.items():
             cfg = configs[name]
             net.train()
-            with torch.autocast('cuda', dtype=torch.bfloat16):
-                out = net(wav, with_feat=cfg.get('feat', 0) > 0)
-            out = {k: v.float() for k, v in out.items()}
+            x = augment.acoustic(wav, cfg['acoustic']) if cfg.get('acoustic', 0) > 0 else wav
+            with torch.autocast(dev, dtype=torch.bfloat16, enabled=dev == 'cuda'):
+                out = net(x, with_feat=cfg.get('feat', 0) > 0, vad=v)
+            out = {k: o.float() for k, o in out.items()}
             loss, parts = kd_loss(out, tb, cfg.get('kd'))
             if cfg.get('gt', 0) > 0:
-                g, gp = m.loss({k: v[:nl] for k, v in out.items() if k != 'feat'}, y)
+                g, gp = m.loss({k: o[:nl] for k, o in out.items() if k != 'feat'}, y)
                 loss = loss + cfg['gt'] * g
-                parts.update({f'gt_{k}': v for k, v in gp.items()})
+                parts.update({f'gt_{k}': o for k, o in gp.items()})
             if cfg.get('feat', 0) > 0:
-                fl = ((out['feat'][:nl] - (f.float() - f_mu) / f_sd) ** 2).mean()
+                fl = ((out['feat'] - (f.float() - f_mu) / f_sd) ** 2).mean()
                 loss = loss + cfg['feat'] * fl
                 parts['feat'] = fl
             opts[name].zero_grad(set_to_none=True)
@@ -513,42 +603,54 @@ def train_students(run, configs, tag, steps=6000, batch=48, crop=375, eval_every
             opts[name].step()
             scheds[name].step()
         if step % 100 == 0:
-            print(f'step {step} {name}: ' + ' '.join(f'{k} {float(v):.4f}' for k, v in parts.items()), flush=True)
+            print(f'step {step} {name}: ' + ' '.join(f'{k} {float(o):.4f}' for k, o in parts.items()), flush=True)
         if step % eval_every == 0 or step == steps:
             for name, net in models.items():
                 net.eval()
-                tot = {}
-                with torch.no_grad():
-                    for i in range(0, len(dstarts), 64):
-                        wav, tb, y, _ = crops(Dd, dstarts[i:i + 64])
-                        with torch.autocast('cuda', dtype=torch.bfloat16):
-                            out = net(wav)
-                        out = {k: v.float() for k, v in out.items()}
-                        _, kp = kd_loss(out, tb)
-                        _, gp = m.loss(out, y)
-                        for k, v in list(kp.items()) + [(f'gt_{k}', v) for k, v in gp.items()]:
-                            tot[k] = tot.get(k, 0) + float(v) * len(wav)
-                tot = {k: v / len(dstarts) for k, v in tot.items()}
-                history[name].append(dict(step=step, **tot))
-                key = tot['floor'] + tot['future']
+                rec = dict(step=step)
+                for ev, (S, ds) in evals.items():
+                    tot, n = {}, 0
+                    with torch.no_grad():
+                        for i in range(0, len(ds), 64):
+                            wv, tbv, yv, _, vv = _crops(S, ds[i:i + 64], crop, dev)
+                            with torch.autocast(dev, dtype=torch.bfloat16, enabled=dev == 'cuda'):
+                                out = net(wv, vad=vv)
+                            out = {k: o.float() for k, o in out.items()}
+                            _, kp = kd_loss(out, tbv)
+                            items = list(kp.items())
+                            if yv is not None:
+                                items += [(f'gt_{k}', o) for k, o in m.loss(out, yv)[1].items()]
+                            for k, o in items:
+                                tot[k] = tot.get(k, 0) + float(o) * len(wv)
+                            n += len(wv)
+                    rec.update({(k if ev == 'oto' else f'{ev}_{k}'): o / n for k, o in tot.items()})
+                history[name].append(rec)
+                key = sum(rec[p + 'floor'] + rec[p + 'future'] for p in
+                          [''] + [f'{e}_' for e in evals if e != 'oto'])
                 if key < best[name][0]:
-                    best[name] = (key, {k: v.detach().clone() for k, v in net.state_dict().items()}, step)
-                print(f'eval {step} {name}: ' + ' '.join(f'{k} {v:.4f}' for k, v in tot.items()), flush=True)
+                    best[name] = (key, {k: o.detach().clone() for k, o in net.state_dict().items()}, step)
+                if keep_all:
+                    torch.save(dict(cfg=configs[name], state=net.state_dict(), teacher=tag, step=step),
+                               f'{WORK}/runs/{run}/ckpt/{name}_{step:05d}.pt')
+                print(f'eval {step} {name}: select {key:.4f} ' +
+                      ' '.join(f'{k} {o:.4f}' for k, o in rec.items() if 'floor' in k or 'future' in k), flush=True)
             util = [u for u, _ in stats[-30:]]
             print(f'  {(time.time() - tstep) / step * 1000:.0f} ms/step; GPU util {np.mean(util) if util else -1:.0f}%; '
-                  f'peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB', flush=True)
+                  f'peak {torch.cuda.max_memory_allocated() / 2**30 if dev == "cuda" else 0:.1f} GiB', flush=True)
     stop.set()
-    os.makedirs(f'{WORK}/runs/{run}', exist_ok=True)
+    mon_stop.set()
     for name, net in models.items():
         net.load_state_dict(best[name][1])
         torch.save(dict(cfg=configs[name], state=net.state_dict(), teacher=tag, best_step=best[name][2]),
                    f'{WORK}/runs/{run}/{name}.pt')
     json.dump(dict(configs=configs, teacher=tag, train_ids=train_ids, steps=steps, batch=batch, crop=crop,
-                   history=history, best_steps={n: b[2] for n, b in best.items()}, wall_s=time.time() - t0),
+                   select=select, history=history, best_steps={n: b[2] for n, b in best.items()},
+                   wall_s=time.time() - t0),
               open(f'{WORK}/runs/{run}/train.json', 'w'))
     work.commit()
-    del D, Dd, De, Dp
-    torch.cuda.empty_cache()
+    del D, Dd, De, Dp, evals
+    if dev == 'cuda':
+        torch.cuda.empty_cache()
     if infer:
         _infer_into(run, models, configs)
     return {n: dict(best_step=b[2], best=b[0]) for n, b in best.items()}
@@ -561,12 +663,17 @@ def _student_probs(net, cfg, wav, chunk=1000):
     import student as st
     ctx = st.context_frames(cfg)
     T = len(wav) // FRAME
+    vad = None
+    if cfg.get('vad_in'):  # Silero on the same audio, per 80 ms frame (CPU)
+        import augment
+        vad = torch.from_numpy(augment.vad_frames(wav[:T * FRAME].float().cpu().numpy())).to(wav.device)
     outs = []
     with torch.no_grad():
         for s in range(0, T, chunk):
             lo = max(0, s - ctx)
-            with torch.autocast('cuda', dtype=torch.bfloat16):
-                o = net(wav[lo * FRAME:min(T, s + chunk) * FRAME][None])
+            with torch.autocast(wav.device.type, dtype=torch.bfloat16, enabled=wav.device.type == 'cuda'):
+                o = net(wav[lo * FRAME:min(T, s + chunk) * FRAME][None],
+                        vad=vad[lo:min(T, s + chunk)][None] if vad is not None else None)
             outs.append({k: v[0, s - lo:].float() for k, v in o.items() if k in ('floor', 'future', 'act', 'fine', 'yld')})
     cat = {k: torch.cat([o[k] for o in outs]) for k in outs[0]}
     res = dict(post=torch.cat([cat['floor'].softmax(-1)[:, None], cat['future'].softmax(-1)], 1),
@@ -585,7 +692,7 @@ def _infer_into(run, models, configs, splits=('oto', 'tbdev')):
         ids = split['dev'] if sp == 'oto' else sorted(f[:-4] for f in os.listdir(f'{WORK}/audio16/tbdev')
                                                       if not f.endswith('.tmp.npy'))
         for cid in ids:
-            wav = torch.from_numpy(np.load(f'{WORK}/audio16/{sp}/{cid}.npy')).cuda().float()
+            wav = torch.from_numpy(np.load(f'{WORK}/audio16/{sp}/{cid}.npy')).to(_device()).float()
             for name, net in models.items():
                 net.eval()
                 for k, v in _student_probs(net, configs[name], wav).items():
@@ -595,8 +702,14 @@ def _infer_into(run, models, configs, splits=('oto', 'tbdev')):
     return len(probs)
 
 
-def load_students(run, names, dev='cuda'):
+def _device():
     import torch
+    return 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+def load_students(run, names, dev=None):
+    import torch
+    dev = dev or _device()
     _paths()
     import student as st
     models, configs = {}, {}
@@ -658,8 +771,8 @@ def eot_tracks(run, names, language='en', teacher_tag=''):
         assert sr == 16000, sr
         wav = wav.mean(1) if wav.ndim > 1 else wav
         T = len(wav) // FRAME
-        x = torch.zeros(T * FRAME, 2, device='cuda')
-        x[:, 0] = torch.from_numpy(wav[:T * FRAME]).cuda()
+        x = torch.zeros(T * FRAME, 2, device=_device())
+        x[:, 0] = torch.from_numpy(wav[:T * FRAME]).to(x.device)
         for name, net in models.items():
             r = _student_probs(net, configs[name], x)
             floor, silent = r['post'][:, 0].astype(np.float32), r['silent'][:, 0].astype(np.float32)
