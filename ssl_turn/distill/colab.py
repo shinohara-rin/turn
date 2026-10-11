@@ -146,17 +146,23 @@ PULL_BG = ['bench', 'musan/fma']
 
 
 def _get(volume, remote, root):
+    """Copy one volume path; a .pulled marker records completion, so a pull cut off midway is redone
+    (with --force) instead of being taken as present."""
+    import time
     dst = os.path.join(root, remote)
-    if os.path.exists(dst):
+    mark = dst.rstrip('/') + '.pulled'
+    if os.path.exists(mark) or (os.path.exists(dst) and not os.path.isdir(dst)):
         print('have', dst, flush=True)
         return
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     print('modal volume get', volume, remote, flush=True)
-    for attempt in range(4):  # transient 'Could not connect to the Modal server'
-        r = subprocess.run([sys.executable, '-m', 'modal', 'volume', 'get', volume, remote, os.path.dirname(dst) or '.'])
+    for attempt in range(5):  # transient connection / name-resolution failures
+        force = ['--force'] if os.path.exists(dst) else []
+        r = subprocess.run([sys.executable, '-m', 'modal', 'volume', 'get', *force, volume, remote,
+                            os.path.dirname(dst) or '.'])
         if r.returncode == 0:
+            open(mark, 'w').close()
             return
-        import time
         time.sleep(30 * (attempt + 1))
     raise SystemExit(f'modal volume get {volume} {remote} failed')
 
