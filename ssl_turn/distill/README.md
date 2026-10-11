@@ -163,6 +163,9 @@ background threads.
 
 `xasr_probe.py` adds GilgameshWind/X-ASR-zh-en (streaming Zipformer, ~148M encoder, 160 ms
 chunks + 130 ms subsampling right context) to the multilingual thread's eot-bench encoder probe.
+Probe result (en / zh readouts, final encoder output, the only layer the ONNX export exposes;
+features checked by a clean greedy transcript): X-ASR en 0.840, zh 0.789, en->zh 0.679, against
+fc_en's 0.950 / 0.896 (multilingual/RESULTS.md, PR #13). Not a better turn encoder.
 Tested on CPU here: every variant trains and infers on a fake data tree, the FastConformer student
 is causal (`test_student.py`), and X-ASR features extract.
 
