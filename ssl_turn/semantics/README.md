@@ -110,17 +110,60 @@ Likely reasons, untested: the inserted room tone repeats the gap's own frames, w
 recognizable "edited pause" cue (a new shortcut), and every silent frame weighs the same in the
 loss, so long easy silences dominate over the 100-300 ms decision.
 
+## 5. Completion head: "finished" separated from "timed out" (r021, r022)
+
+Rin's redefinition: a semantic completion score that should not grow with silence, with the
+silence timeout left to the policy. Pipeline:
+- `complete_labels.py`: every pause after a floor-claiming segment in otoSpeech train + dev
+  (24.3k pauses) gets a 0-10 "speaker is done" score from an LLM (RunInfra `glm-5-3-flash`,
+  reasoning low; $0.15 total). It sees the other speaker's last line and the current turn so far,
+  lower-cased without punctuation, never the words after the pause. Nemotron without reasoning
+  scored near random on a hand check and was dropped. On oto dev the scores agree with annotator
+  yields at AUC 0.74 (pauses scored 8-10 are yields 56% of the time, 0-3 only 22%).
+- `comp_targets.py`: the pause's score / 10 as a soft target on its silent frames, weight 0
+  elsewhere. `model.py` gets an optional per-speaker `comp` logit (`comp: true` in a config),
+  `train.py` loads `labels_comp`, `score.py` adds `comp_q` = comp x p(SILENT), `eot_cmax`, `eot_cq`.
+- r021: target over the whole silence (up to 3 s). r022: only the first 0.32 s of each pause
+  (`labels_comp_onset`), so pause length can never be evidence.
+
+eot-bench (hold / end mean score, then latency at 2 / 5 / 10% cutoff):
+
+| | 0.2 s | 0.5 s | 1.0 s | 1.5 s | latency |
+| --- | --- | --- | --- | --- | --- |
+| r019 bgaug_s2 eot_q | 0.08 / 0.37 | 0.12 / 0.52 | 0.25 / 0.67 | 0.41 / 0.76 | 1660 / 805 / 539 |
+| r021 comp_s1 comp_q | 0.26 / 0.54 | 0.32 / 0.63 | 0.38 / 0.68 | 0.43 / 0.70 | 1716 / 790 / 578 |
+| r022 onset_s1 comp_q | 0.25 / 0.54 | 0.29 / 0.59 | 0.30 / 0.56 | 0.33 / 0.56 | 1547 / 836 / 622 |
+| r022 onset_s2 comp_q | 0.23 / 0.50 | 0.26 / 0.55 | 0.30 / 0.56 | 0.34 / 0.58 | 1623 / 902 / 634 |
+| r022 onset_s1 eot_q | | | | | 1551 / 759 / 458 |
+| r022 onset_s2 eot_q | | | | | 1808 / 832 / 525 |
+
+Holds ending in a hesitation or function word ("um", "and", "the", ... ; 139 pauses at 0.2 s,
+10 at 1.5 s), mean score at 0.2 / 0.5 / 1.0 / 1.5 s: r019 eot_q 0.06 / 0.10 / 0.25 / 0.43;
+r022 onset comp_q 0.15 / 0.21 / 0.28 / 0.35.
+
+TurnBench dev (FP <= 0.10, r0.5 + rc1.0): eot_q 0.935 (r022 s1) / 0.933 (s2), unchanged from
+r019; `comp_q` alone 0.58-0.71; `eot_cmax` 0.924-0.933. INT unchanged. oto dev floor+future
+0.668-0.669 (r019 0.671-0.679), so the extra head does not hurt.
+
+- r021's completion score still climbs with silence: within one pause the target is constant,
+  but across pauses longer silences are more often complete, so length stays usable evidence.
+- r022 is flat after ~0.3 s, as designed: hesitations stay at ~0.35 even after 1.5 s, where r019
+  reaches 0.43. But ends only reach ~0.56, so on its own it is a weak detector (AUC 0.83-0.89 at a
+  fixed silence, similar to the text model): content from 131 conversations and LLM labels that
+  agree with annotators at 0.74 do not make a confident "finished" call.
+- The auxiliary head leaves eot_q unchanged (seed spread covers the r022 s1 gain at 5%).
+- Use, if any: as a policy gate for long pauses (extend the timeout while comp is low), not as
+  the EOT trigger. Not evaluated yet.
+
 ## Takeaways
 
 - Rin's diagnosis holds: EOT evidence accumulates with silence instead of being decided at pause
   onset. The encoder has more onset information than the head uses (0.91 vs 0.85 AUC at 100 ms),
   so the head's objective and data are the place to work, not a text branch or the RNNT decoder.
 - Backchannel INT fires are lexical (multi-word reactions), not a speaker overfit.
-- Next candidates (not run): a completion target separate from the timeout (Rin's redefinition):
-  label each pause from the transcript as complete or incomplete and train a head whose target does
-  not depend on how long the silence lasts, with the timeout left to the policy; onset-weighted
-  loss on the first 0.1-0.4 s of each pause; pause-warp with synthetic room tone instead of copied
-  frames.
+- A completion head trained on LLM labels (r022, onset-only) is flat over silence as intended,
+  but too weak to trigger EOT on its own; its content signal matches the text model's ceiling.
+- Not run: pause-warp with synthetic room tone; comp as a timeout gate in the policy.
 
 ## Reproduce
 
@@ -132,6 +175,12 @@ modal run ssl_turn/semantics/dump_annotations.py --out ann.json            # raw
 python ssl_turn/semantics/bc_check.py probs.npz ann.json                    # runs/r019_asr_bgaug/probs.npz
 cd ssl_turn/pipeline && modal run pausewarp.py --groups 6
 modal run train.py --run r020_warp --configs configs/r020_warp.json --n-train 131 --steps 1000 --gpu H100
+# completion head
+modal run ../semantics/dump_annotations.py --out oto_train.json --oto-split train
+python ../semantics/complete_labels.py oto_train.json comp_train.json      # and ann.json -> comp_dev.json
+modal run ../semantics/comp_targets.py --labels comp_train.json,comp_dev.json [--max-s 0.32 --out-dir labels_comp_onset]
+modal run train.py --run r022_comp_onset --configs configs/r022_comp_onset.json --n-train 131 --steps 1000 --gpu H100
+modal run score.py::main --run r022_comp_onset --variants eot_q,comp_q,eot_cmax --refractories 0.5 --recommits ",1.0"
 ```
 
 eot-bench scoring of r020 uses `eotbench/modal_eot.py` and `to_harness.py` from draft PR #10.

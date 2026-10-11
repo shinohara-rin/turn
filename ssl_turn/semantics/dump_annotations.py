@@ -38,7 +38,26 @@ def dump():
     return out
 
 
+@app.function(image=cpu_image, volumes=VOLUMES, cpu=2, memory=4096, timeout=1800)
+def dump_oto(split_name):
+    """Annotator-a segments [speaker, 'a', start, end, label, text] for an otoSpeech split."""
+    import re
+    import srt
+    split = json.load(open(f'{WORK}/split.json'))['splits']
+    out = {}
+    for cid in split[split_name]:
+        rows = []
+        for s in (1, 2):
+            for e in srt.parse(open(f'{OTO}/{cid}/speaker_{s}_annotation_a.srt').read()):
+                m = re.match(r'\[([^]]+)\]\s*(.*)', e.content, re.S)
+                rows.append([s, 'a', e.start.total_seconds(), e.end.total_seconds(), m[1] if m else '',
+                             (m[2] if m else e.content).strip()])
+        out[cid] = rows
+    return out
+
+
 @app.local_entrypoint()
-def main(out: str = 'ann.json'):
-    json.dump(dump.remote(), open(out, 'w'))
+def main(out: str = 'ann.json', oto_split: str = ''):
+    data = dump_oto.remote(oto_split) if oto_split else dump.remote()
+    json.dump(data, open(out, 'w'))
     print('wrote', out)

@@ -685,3 +685,7 @@ Details in [`semantics/README.md`](semantics/README.md).
   TB dev 11-14% vs oto dev 26% of backchannels.
 - r020 pause-warp augmentation (stretch holds, cut yield gaps; `pausewarp.py`): neutral on TB dev,
   oto dev and eot-bench at 5-10% cutoff, better only at 2%. The hold ramp barely flattens.
+- r021/r022 completion head (Rin's "complete vs timeout" split; LLM labels on 24k oto pauses,
+  `semantics/complete_labels.py`): with onset-only targets (r022) the score is flat over silence and
+  keeps hesitations low (~0.35 at 1.5 s vs r019 0.43), but ends reach only ~0.56, so it is weak as an
+  EOT trigger (TB dev 0.58-0.71 alone; eot-bench 836-902 ms @5%). eot_q of the same models unchanged.
