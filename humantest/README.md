@@ -93,7 +93,7 @@ Listeners differ in where they backchannel: Ward & Tsukahara's low-pitch rule pr
 backchannels at 56% coverage / 34% accuracy (English 48% / 18%), about half of its false alarms are
 places where this listener stayed quiet but another might not, and the authors estimate that a human
 eavesdropper predicting the actual listener would reach only ~95% coverage at ~67% accuracy
-(Ward 1998, ACL workshop W98-0311; an estimate, not a measurement). Real-time listeners asked to
+(Ward 1998, summarising Ward & Tsukahara; an estimate, not a measurement). Real-time listeners asked to
 backchannel wherever they could mark many points per turn and disagree on most of them
 (Umair et al. 2024). Any backchannel model scored against one listener's choices tops out around
 two-thirds precision.
@@ -130,4 +130,4 @@ tell. TurnBench audio is gated and was not reachable from this session.
 - Umair, Sarathy & de Ruiter (2024). Large language models know what to say but not when to speak. Findings of EMNLP. https://arxiv.org/abs/2410.16044
 - Umair & de Ruiter (2026). Using semantic uncertainty to estimate transition relevance in turn-taking. https://arxiv.org/abs/2609.10934
 - TurnBench (2026). arXiv 2608.25218.
-- Ward (1998). Using prosodic clues to decide when to produce back-channel utterances / back-channel cues summary, ACL workshop W98-0311. https://aclanthology.org/W98-0311
+- Ward (1998). Some exotic discourse markers of spoken dialog. ACL/COLING workshop on discourse relations and markers, W98-0311. https://aclanthology.org/W98-0311
