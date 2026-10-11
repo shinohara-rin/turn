@@ -1,0 +1,8602 @@
+[
+{
+"id": "en__1042_52__user_turn_005",
+"trim": 1.38,
+"dur": 7.42,
+"spans": [
+[
+3.92,
+5.42
+]
+],
+"agent": "Just to confirm, that was for yesterday, february tenth, at three PM from your departure city to Denver, Colorado, correct?",
+"block": 1
+},
+{
+"id": "en__829_87__user_turn_008",
+"trim": 1.46,
+"dur": 13.94,
+"spans": [
+[
+5.94,
+6.14
+],
+[
+10.44,
+11.94
+]
+],
+"agent": "Thank you, Scott. Your dispute has been created for the unauthorized ATM withdrawal of two hundred dollars on february second. Your case number is one two three four five six. We will investigate this case, and you can expect updates within the next ten business days. If you have any more questions or need further assistance, please feel free to reach out. Is there anything else I can help you with today?",
+"block": 1
+},
+{
+"id": "en__719_50__user_turn_002",
+"trim": 1.06,
+"dur": 4.24,
+"spans": [
+[
+0.74,
+2.24
+]
+],
+"agent": "Let me confirm that. The phone number I have is seven one three five one two four nine eight seven. Does that match?",
+"block": 1
+},
+{
+"id": "en__607_38__user_turn_006",
+"trim": 2.9,
+"dur": 5.1,
+"spans": [
+[
+1.6,
+3.1
+]
+],
+"agent": "Thank you for that. Now let's go through some troubleshooting steps together. First, please unplug your modem from the power source and wait for about thirty seconds before plugging it back in. Let me know when you've done that.",
+"block": 1
+},
+{
+"id": "en__1042_52__user_turn_000",
+"trim": 2.74,
+"dur": 40.46,
+"spans": [
+[
+5.16,
+5.36
+],
+[
+8.56,
+8.66
+],
+[
+11.66,
+11.86
+],
+[
+14.06,
+14.56
+],
+[
+15.06,
+15.66
+],
+[
+18.56,
+19.16
+],
+[
+20.96,
+21.16
+],
+[
+23.26,
+23.36
+],
+[
+25.76,
+25.86
+],
+[
+30.76,
+31.16
+],
+[
+31.66,
+32.26
+],
+[
+35.86,
+36.06
+],
+[
+36.96,
+38.46
+]
+],
+"agent": "Skyway Airlines This is David How can I assist you today?",
+"block": 1
+},
+{
+"id": "en__1109_43__user_turn_007",
+"trim": 0.58,
+"dur": 5.22,
+"spans": [
+[
+1.72,
+3.22
+]
+],
+"agent": "Great, thanks for confirming. Now, let's get you scheduled for an appointment. How does tomorrow morning at nine sound, or is there a different time that works better for you?",
+"block": 1
+},
+{
+"id": "en__671_55__user_turn_000",
+"trim": 1.46,
+"dur": 68.44,
+"spans": [
+[
+2.84,
+3.04
+],
+[
+4.44,
+4.64
+],
+[
+6.94,
+7.24
+],
+[
+14.14,
+14.34
+],
+[
+18.04,
+18.24
+],
+[
+20.34,
+20.74
+],
+[
+25.44,
+25.84
+],
+[
+27.24,
+27.54
+],
+[
+31.34,
+33.64
+],
+[
+34.14,
+34.24
+],
+[
+35.94,
+36.34
+],
+[
+37.94,
+38.04
+],
+[
+40.44,
+40.74
+],
+[
+45.54,
+45.94
+],
+[
+48.14,
+48.54
+],
+[
+49.14,
+49.24
+],
+[
+53.64,
+54.14
+],
+[
+59.94,
+60.34
+],
+[
+64.94,
+66.44
+]
+],
+"agent": "Connect Wave support, this is Jordan. How can I help you today?",
+"block": 1
+},
+{
+"id": "en__875_82__user_turn_006",
+"trim": 3.46,
+"dur": 13.74,
+"spans": [
+[
+2.34,
+3.64
+],
+[
+10.24,
+11.74
+]
+],
+"agent": "Sure. Linda, based on your subscription plan, you should be charged thirty nine dollars ninety nine cents each month. A summary of your last few months would typically look like this thirty nine dollars ninety nine cents December, thirty nine ninety nine November. thirty nine ninety nine if you see any different amounts or additional charges, please let me know. We can investigate those further. Did you notice any specific charges that were different from what I've mentioned?",
+"block": 1
+},
+{
+"id": "en__489_62__user_turn_010",
+"trim": 1.46,
+"dur": 4.44,
+"spans": [
+[
+0.94,
+2.44
+]
+],
+"agent": "Sure. I have five one two nine three nine, three, seven, four, eight.",
+"block": 1
+},
+{
+"id": "en__376_36__user_turn_004",
+"trim": 4.74,
+"dur": 6.56,
+"spans": [
+[
+3.06,
+4.56
+]
+],
+"agent": "Thank you. Cynthia, I'm going to help. If everything I read back sounds correct, we can move forward to assist with your needs, whether it's scheduling an appointment or verifying your insurance coverage. Just let me know what you'd like to do next.",
+"block": 1
+},
+{
+"id": "en__294_96__user_turn_000",
+"trim": 1.14,
+"dur": 69.46,
+"spans": [
+[
+1.36,
+1.66
+],
+[
+4.16,
+5.96
+],
+[
+6.66,
+7.46
+],
+[
+8.56,
+9.76
+],
+[
+13.66,
+14.46
+],
+[
+19.66,
+20.16
+],
+[
+22.56,
+23.26
+],
+[
+24.16,
+25.76
+],
+[
+27.16,
+27.66
+],
+[
+28.26,
+28.56
+],
+[
+32.56,
+32.66
+],
+[
+35.76,
+35.96
+],
+[
+36.96,
+37.76
+],
+[
+40.06,
+40.86
+],
+[
+42.36,
+42.46
+],
+[
+46.26,
+46.66
+],
+[
+47.36,
+47.56
+],
+[
+47.86,
+48.16
+],
+[
+49.56,
+50.26
+],
+[
+51.46,
+51.66
+],
+[
+55.06,
+55.16
+],
+[
+55.96,
+56.56
+],
+[
+59.36,
+59.56
+],
+[
+64.16,
+64.46
+],
+[
+65.96,
+67.46
+]
+],
+"agent": "Dullah Not this is Maria How can I help you?",
+"block": 1
+},
+{
+"id": "en__989_144__user_turn_007",
+"trim": 1.06,
+"dur": 4.34,
+"spans": [
+[
+0.84,
+2.34
+]
+],
+"agent": "Thank you for that. Just to confirm, your friend's ticket number is zero n eight three three one two seven nine, correct?",
+"block": 1
+},
+{
+"id": "en__418_55__user_turn_005",
+"trim": 2.9,
+"dur": 9.7,
+"spans": [
+[
+4.6,
+4.7
+],
+[
+6.2,
+7.7
+]
+],
+"agent": "Thank you. Now may I ask how many guests will be staying with you? Also, do you have a room preference such as a standard king or perhaps a deluxe king with a city view?",
+"block": 1
+},
+{
+"id": "en__215_126__user_turn_002",
+"trim": 2.34,
+"dur": 19.86,
+"spans": [
+[
+4.26,
+4.56
+],
+[
+5.66,
+6.26
+],
+[
+7.26,
+8.56
+],
+[
+12.46,
+13.06
+],
+[
+14.16,
+14.86
+],
+[
+16.36,
+17.86
+]
+],
+"agent": "Thank you, Gregory. Can you please provide me with the date and time of the reservation so I can locate it for you?",
+"block": 1
+},
+{
+"id": "en__287_49__user_turn_002",
+"trim": 1.62,
+"dur": 39.48,
+"spans": [
+[
+2.08,
+3.28
+],
+[
+4.38,
+4.48
+],
+[
+5.48,
+7.38
+],
+[
+10.48,
+10.68
+],
+[
+12.18,
+12.48
+],
+[
+15.18,
+16.18
+],
+[
+21.68,
+22.18
+],
+[
+23.98,
+24.18
+],
+[
+24.88,
+26.08
+],
+[
+28.48,
+29.18
+],
+[
+32.38,
+32.68
+],
+[
+35.98,
+37.48
+]
+],
+"agent": "Hello, it's great to hear from you. At Bella and Not, we do have some gluten free and vegan options available. For gluten free choices, our Capri salad can be a good option, and we can modify some of our pasta dishes for gluten free pasta. As for vegan options, our brushetta is a delightful appetizer, and we can create a pasta dish using our marinara sauce without any dairy. If you'd like, I can give you more details or help with a specific order. What time do you need the meal for?",
+"block": 1
+},
+{
+"id": "en__593_77__user_turn_002",
+"trim": 3.38,
+"dur": 26.22,
+"spans": [
+[
+3.52,
+3.92
+],
+[
+9.92,
+10.42
+],
+[
+12.82,
+13.12
+],
+[
+17.32,
+17.52
+],
+[
+18.72,
+18.92
+],
+[
+22.72,
+24.22
+]
+],
+"agent": "Thank you, Deborah. That's order number eight, two three seven four. Correct? Let me pull up the details of your order. Got it. I see that your charger was purchased recently, and I'm sorry to hear it hasn't been working well. Since it's not functioning at all and you mentioned it was reported before, we can definitely arrange for a replacement. Just to confirm, do you still have the receipt or proof of the purchase?",
+"block": 1
+},
+{
+"id": "en__484_20__user_turn_006",
+"trim": 0.82,
+"dur": 8.28,
+"spans": [
+[
+4.78,
+6.28
+]
+],
+"agent": "I understand, but it looks like we typically estimate delivery times around thirty to forty five minutes. We can definitely aim to have your order there by six, just to confirm, what's the name and phone number for the order?",
+"block": 1
+},
+{
+"id": "en__371_24__user_turn_010",
+"trim": 9.22,
+"dur": 4.98,
+"spans": [
+[
+1.48,
+2.98
+]
+],
+"agent": "Perfect. I've got you scheduled for Tuesday at four PM. Please remember to arrive fifteen minutes early and bring your ID and insurance card. Is there anything else I can help you with today?",
+"block": 1
+},
+{
+"id": "en__593_77__user_turn_004",
+"trim": 2.5,
+"dur": 16.0,
+"spans": [
+[
+2.9,
+3.1
+],
+[
+5.2,
+5.7
+],
+[
+7.2,
+7.7
+],
+[
+9.8,
+10.3
+],
+[
+12.5,
+14.0
+]
+],
+"agent": "Great, thank you for confirming that. Since your order is within the return policy timeframe, we can proceed with a replacement for the charger. I'll arrange for that to be sent out to you as quickly as possible. Can I have your preferred shipping address for the replacement?",
+"block": 1
+},
+{
+"id": "en__215_67__user_turn_004",
+"trim": 1.54,
+"dur": 10.26,
+"spans": [
+[
+2.96,
+3.06
+],
+[
+4.86,
+5.16
+],
+[
+6.76,
+8.26
+]
+],
+"agent": "Let me place you for a reservation this Friday at seven PM. May I have your phone number to confirm the new booking?",
+"block": 1
+},
+{
+"id": "en__827_28__user_turn_001",
+"trim": 4.26,
+"dur": 8.74,
+"spans": [
+[
+5.24,
+6.74
+]
+],
+"agent": "I'm really sorry to hear about the issue with your order. Alexander, I understand how important the situation is for you. Before we proceed, could you please provide me with the last four digits of your Social Security number or your account number for verification?",
+"block": 1
+},
+{
+"id": "en__633_9__user_turn_004",
+"trim": 0.82,
+"dur": 9.18,
+"spans": [
+[
+5.68,
+7.18
+]
+],
+"agent": "Great, here's a quick overview of both consoles. The Xbox Series X is the more powerful option, offering four K gaming, a one terabyte storage capacity, and the ability to play the latest games with excellent graphics and performance. It's perfect if your nephew loves the newest titles and high quality visuals. The Xbox Series S, on the other hand, is a smaller and more affordable version. It supports up to one four p resolution and comes with a five hundred gigabyte storage capacity. It's still a great choice for gaming, especially if you want to save some money while still getting access to the latest games. Both consoles also offer features like Quick Resume.",
+"block": 1
+},
+{
+"id": "en__415_87__user_turn_003",
+"trim": 0.98,
+"dur": 7.82,
+"spans": [
+[
+2.32,
+2.92
+],
+[
+4.32,
+5.82
+]
+],
+"agent": "It seems there might be a little confusion regarding room types as we do not have a room called the Dreamer Suite at the Grand View Hotel. However, we do offer several options like the Standard King, Standard Double Queen, Deluxe King, Junior Suite, Executive Suite, and the Presidential Suite. If you're looking for extra space and comfort, I would recommend considering the junior suite or executive suite, which can accommodate your family and offer more room for accessibility. Would you like to go with one of these options?",
+"block": 1
+},
+{
+"id": "en__827_28__user_turn_003",
+"trim": 6.26,
+"dur": 11.54,
+"spans": [
+[
+4.44,
+5.14
+],
+[
+6.24,
+6.34
+],
+[
+8.04,
+9.54
+]
+],
+"agent": "Thank you for confirming. Alexander Now, can you tell me the date and amount of the transaction you'd like to dispute?",
+"block": 1
+},
+{
+"id": "en__1137_55__user_turn_002",
+"trim": 0.66,
+"dur": 4.04,
+"spans": [
+[
+0.54,
+2.04
+]
+],
+"agent": "Great, that's work order one six nine one five six, right? Let me check that.",
+"block": 1
+},
+{
+"id": "en__269_149__user_turn_004",
+"trim": 1.94,
+"dur": 5.96,
+"spans": [
+[
+1.06,
+1.26
+],
+[
+2.46,
+3.96
+]
+],
+"agent": "So I have Shirley Cooper for your reservation. Just to confirm is that SHI R L E Y C O P E R?",
+"block": 1
+},
+{
+"id": "en__875_82__user_turn_002",
+"trim": 1.86,
+"dur": 4.34,
+"spans": [
+[
+0.84,
+2.34
+]
+],
+"agent": "Thanks for that. Linda. Just to confirm, I have your email as Linda, Roberts at Hotmail. Is that correct?",
+"block": 1
+},
+{
+"id": "en__219_75__user_turn_006",
+"trim": 2.5,
+"dur": 12.2,
+"spans": [
+[
+1.9,
+2.3
+],
+[
+4.6,
+4.9
+],
+[
+6.8,
+7.2
+],
+[
+8.7,
+10.2
+]
+],
+"agent": "Thought it. Just you and your coworker, two people for Tuesday at six PM. Now, could I have your name please to hold the reservation?",
+"block": 1
+},
+{
+"id": "en__829_87__user_turn_009",
+"trim": 1.78,
+"dur": 7.12,
+"spans": [
+[
+3.62,
+5.12
+]
+],
+"agent": "Absolutely. To help protect your account, you can set up account alerts. These alerts can notify you of activities such as large transactions or withdrawals, which can help you keep track of your account in real time. You can typically set these alerts up through our online banking platform or mobile app. If you're not familiar with how to do this, I can guide you through the steps or provide information on who to contact for assistance. Would you like to proceed with setting up alerts?",
+"block": 1
+},
+{
+"id": "en__875_82__user_turn_004",
+"trim": 1.14,
+"dur": 6.46,
+"spans": [
+[
+2.96,
+4.46
+]
+],
+"agent": "It seems like your message got cut off there. Did you want to request a complete breakdown of all recent charges? Let me know how I can assist you further.",
+"block": 1
+},
+{
+"id": "en__418_55__user_turn_001",
+"trim": 2.18,
+"dur": 21.92,
+"spans": [
+[
+2.12,
+2.62
+],
+[
+6.82,
+6.92
+],
+[
+10.62,
+11.02
+],
+[
+13.02,
+13.52
+],
+[
+15.22,
+15.52
+],
+[
+18.42,
+19.92
+]
+],
+"agent": "I appreciate your interest in a romantic getaway. Unfortunately, we do not have a specific romantic package at the Grand View Hotel and Suites. However, I can certainly assist you with booking a beautiful room and maybe suggesting some options for a romantic stay, such as a deluxe king room, which offers a lovely city view. You can also enjoy complimentary high speed Wi Fi and our upscale amenities. Would you like to check availability for particular dates?",
+"block": 1
+},
+{
+"id": "en__708_120__user_turn_004",
+"trim": 0.26,
+"dur": 6.44,
+"spans": [
+[
+2.94,
+4.44
+]
+],
+"agent": "I understand how important this is for you Sandra. While the ten day hold is standard for large deposits, I can assist you in requesting an early release of the funds. This request will be subject to a review process. Would you like to proceed with that request?",
+"block": 1
+},
+{
+"id": "en__1011_87__user_turn_003",
+"trim": 0.98,
+"dur": 4.62,
+"spans": [
+[
+1.12,
+2.62
+]
+],
+"agent": "So that's your flight on february sixth from Dallas to Los Angeles, right?",
+"block": 1
+},
+{
+"id": "en__415_87__user_turn_010",
+"trim": 1.62,
+"dur": 4.78,
+"spans": [
+[
+1.28,
+2.78
+]
+],
+"agent": "You're very welcome. Stephen, I'm glad I could assist you. If you need anything else before your stay, don't hesitate to contact us. Have a wonderful trip, and we look forward to seeing you soon.",
+"block": 1
+},
+{
+"id": "en__1066_2__user_turn_000",
+"trim": 0.74,
+"dur": 23.56,
+"spans": [
+[
+4.76,
+4.86
+],
+[
+13.06,
+13.16
+],
+[
+17.06,
+17.16
+],
+[
+18.06,
+18.56
+],
+[
+20.06,
+21.56
+]
+],
+"agent": "Hello there. This is Mike from Precision AutoCare. How can I assist you today?",
+"block": 1
+},
+{
+"id": "en__607_38__user_turn_007",
+"trim": 9.06,
+"dur": 5.54,
+"spans": [
+[
+2.04,
+3.54
+]
+],
+"agent": "Perfect. Once it's back on, please wait for all the lights to stabilize. This can take a few minutes. After that, let me know if your internet connection is restored.",
+"block": 1
+},
+{
+"id": "en__576_127__user_turn_004",
+"trim": 1.94,
+"dur": 27.56,
+"spans": [
+[
+3.26,
+3.56
+],
+[
+8.46,
+9.06
+],
+[
+10.76,
+10.96
+],
+[
+11.66,
+12.16
+],
+[
+14.06,
+14.16
+],
+[
+16.66,
+16.96
+],
+[
+20.66,
+20.86
+],
+[
+24.06,
+25.56
+]
+],
+"agent": "I completely understand your concern. Heather, it's important to have that sense of security. Since you haven't received the confirmation yet, I recommend checking with your bank or credit card provider to ensure that the transaction went through successfully. If there's any issue, they might provide you with additional information. If you'd like, I can also update you on the order's expected timeline for confirmation and pickup. Just to reassure you, we take customer security seriously and your information is safe with us. Let me know how else I can help you.",
+"block": 1
+},
+{
+"id": "en__376_36__user_turn_005",
+"trim": 2.58,
+"dur": 8.72,
+"spans": [
+[
+1.92,
+2.92
+],
+[
+5.22,
+6.72
+]
+],
+"agent": "Perfect. Could you please let me know if you're looking to schedule an appointment for your newborn or for yourself? Also let me know if you have a particular doctor in mind or if you'd like to see our pediatrician, doctor Emily Park.",
+"block": 1
+},
+{
+"id": "en__234_89__user_turn_000",
+"trim": 1.3,
+"dur": 42.1,
+"spans": [
+[
+1.4,
+1.9
+],
+[
+8.1,
+8.3
+],
+[
+9.3,
+9.5
+],
+[
+14.5,
+14.7
+],
+[
+16.4,
+16.7
+],
+[
+19.1,
+19.3
+],
+[
+23.6,
+23.7
+],
+[
+31.7,
+31.8
+],
+[
+36.0,
+36.1
+],
+[
+38.6,
+40.1
+]
+],
+"agent": "Though a nate this is Maria. How can I help you today?",
+"block": 1
+},
+{
+"id": "en__516_8__user_turn_008",
+"trim": 0.5,
+"dur": 8.7,
+"spans": [
+[
+1.9,
+2.3
+],
+[
+3.6,
+4.0
+],
+[
+5.2,
+6.7
+]
+],
+"agent": "I totally understand, but I don't have access to check previous orders, so I can't see what's in the system. If you have an order number from your last order, I could help you confirm it, or you could tell me what you ordered last time, and I can get that for you. What do you think?",
+"block": 1
+},
+{
+"id": "en__586_28__user_turn_002",
+"trim": 1.06,
+"dur": 4.84,
+"spans": [
+[
+1.34,
+2.84
+]
+],
+"agent": "Just to confirm, that's order number five seven five three seven correct?",
+"block": 1
+},
+{
+"id": "en__376_36__user_turn_002",
+"trim": 3.06,
+"dur": 58.44,
+"spans": [
+[
+3.74,
+3.84
+],
+[
+5.04,
+5.64
+],
+[
+7.54,
+8.24
+],
+[
+11.94,
+12.24
+],
+[
+16.24,
+16.64
+],
+[
+18.14,
+18.34
+],
+[
+21.54,
+21.84
+],
+[
+23.64,
+23.74
+],
+[
+24.54,
+24.74
+],
+[
+25.14,
+25.54
+],
+[
+29.44,
+30.04
+],
+[
+34.44,
+34.74
+],
+[
+36.24,
+36.64
+],
+[
+40.34,
+40.74
+],
+[
+43.54,
+44.04
+],
+[
+45.64,
+45.94
+],
+[
+46.64,
+47.04
+],
+[
+47.74,
+48.34
+],
+[
+49.84,
+50.04
+],
+[
+51.64,
+52.34
+],
+[
+53.34,
+53.54
+],
+[
+54.94,
+56.44
+]
+],
+"agent": "I understand, Cynthia, it sounds like you want to ensure everything is set up correctly for your baby's care and insurance coverage. To help with that, could you please provide me with your full name, date of birth, and the insurance information you have? That way I can assist you better with any scheduling or verification you need.",
+"block": 1
+},
+{
+"id": "en__671_55__user_turn_001",
+"trim": 2.5,
+"dur": 10.4,
+"spans": [
+[
+2.1,
+2.2
+],
+[
+3.5,
+3.8
+],
+[
+6.9,
+8.4
+]
+],
+"agent": "Hi, Justin. I completely understand how frustrating that can be, especially when you need to work from home. Let's see if we can get this sorted out. First, can I have your account number or the phone number associated with your account so I can look into this for you?",
+"block": 1
+},
+{
+"id": "en__571_24__user_turn_004",
+"trim": 2.9,
+"dur": 6.8,
+"spans": [
+[
+3.3,
+4.8
+]
+],
+"agent": "So that's three orders of garlic knots and three orders of wings. That'll definitely make for a feast. Now what kind of pizza are you thinking of? We have personal, medium, or large sizes available.",
+"block": 1
+},
+{
+"id": "en__586_28__user_turn_003",
+"trim": 8.5,
+"dur": 4.7,
+"spans": [
+[
+1.2,
+2.7
+]
+],
+"agent": "Thank you. Sharon. I see that your game console was scheduled for delivery last week, but it looks like there was an unexpected delay with the shipment. It should be arriving within the next few days. I recommend checking your email for any tracking updates as well. Would you like me to provide you with a tracking number?",
+"block": 1
+},
+{
+"id": "en__875_82__user_turn_007",
+"trim": 4.1,
+"dur": 11.9,
+"spans": [
+[
+2.2,
+3.2
+],
+[
+5.6,
+5.8
+],
+[
+8.4,
+9.9
+]
+],
+"agent": "I completely understand your frustration. Linda, and I appreciate your patience. Your feedback is really valuable to us. Improving transparency and providing quick solutions is important for us at Curated Box Monthly. If there are specific suggestions you have in mind for how we could improve our billing processes or communication, I would be happy to pass that along to our management team. Would you like to share any particular thoughts or ideas?",
+"block": 1
+},
+{
+"id": "en__1044_96__user_turn_007",
+"trim": 1.7,
+"dur": 17.6,
+"spans": [
+[
+1.4,
+2.7
+],
+[
+5.7,
+6.4
+],
+[
+7.1,
+7.5
+],
+[
+8.4,
+9.0
+],
+[
+12.9,
+13.4
+],
+[
+14.1,
+15.6
+]
+],
+"agent": "Let me read that back to you. So your email is K A T H E R IN E dot BR OK S eight four at m A lot com did I did that right?",
+"block": 1
+},
+{
+"id": "en__465_62__user_turn_012",
+"trim": 1.46,
+"dur": 9.24,
+"spans": [
+[
+5.74,
+7.24
+]
+],
+"agent": "So that's february fourteenth for the delivery of the champagne and chocolate covered strawberries, correct?",
+"block": 1
+},
+{
+"id": "en__827_28__user_turn_006",
+"trim": 1.78,
+"dur": 5.02,
+"spans": [
+[
+1.52,
+3.02
+]
+],
+"agent": "Thank you for that information. Alexander I understand your concerns about the delivery issue, and I'll make sure to document that you're disputing the charge because the item was delivered to the wrong address. I will create a dispute case for you and you can expect a case number shortly. The investigation will typically take about ten business days. Unfortunately, I can't redirect the order for you, but once the dispute is processed and if you were issued a refund, you'll be able to reorder the item. As for the underlying issue, it's important to ensure that your account information, especially your address, is accurate. If you'd like, I can assist you in confirming that your address on file is correct, so we can avoid similar issues in the future. Would you like to do that?",
+"block": 1
+},
+{
+"id": "en__224_147__user_turn_008",
+"trim": 2.1,
+"dur": 11.2,
+"spans": [
+[
+5.5,
+5.8
+],
+[
+7.7,
+9.2
+]
+],
+"agent": "That sounds perfect. Maya, just give us a call whenever you're ready to reschedule, and we'll take care of everything for you. Have a great day and take care.",
+"block": 1
+},
+{
+"id": "en__518_36__user_turn_002",
+"trim": 1.86,
+"dur": 15.14,
+"spans": [
+[
+3.14,
+3.24
+],
+[
+8.14,
+8.64
+],
+[
+11.64,
+13.14
+]
+],
+"agent": "I get it, Robert, that can definitely be frustrating. Sometimes menus get updated, and I'm sorry if you missed the announcement. It usually happens to keep things fresh and exciting, but we understand it can be a little confusing. We do our best to communicate those changes, but it looks like it slipped through the cracks for you. I can assure you that Supreme is a fan favorite and just as good as ever. Would you like to place an order for that now?",
+"block": 1
+},
+{
+"id": "en__977_89__user_turn_004",
+"trim": 1.14,
+"dur": 4.26,
+"spans": [
+[
+0.76,
+2.26
+]
+],
+"agent": "Thank you, Stephanie. Just to confirm that's STEP HAN I E Edwards and the flight date is december twenty seventh, correct?",
+"block": 1
+},
+{
+"id": "en__855_55__user_turn_000",
+"trim": 1.86,
+"dur": 41.44,
+"spans": [
+[
+3.54,
+3.74
+],
+[
+9.34,
+9.64
+],
+[
+13.04,
+13.34
+],
+[
+16.74,
+16.94
+],
+[
+22.24,
+22.44
+],
+[
+23.34,
+23.64
+],
+[
+27.64,
+27.84
+],
+[
+30.04,
+30.24
+],
+[
+32.74,
+33.04
+],
+[
+37.94,
+39.44
+]
+],
+"agent": "Hello, thank you for calling First Community Bank. My name is Michelle. How can I assist you today?",
+"block": 1
+},
+{
+"id": "en__719_50__user_turn_001",
+"trim": 1.78,
+"dur": 9.82,
+"spans": [
+[
+3.52,
+3.72
+],
+[
+4.82,
+4.92
+],
+[
+6.32,
+7.82
+]
+],
+"agent": "I can help you with that. To go over your bill, I'll need to verify some information. Can I get your account number or the phone number on the account please?",
+"block": 1
+},
+{
+"id": "en__1118_47__user_turn_002",
+"trim": 1.62,
+"dur": 10.98,
+"spans": [
+[
+3.68,
+4.28
+],
+[
+5.18,
+5.68
+],
+[
+7.48,
+8.98
+]
+],
+"agent": "No problem at all, so that's a two thousand one BMW with about one hundred ten thousand miles on it, correct? And if you're not sure about the model, that's okay. We can figure it out when you come in. Now let's find a good time for you. What days and times work best for your schedule?",
+"block": 1
+},
+{
+"id": "en__451_96__user_turn_011",
+"trim": 1.06,
+"dur": 7.74,
+"spans": [
+[
+4.24,
+5.74
+]
+],
+"agent": "I completely understand your urgency. Larry and I'll make it a priority to get this resolved as quickly as possible. I'll follow up diligently and make sure to expedite the process. You can expect to hear back from me very soon regarding your new room. Thank you for your patience, and please let me know if there's anything else I can assist you with in the meantime.",
+"block": 1
+},
+{
+"id": "en__719_50__user_turn_005",
+"trim": 1.54,
+"dur": 4.96,
+"spans": [
+[
+0.76,
+0.96
+],
+[
+1.46,
+2.96
+]
+],
+"agent": "I understand your concern, and it's always good to clarify any unexpected charges. The surcharges listed under other fees can sometimes change due to increased operating costs or regulatory changes that we need to pass on to customers. Since I'm unable to provide the exact reason for these increases, I recommend checking any recent communications from Connect Wave as we sometimes notify customers of these changes ahead of time. If you'd like, I can help you set up a formal inquiry with our billing department to get a detailed explanation for those surcharges. Would you like me to assist you with that?",
+"block": 1
+},
+{
+"id": "en__606_102__user_turn_010",
+"trim": 1.14,
+"dur": 5.16,
+"spans": [
+[
+1.66,
+3.16
+]
+],
+"agent": "A billing number won't be necessary for scheduling the appointment. Since this is your first appointment, I'll provide you with a confirmation number after I finalize the schedule. So just to confirm, I'll schedule a technician for Monday morning. I'll provide you with a confirmation number. Let me finalize that. Your confirmation number will be zero seven three eight six two. Is there anything else I can assist you with today?",
+"block": 1
+},
+{
+"id": "en__1115_49__user_turn_005",
+"trim": 20.18,
+"dur": 5.42,
+"spans": [
+[
+0.72,
+0.82
+],
+[
+1.92,
+3.42
+]
+],
+"agent": "You're welcome. I'll get back to you shortly with the information you need. Just hang tight and I'll make sure you're updated as soon as I have more details.",
+"block": 1
+},
+{
+"id": "en__518_36__user_turn_005",
+"trim": 12.26,
+"dur": 6.64,
+"spans": [
+[
+1.74,
+1.84
+],
+[
+3.14,
+4.64
+]
+],
+"agent": "Thanks. Robert just to confirm, I have the name as Robert Anderson, and the phone number is seven two five hundred eight seven nine four. Is that right? Now I can't take credit card information over the phone, and regarding your royalty program, I don't have access to that info, but if you have account details, you may want to check on that through our website. Let's get those pizzas confirmed. So two large veggie supreme pizzas for pickup, right?",
+"block": 1
+},
+{
+"id": "en__280_147__user_turn_000",
+"trim": 3.54,
+"dur": 39.66,
+"spans": [
+[
+2.66,
+3.26
+],
+[
+7.86,
+8.16
+],
+[
+14.16,
+14.36
+],
+[
+18.96,
+19.26
+],
+[
+22.86,
+22.96
+],
+[
+24.86,
+24.96
+],
+[
+26.16,
+26.36
+],
+[
+29.26,
+29.56
+],
+[
+35.06,
+35.46
+],
+[
+36.16,
+37.66
+]
+],
+"agent": "Bella Not this is Maria.",
+"block": 1
+},
+{
+"id": "en__875_82__user_turn_000",
+"trim": 6.9,
+"dur": 20.8,
+"spans": [
+[
+3.8,
+4.1
+],
+[
+7.6,
+8.0
+],
+[
+9.6,
+10.1
+],
+[
+12.0,
+12.9
+],
+[
+17.3,
+18.8
+]
+],
+"agent": "Curated Box Monthly, this is Sam. How can I help you today?",
+"block": 1
+},
+{
+"id": "en__553_18__user_turn_007",
+"trim": 1.62,
+"dur": 8.38,
+"spans": [
+[
+4.88,
+6.38
+]
+],
+"agent": "No problem, just to confirm your order, that's two packs of garlic nots and two Coca Colas for fourteen dollars. Now can I have your name and a phone number for the order?",
+"block": 1
+},
+{
+"id": "en__401_126__user_turn_012",
+"trim": 1.94,
+"dur": 4.86,
+"spans": [
+[
+1.36,
+2.86
+]
+],
+"agent": "Perfect. Your total comes to forty dollars and your order will be ready in about twenty to twenty five minutes. We'll deliver it to four hundred twenty nine School Road in Oakland. Thanks, Andrew. Enjoy your pizza.",
+"block": 1
+},
+{
+"id": "en__906_126__user_turn_008",
+"trim": 4.1,
+"dur": 8.7,
+"spans": [
+[
+1.7,
+2.1
+],
+[
+3.5,
+4.0
+],
+[
+5.2,
+6.7
+]
+],
+"agent": "Thank you. Could you please provide the expiration date for your credit card?",
+"block": 1
+},
+{
+"id": "en__1137_55__user_turn_009",
+"trim": 2.26,
+"dur": 4.84,
+"spans": [
+[
+1.34,
+2.84
+]
+],
+"agent": "Awesome, Charles. You're all set for tomorrow at ten in the morning. If you have any other questions or need to reach out, feel free to call us safe travels and we'll see you then.",
+"block": 1
+},
+{
+"id": "en__983_24__user_turn_004",
+"trim": 2.9,
+"dur": 15.3,
+"spans": [
+[
+3.4,
+3.5
+],
+[
+5.0,
+5.2
+],
+[
+7.9,
+8.8
+],
+[
+10.4,
+10.5
+],
+[
+11.8,
+13.3
+]
+],
+"agent": "So that's the twelfth of march for your flight. Just to clarify, do you have any specific details on the route such as the departure city and destination? And could you confirm your order number?",
+"block": 1
+},
+{
+"id": "en__397_4__user_turn_011",
+"trim": 1.94,
+"dur": 4.96,
+"spans": [
+[
+1.46,
+2.96
+]
+],
+"agent": "Thank you, Linda. I will send the confirmation to your email address right away. Is there anything else I can assist you with today?",
+"block": 1
+},
+{
+"id": "en__839_71__user_turn_004",
+"trim": 1.06,
+"dur": 9.94,
+"spans": [
+[
+2.14,
+2.34
+],
+[
+6.44,
+7.94
+]
+],
+"agent": "Thank you for sharing that. Cynthia, I'll go ahead and report your card as lost. This will protect your account from any unauthorized charges. You won't be held responsible for any transactions made after reporting it lost. Now I'll also order a replacem card for you. It typically takes about seven to ten business days to arrive. Would you like to confirm your current mailing address for this replacement?",
+"block": 1
+},
+{
+"id": "en__924_49__user_turn_005",
+"trim": 18.9,
+"dur": 7.5,
+"spans": [
+[
+4.0,
+5.5
+]
+],
+"agent": "Thank you for confirming that. Since you mentioned not receiving a confirmation, it's possible the order didn't go through. Your cousin's birthday is coming up, so here's what I can do. Would you like me to help you place a new order?",
+"block": 1
+},
+{
+"id": "en__545_52__user_turn_010",
+"trim": 1.46,
+"dur": 11.34,
+"spans": [
+[
+2.34,
+2.54
+],
+[
+3.54,
+3.84
+],
+[
+5.94,
+6.34
+],
+[
+7.84,
+9.34
+]
+],
+"agent": "Perfect. Now could I have the address for the pickup? Please include the street, city, and zip code.",
+"block": 1
+},
+{
+"id": "en__1137_55__user_turn_000",
+"trim": 2.58,
+"dur": 36.32,
+"spans": [
+[
+2.82,
+2.92
+],
+[
+4.92,
+5.12
+],
+[
+8.22,
+8.72
+],
+[
+11.32,
+11.52
+],
+[
+12.22,
+12.72
+],
+[
+17.12,
+17.22
+],
+[
+21.72,
+22.02
+],
+[
+22.62,
+23.02
+],
+[
+27.02,
+27.52
+],
+[
+31.62,
+31.82
+],
+[
+32.82,
+34.32
+]
+],
+"agent": "Hi there. I'm Mike from Precision AutoCare. How can I assist you today?",
+"block": 1
+},
+{
+"id": "en__224_52__user_turn_004",
+"trim": 1.62,
+"dur": 5.38,
+"spans": [
+[
+1.88,
+3.38
+]
+],
+"agent": "I completely understand your concerns about allergies. It's very important to be cautious. At Thella Not we do offer some gluten free and vegetarian options, and our staff is always happy to assist with allergy inquiries. Once you've reviewed the menu and confirmed the dishes you'd like to consider, I can help you with rescheduling your reservation. Would you like to go over our menu options now? It seems like you might have a few things to think about. If you'd like to go over our menu or if you have any other questions, just let me know. I'm here to help.",
+"block": 1
+},
+{
+"id": "en__374_147__user_turn_004",
+"trim": 1.86,
+"dur": 12.64,
+"spans": [
+[
+9.14,
+10.64
+]
+],
+"agent": "You're very welcome. Dapra I'm glad I could help clarify things for you. If you need anything else in the future, please don't hesitate to reach out. Have a wonderful day.",
+"block": 1
+},
+{
+"id": "en__593_77__user_turn_005",
+"trim": 1.54,
+"dur": 4.36,
+"spans": [
+[
+0.86,
+2.36
+]
+],
+"agent": "Let me confirm that. You're shipping to six nine six Lake Drive, Milwaukee, Wisconsin five three two zero one, right?",
+"block": 1
+},
+{
+"id": "en__855_55__user_turn_010",
+"trim": 2.82,
+"dur": 5.58,
+"spans": [
+[
+2.08,
+3.58
+]
+],
+"agent": "You're very welcome, Jennifer. I'm glad I could assist you. If you have any more questions or concerns in the future, don't hesitate to reach out. Have a great evening.",
+"block": 1
+},
+{
+"id": "en__280_147__user_turn_004",
+"trim": 4.58,
+"dur": 18.62,
+"spans": [
+[
+3.32,
+3.82
+],
+[
+4.52,
+4.72
+],
+[
+6.12,
+6.62
+],
+[
+7.22,
+7.82
+],
+[
+8.62,
+8.92
+],
+[
+11.32,
+11.92
+],
+[
+12.82,
+13.02
+],
+[
+13.92,
+14.22
+],
+[
+15.12,
+16.62
+]
+],
+"agent": "Thank you for that information. Jason. To confirm, I have your name as Jason Ward, your phone number as five two five two three six and your email as JASON dot w a r d five at A R O V O P R O T On Com Did I get that right?",
+"block": 1
+},
+{
+"id": "en__448_63__user_turn_001",
+"trim": 11.3,
+"dur": 13.6,
+"spans": [
+[
+1.3,
+2.1
+],
+[
+3.2,
+3.5
+],
+[
+4.2,
+4.3
+],
+[
+7.2,
+7.7
+],
+[
+8.6,
+9.1
+],
+[
+10.1,
+11.6
+]
+],
+"agent": "I can help with that. Could you please provide me with your confirmation number?",
+"block": 1
+},
+{
+"id": "en__1137_55__user_turn_008",
+"trim": 1.54,
+"dur": 4.16,
+"spans": [
+[
+0.66,
+2.16
+]
+],
+"agent": "I've got you at three one seven two five four two one seven Is that correct?",
+"block": 1
+},
+{
+"id": "en__963_16__user_turn_000",
+"trim": 2.1,
+"dur": 56.6,
+"spans": [
+[
+12.9,
+13.1
+],
+[
+44.2,
+44.4
+],
+[
+53.1,
+54.6
+]
+],
+"agent": "Skyway Airlines. This is David. How can I assist you today?",
+"block": 1
+},
+{
+"id": "en__558_23__user_turn_007",
+"trim": 0.5,
+"dur": 5.8,
+"spans": [
+[
+2.3,
+3.8
+]
+],
+"agent": "Thanks for clarifying. Anna, so to recap, your order will be four hundred and sixteen inch pizzas, one pepperoni, one margarita, one veggie supreme, and one Hawaiian. Is that correct?",
+"block": 1
+},
+{
+"id": "en__1049_120__user_turn_009",
+"trim": 5.78,
+"dur": 7.22,
+"spans": [
+[
+3.72,
+5.22
+]
+],
+"agent": "I completely understand, and your safety is the top priority. I'll expedite the request and get someone out there as quickly as possible. I'll put this through as urgent.",
+"block": 1
+},
+{
+"id": "en__1109_43__user_turn_008",
+"trim": 1.62,
+"dur": 5.08,
+"spans": [
+[
+1.58,
+3.08
+]
+],
+"agent": "Perfect. I've got you scheduled for tomorrow morning at nine for your twenty eighteen Toyota Prius. If you could bring it in and let us know about the battery issue, we'll take a look at it for you. Is there anything else I can assist you with today, Pamela?",
+"block": 1
+},
+{
+"id": "en__983_24__user_turn_018",
+"trim": 7.78,
+"dur": 17.72,
+"spans": [
+[
+2.62,
+3.12
+],
+[
+4.22,
+5.02
+],
+[
+5.62,
+6.52
+],
+[
+7.22,
+8.92
+],
+[
+10.02,
+10.72
+],
+[
+12.52,
+12.82
+],
+[
+14.22,
+15.72
+]
+],
+"agent": "To add a pet to your booking, I'll need to know a few details. First, could you tell me the type of pet you're bringing, such as a dog or a cat? Also, please confirm the weight of your pet along with the dimensions of the carrier you plan to use. This helps ensure it meets our requirements for in cabin travel.",
+"block": 1
+},
+{
+"id": "en__906_126__user_turn_011",
+"trim": 1.46,
+"dur": 4.54,
+"spans": [
+[
+1.04,
+2.54
+]
+],
+"agent": "To confirm, that's Christine. Myers eight six at Yahoo. com correct?",
+"block": 1
+},
+{
+"id": "en__713_62__user_turn_004",
+"trim": 1.3,
+"dur": 4.3,
+"spans": [
+[
+0.8,
+2.3
+]
+],
+"agent": "Just to confirm, the account is under Brenda Ross spelled R O S. Is that correct?",
+"block": 1
+},
+{
+"id": "en__954_24__user_turn_007",
+"trim": 5.62,
+"dur": 11.58,
+"spans": [
+[
+0.68,
+0.98
+],
+[
+2.98,
+3.88
+],
+[
+5.28,
+6.08
+],
+[
+8.08,
+9.58
+]
+],
+"agent": "Great, to confirm your change to the four fifteen PM flight on february sixth, twenty twenty six, I'll need to process the fare difference. Can you please provide me with the phone number you'd like me to use for contact?",
+"block": 1
+},
+{
+"id": "en__401_126__user_turn_011",
+"trim": 2.82,
+"dur": 5.48,
+"spans": [
+[
+1.98,
+3.48
+]
+],
+"agent": "Got it. So that's the name Andrew Evans and the phone number nine seven two six three four five two. Is that correct?",
+"block": 1
+},
+{
+"id": "en__994_43__user_turn_006",
+"trim": 0.9,
+"dur": 5.0,
+"spans": [
+[
+1.5,
+3.0
+]
+],
+"agent": "Since you're currently booked with a main cabin fare, I can change your flight without a fee, but there may be a fair difference. Let me calculate that for you. The fair difference for the earlier flight is an additional one hundred twenty five dollars. Would you like to proceed with that change?",
+"block": 1
+},
+{
+"id": "en__219_75__user_turn_001",
+"trim": 3.54,
+"dur": 28.16,
+"spans": [
+[
+0.66,
+1.06
+],
+[
+4.16,
+4.36
+],
+[
+5.96,
+6.36
+],
+[
+9.96,
+10.26
+],
+[
+14.36,
+14.56
+],
+[
+16.86,
+17.06
+],
+[
+21.86,
+21.96
+],
+[
+24.66,
+26.16
+]
+],
+"agent": "Hi Robert, or should I say Mr. Anderson? I love that you're celebrating a victory. Unfortunately, I can't check for cancellations directly, but I encourage you to try calling back later or come by to see if anything opens up. As for the lounge seating, we don't have a specific lounge area, but we do have seating available indoors and on the patio, weather permitting. If you're flexible with timing, let me know what date and time you're thinking of and I'll do my best to find a table for you. Just give me the details and we'll work it out.",
+"block": 1
+},
+{
+"id": "en__580_144__user_turn_006",
+"trim": 0.82,
+"dur": 4.28,
+"spans": [
+[
+0.78,
+2.28
+]
+],
+"agent": "Let me confirm that I have your email as R A C H El. WHIT E ninety at Yahoo. com. Is that correct?",
+"block": 1
+},
+{
+"id": "en__234_89__user_turn_008",
+"trim": 0.98,
+"dur": 8.92,
+"spans": [
+[
+5.42,
+6.92
+]
+],
+"agent": "Bellissimo I've updated your reservation for four desks this Friday at seven PM. Just a quick reminder that we hold reservations for up to fifteen minutes past the booking time, and we appreciate any cancellations at least twenty four hours in advance. If you need anything else, feel free to ask. Enjoy your dinner with your friends.",
+"block": 1
+},
+{
+"id": "en__720_8__user_turn_008",
+"trim": 1.38,
+"dur": 5.52,
+"spans": [
+[
+2.02,
+3.52
+]
+],
+"agent": "That makes perfect sense. I'll go ahead and schedule the installation for Thursday at noon. Just to confirm, you'll have the gigabit internet plan, and the technician will arrive on february fifth at noon. Is there anything else you need before we finish up?",
+"block": 1
+},
+{
+"id": "en__990_36__user_turn_000",
+"trim": 3.94,
+"dur": 16.36,
+"spans": [
+[
+4.96,
+5.86
+],
+[
+8.76,
+9.06
+],
+[
+10.96,
+11.36
+],
+[
+12.86,
+14.36
+]
+],
+"agent": "",
+"block": 1
+},
+{
+"id": "en__209_55__user_turn_003",
+"trim": 2.5,
+"dur": 23.2,
+"spans": [
+[
+1.4,
+1.9
+],
+[
+4.3,
+4.5
+],
+[
+6.0,
+6.4
+],
+[
+7.6,
+7.9
+],
+[
+10.0,
+10.3
+],
+[
+13.6,
+13.8
+],
+[
+15.6,
+16.0
+],
+[
+17.5,
+17.7
+],
+[
+19.7,
+21.2
+]
+],
+"agent": "Absolutely. Barbara, we can definitely accommodate your vegetarian and gluten free friends. For the vegetarian options, we can include dishes like our Caprice salad and perhaps a pasta dish without meat. For gluten free, we can offer a gluten free pasta, along with a delicious branzino for the main course. I'll make sure we have a delightful variety for all your guests, including those dietary preferences. Now, may I have your phone number to complete the reservation and a credit card to hold the private dining room for the evening?",
+"block": 1
+},
+{
+"id": "en__829_87__user_turn_005",
+"trim": 1.3,
+"dur": 20.8,
+"spans": [
+[
+8.3,
+8.5
+],
+[
+10.0,
+10.6
+],
+[
+14.4,
+14.6
+],
+[
+17.3,
+18.8
+]
+],
+"agent": "So that's the transaction dated february second at eight thirty in the morning for two hundred dollars. Correct?",
+"block": 1
+},
+{
+"id": "en__397_4__user_turn_008",
+"trim": 0.42,
+"dur": 7.18,
+"spans": [
+[
+3.68,
+5.18
+]
+],
+"agent": "I've successfully updated your reservation to the new dates. You're now confirmed for check in on october twelfth and check out on october nineteenth. Your confirmation number remains the same. five seven nine seven nine four eight. Would you like me to send you an email confirmation?",
+"block": 1
+},
+{
+"id": "en__371_24__user_turn_004",
+"trim": 8.02,
+"dur": 12.18,
+"spans": [
+[
+0.98,
+1.08
+],
+[
+2.78,
+3.28
+],
+[
+4.48,
+5.18
+],
+[
+6.48,
+7.18
+],
+[
+8.68,
+10.18
+]
+],
+"agent": "Perfect. Now, can you confirm the phone number we have on file for you?",
+"block": 1
+},
+{
+"id": "en__448_63__user_turn_002",
+"trim": 1.14,
+"dur": 5.76,
+"spans": [
+[
+2.26,
+3.76
+]
+],
+"agent": "Just to confirm, that's the letter O followed by RD then five seven four nine, correct? Regarding any",
+"block": 1
+},
+{
+"id": "en__366_52__user_turn_016",
+"trim": 1.54,
+"dur": 22.16,
+"spans": [
+[
+9.56,
+10.16
+],
+[
+10.66,
+12.26
+],
+[
+14.86,
+15.26
+],
+[
+18.66,
+20.16
+]
+],
+"agent": "I understand the urgency, but due to the nature of your symptoms, I highly recommend going to the nearest emergency room or urgent care for immediate evaluation. If you would like, I can provide you with some urgent care locations nearby. Would that be helpful?",
+"block": 1
+},
+{
+"id": "en__224_147__user_turn_004",
+"trim": 1.94,
+"dur": 13.46,
+"spans": [
+[
+5.86,
+6.16
+],
+[
+9.96,
+11.46
+]
+],
+"agent": "No problem at all, Rya, I can help you with that. Just to confirm, your reservation was for today, february seventeenth, correct?",
+"block": 2
+},
+{
+"id": "en__989_144__user_turn_009",
+"trim": 1.86,
+"dur": 5.34,
+"spans": [
+[
+1.24,
+1.34
+],
+[
+1.84,
+3.34
+]
+],
+"agent": "Of course, I found that there are available seats to upgrade your friends flight to Comfort Plus. The upgrade fee is one hundred and fifty dollars. Would you like to proceed with the upgrade?",
+"block": 2
+},
+{
+"id": "en__1042_52__user_turn_003",
+"trim": 2.66,
+"dur": 4.34,
+"spans": [
+[
+0.84,
+2.34
+]
+],
+"agent": "Got it. That's ON seven three zero two seven three eight correct?",
+"block": 2
+},
+{
+"id": "en__401_126__user_turn_005",
+"trim": 2.58,
+"dur": 6.42,
+"spans": [
+[
+2.92,
+4.42
+]
+],
+"agent": "It looks like we only offer the veggie supreme as a specialty pizza in the sixteen inch size for twenty four dollars. Would you like to go with that? Or perhaps another size or type of pizza?",
+"block": 2
+},
+{
+"id": "en__948_9__user_turn_009",
+"trim": 0.66,
+"dur": 12.64,
+"spans": [
+[
+6.34,
+6.64
+],
+[
+7.74,
+7.84
+],
+[
+9.14,
+10.64
+]
+],
+"agent": "Just to confirm, I have your email address as Nicole. Flores seventy eight at Yahoo dot com spelled N I C O L E dot FL R E Seventy eight at Yahoo dot com is that correct?",
+"block": 2
+},
+{
+"id": "en__209_55__user_turn_000",
+"trim": 1.22,
+"dur": 43.28,
+"spans": [
+[
+2.48,
+2.98
+],
+[
+9.18,
+9.38
+],
+[
+15.98,
+18.08
+],
+[
+20.78,
+20.88
+],
+[
+26.48,
+26.58
+],
+[
+33.28,
+33.48
+],
+[
+35.38,
+35.48
+],
+[
+37.08,
+37.28
+],
+[
+39.78,
+41.28
+]
+],
+"agent": "Bella Note This is Maria. How can I help you to day?",
+"block": 2
+},
+{
+"id": "en__415_87__user_turn_009",
+"trim": 1.54,
+"dur": 5.96,
+"spans": [
+[
+2.46,
+3.96
+]
+],
+"agent": "Thank you, Steven. Your junior suite is now reserved for february thirteenth to february sixteenth with the accessibility features you need. Your confirmation number is two fifty six eight one zero. You will receive a confirmation email shortly at Steven Harris thirty three at iCloud. com If you have any other questions or special requests, feel free to reach out. We look forward to welcoming you and your family.",
+"block": 2
+},
+{
+"id": "en__224_147__user_turn_003",
+"trim": 6.66,
+"dur": 10.14,
+"spans": [
+[
+1.04,
+1.44
+],
+[
+6.64,
+8.14
+]
+],
+"agent": "Perfeto Now what allergy related details would you like to go over?",
+"block": 2
+},
+{
+"id": "en__558_23__user_turn_002",
+"trim": 0.42,
+"dur": 4.38,
+"spans": [
+[
+0.88,
+2.38
+]
+],
+"agent": "Thanks. So that's order number two six four eight six, right?",
+"block": 2
+},
+{
+"id": "en__989_144__user_turn_002",
+"trim": 0.9,
+"dur": 39.2,
+"spans": [
+[
+2.5,
+2.8
+],
+[
+5.4,
+5.7
+],
+[
+6.8,
+7.0
+],
+[
+10.6,
+11.0
+],
+[
+12.8,
+13.1
+],
+[
+14.5,
+14.6
+],
+[
+16.3,
+16.6
+],
+[
+18.7,
+18.8
+],
+[
+24.4,
+24.9
+],
+[
+28.0,
+28.1
+],
+[
+29.6,
+30.0
+],
+[
+30.6,
+30.9
+],
+[
+33.9,
+34.6
+],
+[
+35.7,
+37.2
+]
+],
+"agent": "Yes, I can hear you now. How can I assist you today?",
+"block": 2
+},
+{
+"id": "en__558_23__user_turn_017",
+"trim": 2.58,
+"dur": 4.22,
+"spans": [
+[
+0.72,
+2.22
+]
+],
+"agent": "You're very welcome. Anna, I'm glad I could help. Have a fantastic party and enjoy the pizza and cake.",
+"block": 2
+},
+{
+"id": "en__829_87__user_turn_002",
+"trim": 1.86,
+"dur": 7.84,
+"spans": [
+[
+4.34,
+5.84
+]
+],
+"agent": "Thank you. Scott, could you please provide the last four digits of your Social Security number or your account number?",
+"block": 2
+},
+{
+"id": "en__921_77__user_turn_002",
+"trim": 0.74,
+"dur": 4.36,
+"spans": [
+[
+0.86,
+2.36
+]
+],
+"agent": "Just to confirm, your new shipping address is six five zero nine School Road, Orlando, Florida three eight zero one. Is that correct?",
+"block": 2
+},
+{
+"id": "en__983_24__user_turn_000",
+"trim": 1.06,
+"dur": 21.04,
+"spans": [
+[
+3.64,
+5.04
+],
+[
+5.94,
+6.04
+],
+[
+7.24,
+7.34
+],
+[
+8.54,
+9.34
+],
+[
+11.74,
+11.84
+],
+[
+12.44,
+12.94
+],
+[
+15.04,
+16.24
+],
+[
+17.54,
+19.04
+]
+],
+"agent": "Skyway Airlines. This is David. How can I assist you today?",
+"block": 2
+},
+{
+"id": "en__1115_49__user_turn_003",
+"trim": 1.3,
+"dur": 29.6,
+"spans": [
+[
+2.9,
+3.2
+],
+[
+4.3,
+5.6
+],
+[
+6.9,
+7.0
+],
+[
+8.7,
+10.9
+],
+[
+11.6,
+11.7
+],
+[
+13.2,
+16.5
+],
+[
+18.5,
+20.1
+],
+[
+21.5,
+21.8
+],
+[
+22.5,
+23.0
+],
+[
+26.1,
+27.6
+]
+],
+"agent": "Thanks for confirming. It looks like there have been some parts delays that have pushed back the completion date. I will check in with the technicians and see if we have a new timeline for you. I'll make sure to pass your concerns along and get back to you as soon as I have more information.",
+"block": 2
+},
+{
+"id": "en__782_52__user_turn_008",
+"trim": 4.98,
+"dur": 6.82,
+"spans": [
+[
+2.52,
+2.72
+],
+[
+3.32,
+4.82
+]
+],
+"agent": "I understand the urgency of this situation, and I'm here to help. Unfortunately, I can't directly verify the recipient's account status with that information. Wire transfers can sometimes be delayed for various reasons. I recommend that you ask the recipient to check with their bank to see if the funds are pending or if there are any issues on their end. Additionally, if you have the transaction details, I can help you file a formal inquiry with our bank regarding the status of that wire transfer. Would you like to proceed with that?",
+"block": 2
+},
+{
+"id": "en__215_67__user_turn_005",
+"trim": 1.22,
+"dur": 4.48,
+"spans": [
+[
+0.98,
+2.48
+]
+],
+"agent": "I have you at six forty six zero zero nine five seven eight Did I get that right?",
+"block": 2
+},
+{
+"id": "en__376_36__user_turn_008",
+"trim": 10.18,
+"dur": 8.52,
+"spans": [
+[
+2.02,
+2.22
+],
+[
+2.92,
+3.02
+],
+[
+5.02,
+6.52
+]
+],
+"agent": "Great. I've scheduled your appointment for your newborn with Dr. Emily Park tomorrow at nine AM. Just a reminder to arrive ten to fifteen minutes early with your insurance information and any necessary paperwork. If there's anything else you need, feel free to ask.",
+"block": 2
+},
+{
+"id": "en__415_87__user_turn_007",
+"trim": 1.14,
+"dur": 15.96,
+"spans": [
+[
+2.16,
+2.66
+],
+[
+4.16,
+4.96
+],
+[
+6.86,
+7.66
+],
+[
+9.26,
+10.26
+],
+[
+12.46,
+13.96
+]
+],
+"agent": "Thank you for the correction, Steven. So I have your email address as Steven. Harris thirty three at iCloud. com. Now for the junior suite from february thirteenth to february sixteenth, let's proceed with reserving that for you. I will need your credit card information to guarantee the reservation. Can you please provide the card number?",
+"block": 2
+},
+{
+"id": "en__974_82__user_turn_001",
+"trim": 8.98,
+"dur": 6.22,
+"spans": [
+[
+2.72,
+4.22
+]
+],
+"agent": "Thank you for sharing your name. Melissa, I understand that a delayed flight can be stressful, especially when you're on your way to a wedding. For delayed flights, if the delay is due to the airline, we offer free rebooking on a later flight. If your delay extends overnight, we also provide a hotel voucher and meal vouchers to help with your expenses. Unfortunately, if the delay is caused by weather, there won't be any compensation, but you can still rebook without charge. Could you please provide your confirmation number? This will help me check the status of your flight and assist you further.",
+"block": 2
+},
+{
+"id": "en__906_126__user_turn_014",
+"trim": 1.86,
+"dur": 4.44,
+"spans": [
+[
+0.94,
+2.44
+]
+],
+"agent": "You're welcome. Have a great day.",
+"block": 2
+},
+{
+"id": "en__954_24__user_turn_004",
+"trim": 3.94,
+"dur": 7.06,
+"spans": [
+[
+3.56,
+5.06
+]
+],
+"agent": "So you're looking to change your flight to february sixth, twenty twenty six after three PM, correct? Let me check that availability for you. It looks like there are a couple of options available for that date after three PM. The first flight departs at fourteen PM and the second option departs at six PM. Would you like to go with one of those options?",
+"block": 2
+},
+{
+"id": "en__219_75__user_turn_000",
+"trim": 2.66,
+"dur": 58.44,
+"spans": [
+[
+1.14,
+1.34
+],
+[
+2.34,
+2.44
+],
+[
+5.04,
+5.14
+],
+[
+8.54,
+8.94
+],
+[
+13.14,
+13.34
+],
+[
+14.84,
+15.04
+],
+[
+17.84,
+18.04
+],
+[
+20.74,
+21.14
+],
+[
+28.14,
+28.64
+],
+[
+29.44,
+29.94
+],
+[
+32.44,
+32.64
+],
+[
+33.14,
+33.34
+],
+[
+39.04,
+39.44
+],
+[
+42.14,
+42.24
+],
+[
+45.04,
+45.34
+],
+[
+48.34,
+48.54
+],
+[
+51.44,
+51.74
+],
+[
+53.24,
+53.34
+],
+[
+54.94,
+56.44
+]
+],
+"agent": "Bella Note. This is Maria. How can I help you tonight?",
+"block": 2
+},
+{
+"id": "en__974_82__user_turn_007",
+"trim": 4.18,
+"dur": 6.72,
+"spans": [
+[
+3.22,
+4.72
+]
+],
+"agent": "Alright, so you're looking to rebook for the next day. When rebooking, meals and accommodation vouchers will be available since it's an airline fault. You'll be provided with meal vouchers to cover your meals while you wait. For your rebooking to the next day, I recommend checking in with the airline counter at the airport as they have the most up to date availability. Would you like any assistance with how to use your meal vouchers?",
+"block": 2
+},
+{
+"id": "en__283_127__user_turn_004",
+"trim": 1.14,
+"dur": 16.06,
+"spans": [
+[
+1.46,
+1.76
+],
+[
+2.16,
+2.26
+],
+[
+2.86,
+3.36
+],
+[
+6.16,
+6.86
+],
+[
+7.26,
+7.46
+],
+[
+8.06,
+8.26
+],
+[
+8.66,
+8.86
+],
+[
+9.36,
+9.96
+],
+[
+12.56,
+14.06
+]
+],
+"agent": "Carfetto Now, since your party is for seven people, I just need to confirm a credit card to hold the reservation. Can you please provide me with the card number?",
+"block": 2
+},
+{
+"id": "en__987_40__user_turn_008",
+"trim": 0.66,
+"dur": 4.54,
+"spans": [
+[
+1.04,
+2.54
+]
+],
+"agent": "Just to confirm, that's the ticket number B five four one zero one three right?",
+"block": 2
+},
+{
+"id": "en__839_71__user_turn_006",
+"trim": 0.58,
+"dur": 13.62,
+"spans": [
+[
+4.22,
+4.42
+],
+[
+10.12,
+11.62
+]
+],
+"agent": "Yes, of course Can you please provide me with your current mailing address to confirm it for the delivery of your new card?",
+"block": 2
+},
+{
+"id": "en__269_149__user_turn_007",
+"trim": 2.1,
+"dur": 6.8,
+"spans": [
+[
+2.3,
+2.7
+],
+[
+3.3,
+4.8
+]
+],
+"agent": "No problem at all. Your reservation is for this Saturday at seven PM If you have any other questions or need anything else, just let me know.",
+"block": 2
+},
+{
+"id": "en__839_71__user_turn_000",
+"trim": 0.82,
+"dur": 17.28,
+"spans": [
+[
+7.68,
+7.78
+],
+[
+8.18,
+8.28
+],
+[
+13.78,
+15.28
+]
+],
+"agent": "Hello, this is Michelle from First Community Bank. How could I assist you today?",
+"block": 2
+},
+{
+"id": "en__607_38__user_turn_001",
+"trim": 3.38,
+"dur": 20.32,
+"spans": [
+[
+1.52,
+5.92
+],
+[
+6.32,
+7.42
+],
+[
+8.22,
+9.42
+],
+[
+10.12,
+11.62
+],
+[
+12.32,
+13.42
+],
+[
+14.12,
+14.32
+],
+[
+15.02,
+15.22
+],
+[
+16.82,
+18.32
+]
+],
+"agent": "I can definitely help with that. Can you provide me with your service address so I can check for any reported outages in your area?",
+"block": 2
+},
+{
+"id": "en__396_82__user_turn_007",
+"trim": 3.22,
+"dur": 10.18,
+"spans": [
+[
+3.58,
+3.88
+],
+[
+4.28,
+4.48
+],
+[
+6.68,
+8.18
+]
+],
+"agent": "Excellent, lastly, could you provide me with your email address for the reservation confirmation?",
+"block": 2
+},
+{
+"id": "en__366_52__user_turn_010",
+"trim": 2.5,
+"dur": 8.3,
+"spans": [
+[
+2.5,
+3.0
+],
+[
+4.8,
+6.3
+]
+],
+"agent": "Great, so your insurance carrier is health partners. Can you please provide your member ID number?",
+"block": 2
+},
+{
+"id": "en__283_127__user_turn_003",
+"trim": 1.14,
+"dur": 4.56,
+"spans": [
+[
+1.06,
+2.56
+]
+],
+"agent": "I have you at two one zero five eight six nine eight zero seven. Did I get that right?",
+"block": 2
+},
+{
+"id": "en__954_24__user_turn_005",
+"trim": 12.42,
+"dur": 20.58,
+"spans": [
+[
+2.38,
+5.38
+],
+[
+6.58,
+6.78
+],
+[
+7.38,
+9.58
+],
+[
+11.68,
+12.58
+],
+[
+13.68,
+14.08
+],
+[
+17.08,
+18.58
+]
+],
+"agent": "Yes, there's a price difference. The four hundred fifteen PM flight has a fair difference of fifty dollars, while the six PM flight has a fair difference of thirty dollars. Would you like to proceed with either of those flights?",
+"block": 2
+},
+{
+"id": "en__982_2__user_turn_012",
+"trim": 2.02,
+"dur": 7.78,
+"spans": [
+[
+4.28,
+5.78
+]
+],
+"agent": "Perfect. I have your contact details updated. We'll get started on locating your luggage right away, and our team will keep you informed. Thank you for your patience in this situation. If there's anything else I can assist you with, please let me know.",
+"block": 2
+},
+{
+"id": "en__516_8__user_turn_012",
+"trim": 0.66,
+"dur": 4.74,
+"spans": [
+[
+1.24,
+2.74
+]
+],
+"agent": "Thanks for catching that. So just to confirm now, the address is seven three nine three Hill Road, Kansas City, Missouri six four. Correct?",
+"block": 2
+},
+{
+"id": "en__719_50__user_turn_003",
+"trim": 2.26,
+"dur": 18.24,
+"spans": [
+[
+4.74,
+5.24
+],
+[
+9.04,
+9.34
+],
+[
+12.84,
+13.04
+],
+[
+14.74,
+16.24
+]
+],
+"agent": "Great, I've got your account pulled up. Now regarding those other fees on your bill, they could be related to several things, like equipment, rental fees, taxes, or other standard charges. Can you give me a bit more detail about the specific fees you see listed?",
+"block": 2
+},
+{
+"id": "en__224_147__user_turn_006",
+"trim": 2.66,
+"dur": 15.24,
+"spans": [
+[
+6.24,
+6.34
+],
+[
+8.74,
+9.24
+],
+[
+11.74,
+13.24
+]
+],
+"agent": "Thank you for confirming. Your reservation has been successfully cancelled. If you need to reschedule or have any more questions in the future, feel free to reach out. Have a wonderful day, Raya.",
+"block": 2
+},
+{
+"id": "en__608_52__user_turn_005",
+"trim": 1.7,
+"dur": 10.8,
+"spans": [
+[
+1.6,
+1.7
+],
+[
+2.3,
+2.5
+],
+[
+3.4,
+3.7
+],
+[
+4.7,
+5.0
+],
+[
+5.5,
+5.6
+],
+[
+7.3,
+8.8
+]
+],
+"agent": "Of course, I can note your email address. What email would you like to use for the confirmation?",
+"block": 2
+},
+{
+"id": "en__576_127__user_turn_001",
+"trim": 0.98,
+"dur": 8.42,
+"spans": [
+[
+2.22,
+2.32
+],
+[
+4.92,
+6.42
+]
+],
+"agent": "Hi Heather, I can help you with that. First, could you please provide me with your order number? That way, I can locate your order details.",
+"block": 2
+},
+{
+"id": "en__1051_40__user_turn_005",
+"trim": 1.94,
+"dur": 5.76,
+"spans": [
+[
+1.56,
+1.76
+],
+[
+2.26,
+3.76
+]
+],
+"agent": "Great, I have you scheduled for this Friday at ten AM for your checkup on your two thousand one Chevy Corvette. If there's anything specific you'd like us to look at during the service, just let us know when you drop it off. We'll see you then.",
+"block": 2
+},
+{
+"id": "en__368_95__user_turn_006",
+"trim": 0.98,
+"dur": 8.52,
+"spans": [
+[
+3.72,
+3.82
+],
+[
+5.02,
+6.52
+]
+],
+"agent": "I'm glad that time works for you. However, I'm sorry to say that we don't have a shuttle service to pick up patients. You might want to consider other transportation options, like a taxi or rideshare service. Would you like me to finalize Chloe's appointment for one hundred thirty today?",
+"block": 2
+},
+{
+"id": "en__713_62__user_turn_002",
+"trim": 1.14,
+"dur": 4.86,
+"spans": [
+[
+1.36,
+2.86
+]
+],
+"agent": "Let me read that back to you to confirm. The phone number I have is two one four eight zero two seven zero six.",
+"block": 2
+},
+{
+"id": "en__1069_24__user_turn_007",
+"trim": 4.34,
+"dur": 6.36,
+"spans": [
+[
+2.86,
+4.36
+]
+],
+"agent": "Perfect. Now let's find a time for your inspection. How does this Thursday at ten in the morning sound?",
+"block": 2
+},
+{
+"id": "en__286_19__user_turn_002",
+"trim": 2.66,
+"dur": 24.54,
+"spans": [
+[
+2.14,
+2.44
+],
+[
+4.94,
+5.34
+],
+[
+7.64,
+7.94
+],
+[
+11.14,
+11.64
+],
+[
+12.14,
+12.34
+],
+[
+13.34,
+13.74
+],
+[
+21.04,
+22.54
+]
+],
+"agent": "It seems like I didn't catch that. How can I help you today?",
+"block": 2
+},
+{
+"id": "en__280_147__user_turn_003",
+"trim": 4.82,
+"dur": 19.98,
+"spans": [
+[
+2.58,
+3.08
+],
+[
+8.28,
+8.98
+],
+[
+10.68,
+10.88
+],
+[
+16.48,
+17.98
+]
+],
+"agent": "Thank you for your understanding, Jason. If you'd like to provide your contact information, I can help you relay it to our staff so they can reach out to you if the ring is found. Please go ahead with your name, phone number, and any other details you'd like to share.",
+"block": 2
+},
+{
+"id": "en__989_144__user_turn_006",
+"trim": 2.5,
+"dur": 15.2,
+"spans": [
+[
+6.0,
+6.8
+],
+[
+8.4,
+9.0
+],
+[
+10.4,
+10.5
+],
+[
+11.7,
+13.2
+]
+],
+"agent": "Thank you, Stephanie Edwards. I've got your reservation pulled up. You mentioned you've upgraded your flight and it looks like you have the Comfort Plus option, which includes extra legroom, priority boarding, and free drinks. Now, if you would like to upgrade your friend's flight as well, please provide her confirmation number or ticket number, and I'll check the options for her.",
+"block": 2
+},
+{
+"id": "en__553_18__user_turn_005",
+"trim": 0.02,
+"dur": 4.98,
+"spans": [
+[
+1.48,
+2.98
+]
+],
+"agent": "Alright, one Coca Cola coming right up.",
+"block": 2
+},
+{
+"id": "en__447_20__user_turn_000",
+"trim": 1.3,
+"dur": 49.9,
+"spans": [
+[
+4.8,
+4.9
+],
+[
+10.1,
+10.3
+],
+[
+12.4,
+12.5
+],
+[
+17.8,
+18.0
+],
+[
+21.2,
+21.5
+],
+[
+25.3,
+25.5
+],
+[
+27.1,
+27.5
+],
+[
+34.7,
+34.9
+],
+[
+44.7,
+45.1
+],
+[
+46.4,
+47.9
+]
+],
+"agent": "The Grambut Hotel, this is James. How may I assist you today?",
+"block": 2
+},
+{
+"id": "en__415_87__user_turn_004",
+"trim": 1.38,
+"dur": 19.42,
+"spans": [
+[
+4.82,
+6.02
+],
+[
+12.72,
+13.12
+],
+[
+14.92,
+15.12
+],
+[
+15.92,
+17.42
+]
+],
+"agent": "Great choice. The junior suite will provide ample space and a comfortable experience for your family. Now, may I have the full name for the reservation as well as a phone number and email address to send the confirmation.",
+"block": 2
+},
+{
+"id": "en__1044_96__user_turn_004",
+"trim": 1.14,
+"dur": 8.26,
+"spans": [
+[
+2.86,
+3.26
+],
+[
+4.76,
+6.26
+]
+],
+"agent": "Great. I have you scheduled for two PM today for an oil change. Can I get your phone number in case we need to reach you with any updates?",
+"block": 2
+},
+{
+"id": "en__977_89__user_turn_002",
+"trim": 2.02,
+"dur": 14.48,
+"spans": [
+[
+8.18,
+8.28
+],
+[
+10.98,
+12.48
+]
+],
+"agent": "Not quite. The confirmation number is a specific identifier for your flight booking, while an order number may refer to another transaction. If you have the confirmation number, that would be the best way to locate your reservation. If you don't have it, I can also look it up by your ticket number or by your name and flight date. What do you have?",
+"block": 2
+},
+{
+"id": "en__580_144__user_turn_001",
+"trim": 4.58,
+"dur": 22.32,
+"spans": [
+[
+3.12,
+3.72
+],
+[
+6.22,
+6.62
+],
+[
+7.72,
+7.82
+],
+[
+8.42,
+9.32
+],
+[
+9.92,
+10.62
+],
+[
+11.22,
+11.62
+],
+[
+12.42,
+12.72
+],
+[
+13.72,
+14.02
+],
+[
+15.62,
+16.12
+],
+[
+16.92,
+17.02
+],
+[
+17.92,
+18.32
+],
+[
+18.82,
+20.32
+]
+],
+"agent": "I can help with that. Could you please provide me with your order number?",
+"block": 2
+},
+{
+"id": "en__418_55__user_turn_000",
+"trim": 1.62,
+"dur": 16.68,
+"spans": [
+[
+1.98,
+2.08
+],
+[
+6.48,
+6.88
+],
+[
+8.28,
+8.38
+],
+[
+13.18,
+14.68
+]
+],
+"agent": "The Grand Bug Hotel This is James How may I assist you today?",
+"block": 2
+},
+{
+"id": "en__371_24__user_turn_008",
+"trim": 2.34,
+"dur": 6.56,
+"spans": [
+[
+1.66,
+2.06
+],
+[
+3.06,
+4.56
+]
+],
+"agent": "Thank you Michael I really appreciate that. Let me check the exact times available for Tuesday afternoon. We have a slot at two thirty and another at four. Which one works better for you?",
+"block": 2
+},
+{
+"id": "en__368_95__user_turn_004",
+"trim": 1.3,
+"dur": 30.4,
+"spans": [
+[
+5.5,
+6.0
+],
+[
+9.0,
+9.7
+],
+[
+10.9,
+11.1
+],
+[
+13.2,
+13.5
+],
+[
+15.7,
+16.0
+],
+[
+16.9,
+17.2
+],
+[
+22.0,
+22.3
+],
+[
+26.9,
+28.4
+]
+],
+"agent": "I have your number as four two four three two six two eight zero nine. Is that correct?",
+"block": 2
+},
+{
+"id": "en__338_43__user_turn_002",
+"trim": 0.98,
+"dur": 7.62,
+"spans": [
+[
+4.12,
+5.62
+]
+],
+"agent": "You can reach our billing department at Area Code five hundred and fifty five number one hundred and twenty three and then four thousand five hundred sixty seven. They'll be able to help you with your questions about your bill. Is there anything else I can assist you with today?",
+"block": 2
+},
+{
+"id": "en__545_52__user_turn_005",
+"trim": 0.34,
+"dur": 5.16,
+"spans": [
+[
+1.66,
+3.16
+]
+],
+"agent": "Our buffalo sauce is a big hit, and we also have barbecue and garlic parmesan. I would recommend the buffalo sauce for a nice kick if you enjoy.",
+"block": 2
+},
+{
+"id": "en__558_23__user_turn_015",
+"trim": 0.82,
+"dur": 6.48,
+"spans": [
+[
+1.18,
+1.38
+],
+[
+2.98,
+4.48
+]
+],
+"agent": "Thanks. Anna. So that's six three nine zero Valley Lane, Dallas, Texas seven five two one and your phone number is nine seven two six five six two five nine three. Got it. Your order will be ready for delivery in about thirty to forty five minutes. The total will be around seventy dollars before tax. Does that sound good?",
+"block": 2
+},
+{
+"id": "en__448_63__user_turn_010",
+"trim": 1.86,
+"dur": 11.84,
+"spans": [
+[
+2.34,
+3.04
+],
+[
+3.64,
+3.74
+],
+[
+6.44,
+6.84
+],
+[
+8.34,
+9.84
+]
+],
+"agent": "Just to confirm I have that as D O R O THY. M A ND O dot ZA at Y A O. C. OM Did I get that right?",
+"block": 2
+},
+{
+"id": "en__215_67__user_turn_007",
+"trim": 11.06,
+"dur": 12.14,
+"spans": [
+[
+4.74,
+5.14
+],
+[
+8.64,
+10.14
+]
+],
+"agent": "Of course, carol, we appreciate it if cancellations can be made at least twenty four hours in advance. There are no cancellation fees, but it's helpful to give us notice so we can make the table available for other guests. Anything else you'd like to know?",
+"block": 2
+},
+{
+"id": "en__418_55__user_turn_012",
+"trim": 1.46,
+"dur": 4.44,
+"spans": [
+[
+0.94,
+2.44
+]
+],
+"agent": "Just to confirm, I have that email as LARY dot jo n e s seventy three at ICLUD. com. Did I get that right?",
+"block": 2
+},
+{
+"id": "en__460_78__user_turn_000",
+"trim": 3.54,
+"dur": 83.56,
+"spans": [
+[
+2.26,
+4.66
+],
+[
+5.76,
+6.06
+],
+[
+8.26,
+11.06
+],
+[
+12.46,
+14.76
+],
+[
+15.16,
+15.76
+],
+[
+18.66,
+19.46
+],
+[
+20.26,
+22.16
+],
+[
+24.86,
+25.26
+],
+[
+27.16,
+27.66
+],
+[
+28.16,
+28.46
+],
+[
+29.76,
+31.96
+],
+[
+38.26,
+38.96
+],
+[
+40.96,
+41.66
+],
+[
+43.66,
+44.66
+],
+[
+46.86,
+47.06
+],
+[
+47.56,
+47.86
+],
+[
+48.36,
+51.16
+],
+[
+53.36,
+54.36
+],
+[
+56.86,
+57.76
+],
+[
+58.56,
+60.36
+],
+[
+61.76,
+65.26
+],
+[
+67.36,
+69.06
+],
+[
+70.26,
+70.36
+],
+[
+73.46,
+74.56
+],
+[
+76.46,
+77.46
+],
+[
+80.06,
+81.56
+]
+],
+"agent": "The Grand View Hotel. This is James. How may I assist you today?",
+"block": 2
+},
+{
+"id": "en__593_77__user_turn_003",
+"trim": 1.22,
+"dur": 5.08,
+"spans": [
+[
+1.58,
+3.08
+]
+],
+"agent": "I appreciate you providing that information, Deborah. Just to confirm, your policy number is one eight one three one and your billing number is two three seven one six seven zero. Is that correct?",
+"block": 2
+},
+{
+"id": "en__719_50__user_turn_006",
+"trim": 2.74,
+"dur": 5.06,
+"spans": [
+[
+1.56,
+3.06
+]
+],
+"agent": "To start the inquiry with our billing department, I'll need to create a support ticket for you. Could you please confirm your account holder name?",
+"block": 2
+},
+{
+"id": "en__447_20__user_turn_001",
+"trim": 3.06,
+"dur": 45.84,
+"spans": [
+[
+3.34,
+3.54
+],
+[
+12.94,
+13.24
+],
+[
+20.34,
+20.64
+],
+[
+22.74,
+22.84
+],
+[
+25.94,
+26.34
+],
+[
+28.94,
+29.24
+],
+[
+38.44,
+38.54
+],
+[
+42.34,
+43.84
+]
+],
+"agent": "Hello, Nancy. I'd be happy to help you with your meeting arrangements. The Grand View Hotel has facilities that can accommodate meetings, including audio visual equipment and support to assist with any setup you may need. We can ensure that everything is in place for your boss and the team to connect smoothly. Could you please provide me with the dates for your meeting? Additionally, do you have a specific room set up in mind like classroom style or boardroom style? This will help us prepare accordingly.",
+"block": 2
+},
+{
+"id": "en__775_50__user_turn_008",
+"trim": 1.78,
+"dur": 18.42,
+"spans": [
+[
+3.82,
+4.22
+],
+[
+8.22,
+8.42
+],
+[
+10.12,
+10.42
+],
+[
+11.82,
+12.32
+],
+[
+14.92,
+16.42
+]
+],
+"agent": "I understand your concerns, Benjamin, and I'm here to help. To help prevent unauthorized charges in the future, here are a few tips. One, monitor your account regularly. Regularly check your statements for any unfamiliar transactions. two. Set up alerts. You can set up transaction alerts to be notified of any charges made to your account. This way you can quickly react to any unauthorized charges. Three, use secure passwords. Make sure your online banking password is strong and unique. Avoid using easily guessed information. four. Report lost or stolen cards immediately. If your card is lost or stolen, report it to us immediately to minimize potential unauthorized use. Five, consider card features. Some banks offer cards with added security features such as virtual card numbers for online shopping. If you have any other questions or if there's anything specific you would like me to assist you with regarding your account security, please let me know.",
+"block": 2
+},
+{
+"id": "en__452_3__user_turn_007",
+"trim": 1.86,
+"dur": 5.44,
+"spans": [
+[
+1.94,
+3.44
+]
+],
+"agent": "Thank you. Barbara, just to confirm, that card ends in three eight, correct?",
+"block": 2
+},
+{
+"id": "en__713_62__user_turn_008",
+"trim": 2.18,
+"dur": 5.02,
+"spans": [
+[
+1.52,
+3.02
+]
+],
+"agent": "Thank you for confirming that. Brenda, I recommend the following to improve your connection. Ensure that the modem is placed in a well ventilated area and not close to other electronic devices that may cause interference. Also, check the cables for any visible damage or loose connections. Do you see any unusual lights on the modem, like a red light or flashing lights?",
+"block": 2
+},
+{
+"id": "en__350_18__user_turn_001",
+"trim": 0.42,
+"dur": 7.28,
+"spans": [
+[
+3.78,
+5.28
+]
+],
+"agent": "No problem at all, Brenda, I completely understand. Can you provide me with your date of birth so I can pull up your appointment details?",
+"block": 2
+},
+{
+"id": "en__287_49__user_turn_001",
+"trim": 3.62,
+"dur": 23.08,
+"spans": [
+[
+2.08,
+2.28
+],
+[
+4.88,
+5.08
+],
+[
+5.68,
+6.28
+],
+[
+9.48,
+10.88
+],
+[
+11.98,
+12.88
+],
+[
+14.08,
+14.18
+],
+[
+15.98,
+16.48
+],
+[
+19.58,
+21.08
+]
+],
+"agent": "It seems like you might have accidentally sent a blank message. If you have a question or need assistance, just let me know.",
+"block": 2
+},
+{
+"id": "en__855_55__user_turn_001",
+"trim": 3.22,
+"dur": 10.28,
+"spans": [
+[
+3.18,
+3.48
+],
+[
+6.78,
+8.28
+]
+],
+"agent": "I understand your concern, Jennifer, and I'm here to help you. First, I need to verify your identity for your protection. Can you please provide the last four digits of your Social Security number or your account number?",
+"block": 2
+},
+{
+"id": "en__723_75__user_turn_003",
+"trim": 2.34,
+"dur": 26.96,
+"spans": [
+[
+1.06,
+1.46
+],
+[
+8.56,
+8.86
+],
+[
+10.26,
+10.76
+],
+[
+11.66,
+12.06
+],
+[
+14.16,
+14.46
+],
+[
+18.76,
+18.96
+],
+[
+20.96,
+21.16
+],
+[
+22.26,
+22.56
+],
+[
+23.46,
+24.96
+]
+],
+"agent": "Got it. Thank you for clarifying. So just to confirm, the account number is ANS in November followed by six five six eight one nine zero zero. Is that right?",
+"block": 2
+},
+{
+"id": "en__571_24__user_turn_014",
+"trim": 3.94,
+"dur": 10.16,
+"spans": [
+[
+2.36,
+2.96
+],
+[
+4.46,
+5.16
+],
+[
+5.66,
+6.06
+],
+[
+6.66,
+8.16
+]
+],
+"agent": "Got it, Samuel Howard. And can I get your phone number just in case our driver needs to reach you?",
+"block": 2
+},
+{
+"id": "en__775_50__user_turn_006",
+"trim": 1.3,
+"dur": 24.4,
+"spans": [
+[
+5.6,
+5.9
+],
+[
+9.2,
+9.4
+],
+[
+17.2,
+17.4
+],
+[
+20.9,
+22.4
+]
+],
+"agent": "Thank you for that information. Benjamin, I'll create a dispute case for this transaction. Can you tell me why you're disputing this charge?",
+"block": 2
+},
+{
+"id": "en__371_24__user_turn_011",
+"trim": 2.5,
+"dur": 4.8,
+"spans": [
+[
+1.3,
+2.8
+]
+],
+"agent": "Alright, Michael, thank you for calling and have a great day.",
+"block": 2
+},
+{
+"id": "en__974_82__user_turn_005",
+"trim": 3.46,
+"dur": 4.34,
+"spans": [
+[
+0.84,
+2.34
+]
+],
+"agent": "Thank you for confirming. I see that your flight has been delayed, since it's an airline initiated delay, I can help you with rebooking options. Would you like me to provide you with the next available flights? And just to clarify",
+"block": 2
+},
+{
+"id": "en__283_127__user_turn_005",
+"trim": 0.98,
+"dur": 4.22,
+"spans": [
+[
+0.72,
+2.22
+]
+],
+"agent": "Perfetto and just to confirm, the card ends in seven one, correct?",
+"block": 2
+},
+{
+"id": "en__848_145__user_turn_013",
+"trim": 0.0,
+"dur": 6.1,
+"spans": [
+[
+2.6,
+4.1
+]
+],
+"agent": "The emergency card replacement can take anywhere from a few days to a couple of weeks, depending on international shipping times. As for accessing funds without your card, you have a few options. One, mobile banking. If you're enrolled in mobile banking, you can transfer funds to another bank account or manage payments directly through your banking app. Two, bank transfers. You can also do wire transfers or use services like Zell, if available, to send money to someone who can assist you. Three, ATM access. If you have a personal identification,",
+"block": 2
+},
+{
+"id": "en__418_55__user_turn_009",
+"trim": 1.78,
+"dur": 9.22,
+"spans": [
+[
+2.62,
+2.92
+],
+[
+3.92,
+4.12
+],
+[
+5.72,
+7.22
+]
+],
+"agent": "Wonderful. Next, I'll need your phone number to reach you regarding the reservation.",
+"block": 2
+},
+{
+"id": "en__848_145__user_turn_004",
+"trim": 1.62,
+"dur": 32.88,
+"spans": [
+[
+8.78,
+9.18
+],
+[
+11.98,
+12.38
+],
+[
+24.88,
+25.08
+],
+[
+29.38,
+30.88
+]
+],
+"agent": "Thank you for confirming. Gregory. Now, since you're requesting an emergency card replacement, could you let me know the best shipping address for the replacement card?",
+"block": 2
+},
+{
+"id": "en__839_71__user_turn_010",
+"trim": 1.54,
+"dur": 5.96,
+"spans": [
+[
+1.26,
+1.86
+],
+[
+2.46,
+3.96
+]
+],
+"agent": "I'm so glad to hear that. Cynthia, I understand how important it is to have access to your funds, especially while you're traveling. If you have any other questions or need further assistance, please don't hesitate to reach out. Safe travels and enjoy the rest of your road trip.",
+"block": 2
+},
+{
+"id": "en__200_147__user_turn_001",
+"trim": 3.14,
+"dur": 25.56,
+"spans": [
+[
+10.96,
+11.16
+],
+[
+15.96,
+16.36
+],
+[
+17.76,
+18.06
+],
+[
+20.46,
+20.56
+],
+[
+22.06,
+23.56
+]
+],
+"agent": "Chao Barbara. It's lovely to hear from you. I'd be honored to help you with a reservation for your anniversary dinner. May I know the date, time, and how many guests will be joining you?",
+"block": 2
+},
+{
+"id": "en__1011_87__user_turn_002",
+"trim": 1.86,
+"dur": 13.84,
+"spans": [
+[
+2.34,
+3.54
+],
+[
+4.74,
+5.04
+],
+[
+10.34,
+11.84
+]
+],
+"agent": "Thank you. George. Could you also provide me with the flight date and the route, like your departure and destination cities? This will help me locate your booking quickly.",
+"block": 2
+},
+{
+"id": "en__447_20__user_turn_009",
+"trim": 1.22,
+"dur": 5.18,
+"spans": [
+[
+0.78,
+1.08
+],
+[
+1.68,
+3.18
+]
+],
+"agent": "There may be additional charges for the audiovisual equipment, which typically includes rental fees for the projector and the extra screen. Additionally, if you require staff assistance outside of standard meeting hours, there could be a fee for that service as well. Once I finalize the details of your reservation, I can provide you with a detailed breakdown of the costs, including any additional charges for equipment and staff. Would you like that information in your confirmation email?",
+"block": 2
+},
+{
+"id": "en__465_62__user_turn_003",
+"trim": 1.06,
+"dur": 18.14,
+"spans": [
+[
+14.64,
+16.14
+]
+],
+"agent": "Thank you. I'll retrieve your reservation details now.",
+"block": 2
+},
+{
+"id": "en__280_147__user_turn_006",
+"trim": 4.18,
+"dur": 6.32,
+"spans": [
+[
+2.82,
+4.32
+]
+],
+"agent": "You're very welcome, Jason. I'm glad I could help in some way. I truly hope your ring is found and returned to you. If you need anything else, don't hesitate to reach out. Have a wonderful day.",
+"block": 2
+},
+{
+"id": "en__829_87__user_turn_003",
+"trim": 0.9,
+"dur": 4.8,
+"spans": [
+[
+1.3,
+2.8
+]
+],
+"agent": "Just to confirm, that's a count ending in five nine fifty eight, correct?",
+"block": 2
+},
+{
+"id": "en__1011_87__user_turn_007",
+"trim": 0.5,
+"dur": 4.6,
+"spans": [
+[
+1.1,
+2.6
+]
+],
+"agent": "Just to confirm, that's the card number starting with five four six and an expiration date of july twenty twenty nine, correct?",
+"block": 2
+},
+{
+"id": "en__633_9__user_turn_008",
+"trim": 0.82,
+"dur": 4.88,
+"spans": [
+[
+1.38,
+2.88
+]
+],
+"agent": "Thanks for the correction. Nicholas. So just to confirm again, your phone number is six one nine seven five seven zero one two nine and your email address is n I CHOL AS. CAR T ER sixty five at iCloud dot com is that correct?",
+"block": 2
+},
+{
+"id": "en__829_87__user_turn_001",
+"trim": 1.22,
+"dur": 4.88,
+"spans": [
+[
+1.38,
+2.88
+]
+],
+"agent": "I'm sorry to hear that you're upset and I understand how concerning unauthorized transactions can be. To assist you with this ATM withdrawal, I'll need to verify your identity first. Could you please provide me with your full name?",
+"block": 2
+},
+{
+"id": "en__545_52__user_turn_009",
+"trim": 2.42,
+"dur": 4.28,
+"spans": [
+[
+0.78,
+2.28
+]
+],
+"agent": "Got it. So that's the phone number six one nine seven five seven zero one two nine, right?",
+"block": 2
+},
+{
+"id": "en__529_3__user_turn_006",
+"trim": 2.58,
+"dur": 14.32,
+"spans": [
+[
+2.92,
+3.02
+],
+[
+5.32,
+5.82
+],
+[
+8.02,
+8.42
+],
+[
+10.82,
+12.32
+]
+],
+"agent": "Got it, Pelen Turner And just to confirm, what's a good phone number for you?",
+"block": 2
+},
+{
+"id": "en__983_24__user_turn_007",
+"trim": 7.78,
+"dur": 5.72,
+"spans": [
+[
+2.22,
+3.72
+]
+],
+"agent": "While I can't pull up the specific pricing for your flight, typically, the upgrade to Comfort Plus is around thirty fifty dollars, and first class can range from one hundred to two hundred dollars. Actual costs may vary based on demand and availability. If you're interested, I can help you initiate the upgrade process right now. Would you like to move forward with that?",
+"block": 2
+},
+{
+"id": "en__839_71__user_turn_008",
+"trim": 0.82,
+"dur": 15.08,
+"spans": [
+[
+5.08,
+5.18
+],
+[
+8.38,
+8.68
+],
+[
+9.18,
+9.28
+],
+[
+10.28,
+10.48
+],
+[
+11.58,
+13.08
+]
+],
+"agent": "Thank you for confirming. I'll ensure that your new debit card is set to that address. Just to recap, I've reported your card as lost and a replacement card will be mailed to you at four twenty Lincoln Drive, Nashville, Tennessee three seven twenty one. Is there anything else I can assist you with today?",
+"block": 2
+},
+{
+"id": "en__954_24__user_turn_003",
+"trim": 8.6,
+"dur": 19.9,
+"spans": [
+[
+0.3,
+1.1
+],
+[
+3.5,
+3.7
+],
+[
+4.2,
+4.5
+],
+[
+5.3,
+5.8
+],
+[
+6.9,
+7.0
+],
+[
+7.9,
+10.8
+],
+[
+12.0,
+13.8
+],
+[
+16.4,
+17.9
+]
+],
+"agent": "Let me pull up your reservation. Could you please let me know the new date or time you're looking to change your flight to?",
+"block": 2
+},
+{
+"id": "en__983_24__user_turn_017",
+"trim": 1.46,
+"dur": 4.64,
+"spans": [
+[
+1.14,
+2.64
+]
+],
+"agent": "For traveling with pets, Skyway Airlines allow small pets in a cabin on most flights for a fee, which is typically around one hundred dollars. They need to be in an airline approved carrier that fits under the seat in front of you. For larger pets, those generally need to be transported in the cargo hold, and you'll need to make arrangements ahead of time. It's important to check specific guidelines and fees for your pets travel. If you have a pet you wish to bring along, I can assist you with the details on how to add that to your booking as well. Would you like more information on that?",
+"block": 2
+},
+{
+"id": "en__553_18__user_turn_001",
+"trim": 2.82,
+"dur": 10.58,
+"spans": [
+[
+6.08,
+6.18
+],
+[
+7.08,
+8.58
+]
+],
+"agent": "I'm really sorry to hear that your garlic bread and Coca Cola were missing from your order. I understand how that can mess things up. I can help you get a new order placed for those items or see about getting them sent out to you. Would you like to place a new order for delivery?",
+"block": 2
+},
+{
+"id": "en__489_62__user_turn_009",
+"trim": 1.14,
+"dur": 5.16,
+"spans": [
+[
+1.66,
+3.16
+]
+],
+"agent": "Let me confirm that. I have five one, two, nine, three, nine, three, seven, four, eight. Is that correct?",
+"block": 2
+},
+{
+"id": "en__396_82__user_turn_001",
+"trim": 2.66,
+"dur": 12.94,
+"spans": [
+[
+4.34,
+4.64
+],
+[
+7.64,
+7.94
+],
+[
+9.44,
+10.94
+]
+],
+"agent": "It sounds like a lovely plan. At the Grand View Hotel and Suites, we do offer special packages that can enhance your romantic getaway. While I don't have specific package details at the moment, comment add ons include options like champagne upon arrival, breakfast in bed, or spa service discounts. Would you be interested in checking availability for a room and discussing potential add ons more specifically? If so, please share your arrival and departure dates, and I can provide more tailored options.",
+"block": 2
+},
+{
+"id": "en__708_120__user_turn_000",
+"trim": 0.34,
+"dur": 13.46,
+"spans": [
+[
+2.26,
+2.56
+],
+[
+6.06,
+6.46
+],
+[
+7.36,
+7.86
+],
+[
+9.96,
+11.46
+]
+],
+"agent": "Hello. Thank you for calling First Community Bank. My name is Michelle and I'm here to assist you today. How can I help you?",
+"block": 3
+},
+{
+"id": "en__921_77__user_turn_001",
+"trim": 2.74,
+"dur": 14.26,
+"spans": [
+[
+1.06,
+1.16
+],
+[
+3.86,
+4.16
+],
+[
+5.66,
+6.16
+],
+[
+7.86,
+8.16
+],
+[
+10.76,
+12.26
+]
+],
+"agent": "I understand your concern about the billing address. Let's get that updated for you right away. Could you please provide me with your new shipping address?",
+"block": 3
+},
+{
+"id": "en__396_82__user_turn_010",
+"trim": 4.02,
+"dur": 4.38,
+"spans": [
+[
+0.88,
+2.38
+]
+],
+"agent": "Wonderful. Just to confirm that card ends in one seventy nine, correct?",
+"block": 3
+},
+{
+"id": "en__571_24__user_turn_015",
+"trim": 3.46,
+"dur": 4.44,
+"spans": [
+[
+0.94,
+2.44
+]
+],
+"agent": "Thanks. Samuel. So I've got your phone number as four twenty four eight six zero eight eight five. Is that correct?",
+"block": 3
+},
+{
+"id": "en__720_8__user_turn_007",
+"trim": 1.7,
+"dur": 17.0,
+"spans": [
+[
+7.4,
+7.6
+],
+[
+9.5,
+9.9
+],
+[
+13.5,
+15.0
+]
+],
+"agent": "Let me confirm that the appointment is for Thursday at noon. Does that work for you?",
+"block": 3
+},
+{
+"id": "en__990_36__user_turn_005",
+"trim": 0.82,
+"dur": 6.68,
+"spans": [
+[
+3.18,
+4.68
+]
+],
+"agent": "I understand your frustration, Michael, unfortunately, our policy limits reimbursement for essentials to fifty dollars per day, and we can only begin processing that after your luggage claim is filed. While I'm documenting your urgency and need for the items, I can't guarantee a higher amount or expedite the search beyond this process. If your bag is located, we will notify you promptly. In the meantime, is there anything else I can assist you with?",
+"block": 3
+},
+{
+"id": "en__906_126__user_turn_009",
+"trim": 1.46,
+"dur": 4.54,
+"spans": [
+[
+1.04,
+2.54
+]
+],
+"agent": "Just to confirm, that's expiration date zero five twenty seven, correct?",
+"block": 3
+},
+{
+"id": "en__982_2__user_turn_010",
+"trim": 1.62,
+"dur": 14.68,
+"spans": [
+[
+2.98,
+3.28
+],
+[
+4.48,
+4.68
+],
+[
+6.58,
+6.78
+],
+[
+11.18,
+12.68
+]
+],
+"agent": "Let me confirm that back to you. Your phone number is six one five three six four three eight two and your email address is david. Cruz at gmail dot com is that correct?",
+"block": 3
+},
+{
+"id": "en__1049_120__user_turn_003",
+"trim": 1.94,
+"dur": 4.76,
+"spans": [
+[
+1.26,
+2.76
+]
+],
+"agent": "Okay, a twenty twenty six Mazerati ghost, and how many miles do you have on it?",
+"block": 3
+},
+{
+"id": "en__720_8__user_turn_005",
+"trim": 0.98,
+"dur": 4.82,
+"spans": [
+[
+1.32,
+2.82
+]
+],
+"agent": "I have the service address as five thousand three hundred and eighty seven River Road, Salt Lake City, Utah eight four. Is that correct?",
+"block": 3
+},
+{
+"id": "en__418_55__user_turn_006",
+"trim": 1.7,
+"dur": 6.6,
+"spans": [
+[
+2.3,
+2.4
+],
+[
+3.1,
+4.6
+]
+],
+"agent": "Great choice. So that's a deluxe king room with a city view for two guests. Now could I have your full name to complete the reservation?",
+"block": 3
+},
+{
+"id": "en__366_52__user_turn_011",
+"trim": 0.58,
+"dur": 5.12,
+"spans": [
+[
+1.62,
+3.12
+]
+],
+"agent": "I have your member ID as six nine three four three three zero eight. Is that correct?",
+"block": 3
+},
+{
+"id": "en__667_24__user_turn_002",
+"trim": 1.3,
+"dur": 9.6,
+"spans": [
+[
+1.9,
+2.6
+],
+[
+4.0,
+4.4
+],
+[
+6.1,
+7.6
+]
+],
+"agent": "Great, please go ahead and provide me with your order number.",
+"block": 3
+},
+{
+"id": "en__671_55__user_turn_005",
+"trim": 2.9,
+"dur": 11.7,
+"spans": [
+[
+8.2,
+9.7
+]
+],
+"agent": "Thank you for that. Justin, I will check on any outages reported in your area. It may take just a moment, but based on what you've told me, it sounds like there could be something affecting the service externally. Please hold tight. In the meantime, can you tell me if there are any lights on your modem? If so, which ones are lit up?",
+"block": 3
+},
+{
+"id": "en__571_24__user_turn_009",
+"trim": 3.06,
+"dur": 12.54,
+"spans": [
+[
+1.84,
+2.24
+],
+[
+3.34,
+3.64
+],
+[
+6.54,
+6.94
+],
+[
+7.94,
+8.54
+],
+[
+9.04,
+10.54
+]
+],
+"agent": "Sure thing, we'll make a large pizza with chicken, bacon and wrench as the sauce instead of pizza sauce. That's going to be delicious. So to recap your order, one large pizza with everything. One large pepperoni pizza with extra pepperoni and extra cheese. One large chicken and bacon pizza with ranch as the sauce. And you also wanted three orders of garlic knots and three orders of wings. Does that sound right?",
+"block": 3
+},
+{
+"id": "en__545_52__user_turn_008",
+"trim": 4.66,
+"dur": 8.74,
+"spans": [
+[
+5.24,
+6.74
+]
+],
+"agent": "Alright, that's Nicholas Carter. And what's the phone number where you can be reached?",
+"block": 3
+},
+{
+"id": "en__848_145__user_turn_003",
+"trim": 0.58,
+"dur": 4.42,
+"spans": [
+[
+0.92,
+2.42
+]
+],
+"agent": "Just to confirm, that's a count ending in three, two, nine, correct?",
+"block": 3
+},
+{
+"id": "en__782_52__user_turn_001",
+"trim": 1.94,
+"dur": 4.96,
+"spans": [
+[
+0.76,
+0.86
+],
+[
+1.46,
+2.96
+]
+],
+"agent": "I could help you with that. First, I'll need to verify your identity for security purposes. Can you please provide your full name?",
+"block": 3
+},
+{
+"id": "en__667_24__user_turn_009",
+"trim": 1.14,
+"dur": 4.36,
+"spans": [
+[
+0.86,
+2.36
+]
+],
+"agent": "You're welcome. If you have any other questions in the future, feel free to reach out. Have a great day.",
+"block": 3
+},
+{
+"id": "en__366_52__user_turn_008",
+"trim": 0.58,
+"dur": 4.72,
+"spans": [
+[
+1.22,
+2.72
+]
+],
+"agent": "I have your phone number at six zero two nine eight five one five. Is that correct?",
+"block": 3
+},
+{
+"id": "en__633_9__user_turn_000",
+"trim": 3.62,
+"dur": 31.78,
+"spans": [
+[
+2.78,
+3.18
+],
+[
+9.18,
+9.58
+],
+[
+14.58,
+14.88
+],
+[
+16.98,
+17.48
+],
+[
+21.58,
+21.98
+],
+[
+24.28,
+24.48
+],
+[
+28.28,
+29.78
+]
+],
+"agent": "Hello, thank you for calling Texan electronics. This is Alex. How can I assist you today?",
+"block": 3
+},
+{
+"id": "en__608_52__user_turn_004",
+"trim": 2.9,
+"dur": 7.5,
+"spans": [
+[
+3.0,
+3.2
+],
+[
+4.0,
+5.5
+]
+],
+"agent": "Great, I will process your cancellation now. You will receive a confirmation email regarding the cancellation and the charges. Is there anything else I can help you with today?",
+"block": 3
+},
+{
+"id": "en__465_62__user_turn_007",
+"trim": 1.14,
+"dur": 10.86,
+"spans": [
+[
+1.86,
+2.96
+],
+[
+4.36,
+5.66
+],
+[
+7.36,
+8.86
+]
+],
+"agent": "Absolutely. I can make a note to contact you via text. Please provide your phone number so I can add that to your reservation.",
+"block": 3
+},
+{
+"id": "en__368_95__user_turn_007",
+"trim": 1.94,
+"dur": 11.86,
+"spans": [
+[
+6.46,
+6.86
+],
+[
+8.36,
+9.86
+]
+],
+"agent": "Perfect. I have Chloe's appointments scheduled for today at one hundred and thirty with Dr. Emily Park. Just a reminder to bring your insurance card and arrive a little early to fill out any necessary paperwork. Can I get Chloe's insurance information? I'll need the carrier name, member ID number, and group number, please.",
+"block": 3
+},
+{
+"id": "en__823_75__user_turn_005",
+"trim": 2.34,
+"dur": 9.86,
+"spans": [
+[
+6.36,
+7.86
+]
+],
+"agent": "Certainly, for upgraded checking accounts at First Community Bank, we often offer competitive interest rates on your balances, which can help your money grow over time. Generally, these rates vary based on the type of account and the balance maintained. Additionally, some accounts might offer rewards, such as cashback on certain purchases made with your debit card, or promotional rates for new deposit accounts. The interest earned can be higher if you meet specific criteria, such as maintaining a minimum balance or setting up direct deposits. The rewards program usually includes various incentives that could range from cashback to discounts at partnering retailers. Would you like to know more about a specific account type or any of these features in greater detail?",
+"block": 3
+},
+{
+"id": "en__371_24__user_turn_006",
+"trim": 8.98,
+"dur": 10.42,
+"spans": [
+[
+0.72,
+1.42
+],
+[
+4.72,
+5.12
+],
+[
+6.92,
+8.42
+]
+],
+"agent": "Great, thank you, now, let's get that appointment rescheduled. What date and time are you looking for?",
+"block": 3
+},
+{
+"id": "en__782_52__user_turn_002",
+"trim": 2.26,
+"dur": 11.64,
+"spans": [
+[
+2.34,
+2.74
+],
+[
+3.34,
+3.44
+],
+[
+5.14,
+5.54
+],
+[
+6.54,
+6.64
+],
+[
+8.14,
+9.64
+]
+],
+"agent": "Thank you, David. Can you please provide the last four digits of your Social Security number or your account number?",
+"block": 3
+},
+{
+"id": "en__713_62__user_turn_010",
+"trim": 6.82,
+"dur": 12.78,
+"spans": [
+[
+1.78,
+1.88
+],
+[
+2.48,
+2.58
+],
+[
+3.98,
+4.88
+],
+[
+7.58,
+7.98
+],
+[
+9.28,
+10.78
+]
+],
+"agent": "You're welcome. Brenda, take your time and I'll be here when you're ready to update me on the situation.",
+"block": 3
+},
+{
+"id": "en__224_52__user_turn_001",
+"trim": 3.14,
+"dur": 9.16,
+"spans": [
+[
+0.86,
+1.16
+],
+[
+1.96,
+2.26
+],
+[
+3.26,
+3.36
+],
+[
+4.26,
+4.36
+],
+[
+5.66,
+7.16
+]
+],
+"agent": "Of course, I can help you with that. Do you have your confirmation number?",
+"block": 3
+},
+{
+"id": "en__671_55__user_turn_012",
+"trim": 2.42,
+"dur": 9.18,
+"spans": [
+[
+5.68,
+7.18
+]
+],
+"agent": "I will schedule the technician for tomorrow morning. Could you please hold on for a moment while I finalize the appointment?",
+"block": 3
+},
+{
+"id": "en__1118_47__user_turn_000",
+"trim": 1.54,
+"dur": 42.56,
+"spans": [
+[
+9.06,
+9.76
+],
+[
+14.76,
+15.56
+],
+[
+19.06,
+19.16
+],
+[
+19.66,
+20.86
+],
+[
+24.96,
+25.06
+],
+[
+26.36,
+26.66
+],
+[
+30.76,
+30.96
+],
+[
+32.76,
+32.86
+],
+[
+33.56,
+34.06
+],
+[
+36.26,
+36.66
+],
+[
+39.06,
+40.56
+]
+],
+"agent": "Precision, auto care. This is Mike. How can I help you today?",
+"block": 3
+},
+{
+"id": "en__990_36__user_turn_002",
+"trim": 0.1,
+"dur": 4.7,
+"spans": [
+[
+1.2,
+2.7
+]
+],
+"agent": "Thanks for providing your file reference number. Michael, just to confirm that's eight one five three one nine three. Correct? I understand how important.",
+"block": 3
+},
+{
+"id": "en__907_96__user_turn_004",
+"trim": 1.3,
+"dur": 14.1,
+"spans": [
+[
+3.6,
+4.0
+],
+[
+5.8,
+6.0
+],
+[
+7.0,
+7.8
+],
+[
+10.6,
+12.1
+]
+],
+"agent": "I understand your concern. Justin and I truly empathize with your situation. Our policy does allow for a full refund for first class tickets only, while basic economy provides credit for cancellations. The time frame for cancellations doesn't change that policy. Unfortunately, I'm unable to change this, but I can guide you on possible options like speaking with a supervisor who may review your case further. Would you like me to escalate this for you?",
+"block": 3
+},
+{
+"id": "en__954_24__user_turn_010",
+"trim": 1.78,
+"dur": 4.72,
+"spans": [
+[
+1.22,
+2.72
+]
+],
+"agent": "Perfect Thank you for choosing Skyway Airlines. Have a great day and safe travels.",
+"block": 3
+},
+{
+"id": "en__558_23__user_turn_009",
+"trim": 1.06,
+"dur": 27.84,
+"spans": [
+[
+0.84,
+1.14
+],
+[
+2.34,
+2.84
+],
+[
+3.44,
+3.54
+],
+[
+5.84,
+6.54
+],
+[
+21.44,
+23.34
+],
+[
+24.34,
+25.84
+]
+],
+"agent": "Got it, just to clarify about your desserts. What did you originally order? I can help you add those back to your new order.",
+"block": 3
+},
+{
+"id": "en__448_63__user_turn_006",
+"trim": 1.3,
+"dur": 4.7,
+"spans": [
+[
+1.2,
+2.7
+]
+],
+"agent": "Thank you, Dorothy Mendoza. Just to confirm that's spelled D O R O T H Y. Last name M E N D O Z A correct?",
+"block": 3
+},
+{
+"id": "en__451_96__user_turn_003",
+"trim": 0.26,
+"dur": 5.34,
+"spans": [
+[
+1.84,
+3.34
+]
+],
+"agent": "Thank you. Larry. Just to confirm, that's the confirmation number three, five, four, two, nine, one, three, eight, seven, six, three, three, one. Correct?",
+"block": 3
+},
+{
+"id": "en__1011_87__user_turn_001",
+"trim": 2.1,
+"dur": 10.9,
+"spans": [
+[
+2.7,
+3.7
+],
+[
+5.8,
+6.0
+],
+[
+7.4,
+8.9
+]
+],
+"agent": "I understand that comfort is important, especially for back to back meetings. Can you provide me with your confirmation number? This will help me check your current booking and see what upgrade options are available. If you don't have that, a ticket number or your name and flight details will work as well.",
+"block": 3
+},
+{
+"id": "en__280_147__user_turn_002",
+"trim": 6.02,
+"dur": 12.68,
+"spans": [
+[
+3.88,
+4.38
+],
+[
+9.18,
+10.68
+]
+],
+"agent": "I truly understand how important this is to you, Jason, especially since it belonged to your grandmother. Unfortunately, I'm unable to access the lost and found records or check for items that may have been turned in. I really encourage you to call back during our business hours so that our staff can help you directly. They can check the area where you are seated and see if the ring has been found. I wish I could do more at this moment, and I hope it turns up for you. If you think of anything else you need, I'm here to help.",
+"block": 3
+},
+{
+"id": "en__1011_87__user_turn_006",
+"trim": 1.62,
+"dur": 15.88,
+"spans": [
+[
+4.18,
+4.38
+],
+[
+10.48,
+10.88
+],
+[
+12.38,
+13.88
+]
+],
+"agent": "Great choice. George, to complete the upgrade, I'll need to confirm your payment method. Can you provide your credit card number and expiration date?",
+"block": 3
+},
+{
+"id": "en__994_43__user_turn_003",
+"trim": 2.82,
+"dur": 34.28,
+"spans": [
+[
+5.58,
+5.78
+],
+[
+10.68,
+10.98
+],
+[
+14.58,
+16.18
+],
+[
+21.48,
+21.68
+],
+[
+25.58,
+25.78
+],
+[
+28.98,
+29.08
+],
+[
+30.78,
+32.28
+]
+],
+"agent": "Thank you. Let me pull up your reservation. Can you please let me know what date you're looking to travel and what your current flight route is?",
+"block": 3
+},
+{
+"id": "en__719_50__user_turn_008",
+"trim": 0.74,
+"dur": 5.36,
+"spans": [
+[
+1.86,
+3.36
+]
+],
+"agent": "Thank you, Joseph. I've noted that down. I will create a ticket for you regarding the surcharges on your bill. You should receive a follow up from our billing team shortly. Your ticket number will be two hundred five three six. Please keep this number handy for any future reference. Is there anything else I can assist you with today?",
+"block": 3
+},
+{
+"id": "en__418_55__user_turn_002",
+"trim": 1.14,
+"dur": 10.16,
+"spans": [
+[
+2.16,
+2.26
+],
+[
+4.76,
+5.26
+],
+[
+6.66,
+8.16
+]
+],
+"agent": "I can certainly help with that. While we do not have set prices for specific amenities like rose petals, champagne, or personalized notes, we can definitely arrange for those special touches to enhance your stay. Typically, a bottle of champagne can range from fifty dollars to one hundred dollars, and rose petals are often around twenty to thirty dollars. If you'd like, I can add these items to your reservation and provide confirmation details once we finalize your room.",
+"block": 3
+},
+{
+"id": "en__516_8__user_turn_018",
+"trim": 1.38,
+"dur": 4.92,
+"spans": [
+[
+0.72,
+0.82
+],
+[
+1.42,
+2.92
+]
+],
+"agent": "Perfect. Now can I have your name one more time for the order?",
+"block": 3
+},
+{
+"id": "en__489_62__user_turn_007",
+"trim": 1.78,
+"dur": 5.92,
+"spans": [
+[
+2.42,
+3.92
+]
+],
+"agent": "Perfect. Now what name should I put on the order? And can I get your phone number in case we need to reach you?",
+"block": 3
+},
+{
+"id": "en__269_149__user_turn_002",
+"trim": 1.94,
+"dur": 5.16,
+"spans": [
+[
+1.66,
+3.16
+]
+],
+"agent": "I have your confirmation number as refash seven eight nine seven four seven. Is that correct?",
+"block": 3
+},
+{
+"id": "en__396_82__user_turn_005",
+"trim": 1.3,
+"dur": 8.6,
+"spans": [
+[
+5.1,
+6.6
+]
+],
+"agent": "Thank you, Robert Anderson. And can I have your phone number please? It looks like I didn't catch your phone number. Could you please provide that for me?",
+"block": 3
+},
+{
+"id": "en__454_50__user_turn_005",
+"trim": 0.98,
+"dur": 13.52,
+"spans": [
+[
+2.72,
+2.82
+],
+[
+4.12,
+4.42
+],
+[
+6.02,
+6.52
+],
+[
+8.22,
+8.42
+],
+[
+10.02,
+11.52
+]
+],
+"agent": "Wonderful. Now, I will note your request for an early check in and confirm that for you. Could you also please provide a credit card number to guarantee your reservation?",
+"block": 3
+},
+{
+"id": "en__454_50__user_turn_006",
+"trim": 1.06,
+"dur": 4.24,
+"spans": [
+[
+0.74,
+2.24
+]
+],
+"agent": "Thank you. Mary. Just to confirm, that card ends in seven four seven one. Correct?",
+"block": 3
+},
+{
+"id": "en__376_36__user_turn_006",
+"trim": 1.62,
+"dur": 5.58,
+"spans": [
+[
+2.08,
+3.58
+]
+],
+"agent": "Got it. We'll focus on scheduling an appointment for your new board with Dr. Emily Park. Could you share the preferred date and time for the appointment and I'll do my best to accommodate you?",
+"block": 3
+},
+{
+"id": "en__823_75__user_turn_008",
+"trim": 2.74,
+"dur": 5.76,
+"spans": [
+[
+2.26,
+3.76
+]
+],
+"agent": "Of course, Kenneth, you could definitely reach out to me anytime you have questions. Feel free to call us and I'm here to help you with anything you need, including the cashback program or any other inquiries related to your account. Your preference for convenience is completely understandable, and I'm happy to assist you over the phone. Just give us a call whenever it's convenient for you. Is there anything else I can help you with right now?",
+"block": 3
+},
+{
+"id": "en__465_62__user_turn_010",
+"trim": 1.54,
+"dur": 5.06,
+"spans": [
+[
+1.56,
+3.06
+]
+],
+"agent": "Certainly, we offer deluxe suites with stunning city views which include beautiful skylines and vibrant city lights, especially delightful in the evening. Additionally, we have rooms that offer views of nearby parks for more greenery and tranquility. For your anniversary, I recommend one of our deluxe king suites with a city view, which provides both luxury and a breathtaking backdrop. Would you like to upgrade to that for a special experience?",
+"block": 3
+},
+{
+"id": "en__708_120__user_turn_003",
+"trim": 0.5,
+"dur": 14.0,
+"spans": [
+[
+3.5,
+3.9
+],
+[
+6.9,
+7.1
+],
+[
+8.1,
+8.6
+],
+[
+10.5,
+12.0
+]
+],
+"agent": "Thank you, Sandra. I verified your account. Now, regarding the ten day hold on your deposit, I can explain that. Holds are often placed on larger checks to ensure they clear properly. Is there anything specific you would like to know about the hold or your account?",
+"block": 3
+},
+{
+"id": "en__447_20__user_turn_005",
+"trim": 0.82,
+"dur": 4.58,
+"spans": [
+[
+1.08,
+2.58
+]
+],
+"agent": "Thank you for that clarification. Nancy, so just to confirm, your email address is Nancy dot morris twenty four at hotmail dot com. Is that correct?",
+"block": 3
+},
+{
+"id": "en__848_145__user_turn_002",
+"trim": 0.5,
+"dur": 9.5,
+"spans": [
+[
+6.0,
+7.5
+]
+],
+"agent": "Thank you, Gregory. Now, could you provide the last four digits of your Social Security number or your account number?",
+"block": 3
+},
+{
+"id": "en__447_20__user_turn_007",
+"trim": 1.7,
+"dur": 4.4,
+"spans": [
+[
+0.9,
+2.4
+]
+],
+"agent": "Thank you for that. Just to confirm, that card ends in eight four, correct?",
+"block": 3
+},
+{
+"id": "en__553_18__user_turn_008",
+"trim": 6.5,
+"dur": 4.3,
+"spans": [
+[
+0.8,
+2.3
+]
+],
+"agent": "Alright, so I've got Michael Melson and the phone number is four twenty four eight two seven zero six two. Is that correct?",
+"block": 3
+},
+{
+"id": "en__994_43__user_turn_000",
+"trim": 1.86,
+"dur": 8.44,
+"spans": [
+[
+4.94,
+6.44
+]
+],
+"agent": "Highway Airlines. This is David. How can I assist you today?",
+"block": 3
+},
+{
+"id": "en__265_43__user_turn_001",
+"trim": 2.58,
+"dur": 14.92,
+"spans": [
+[
+1.52,
+1.62
+],
+[
+2.32,
+3.02
+],
+[
+9.42,
+10.02
+],
+[
+11.42,
+12.92
+]
+],
+"agent": "I'm so sorry to hear that your delivery hasn't arrived yet, Mary. Unfortunately, I can't check on orders directly. But let me take your name and phone number and I can help you with anything else you might need regarding your order. Can you please provide your phone number?",
+"block": 3
+},
+{
+"id": "en__200_147__user_turn_004",
+"trim": 1.38,
+"dur": 9.12,
+"spans": [
+[
+5.62,
+7.12
+]
+],
+"agent": "Thank you, Barbara. Just to confirm, I have your phone number as three one zero five three two four nine zero zero correct?",
+"block": 3
+},
+{
+"id": "en__553_18__user_turn_004",
+"trim": 0.5,
+"dur": 5.2,
+"spans": [
+[
+1.7,
+3.2
+]
+],
+"agent": "Got it. That's two packs of garlic knots for ten dollars. And how many Coca Colas would you like?",
+"block": 3
+},
+{
+"id": "en__989_144__user_turn_016",
+"trim": 2.1,
+"dur": 4.3,
+"spans": [
+[
+0.8,
+2.3
+]
+],
+"agent": "Thank you for correcting that. So to confirm, your credit card number is nine two seven seven nine three two eight nine four eight three nine four two and the expiration date is eight to twenty twenty eight correct?",
+"block": 3
+},
+{
+"id": "en__924_49__user_turn_001",
+"trim": 2.18,
+"dur": 9.12,
+"spans": [
+[
+3.22,
+3.62
+],
+[
+5.62,
+7.12
+]
+],
+"agent": "Of course, I'd be happy to help you with that. First, could you please provide me with the email address you used for the order? This will help me locate the information about your subscription.",
+"block": 3
+},
+{
+"id": "en__859_102__user_turn_003",
+"trim": 2.98,
+"dur": 10.52,
+"spans": [
+[
+7.02,
+8.52
+]
+],
+"agent": "I appreciate you sending that over. However, I can't directly confirm receipt of emails or check our inbox. Once we receive your email and process it, I'll ensure that your replacement is sent out promptly. As for the credit, if that's the route we go, it typically takes about three to five business days to reflect on your account after processing. If you have any other questions in the meantime, feel free to ask.",
+"block": 3
+},
+{
+"id": "en__553_18__user_turn_009",
+"trim": 3.06,
+"dur": 11.34,
+"spans": [
+[
+4.44,
+4.54
+],
+[
+5.34,
+5.74
+],
+[
+6.44,
+7.04
+],
+[
+7.84,
+9.34
+]
+],
+"agent": "Perfect. Your total is fourteen dollars. It should be ready for delivery in about thirty to forty five minutes. You will get those garlic knots and coca colas to you as soon as possible. Thanks for your order, Michael.",
+"block": 3
+},
+{
+"id": "en__484_20__user_turn_004",
+"trim": 1.78,
+"dur": 12.32,
+"spans": [
+[
+8.82,
+10.32
+]
+],
+"agent": "Unfortunately, we don't offer gift wrapping for the wine, but we'll make sure it's well packaged for delivery. Would you like anything else with your order? Like some garlic. Do you want to add anything like garlic knots or a salad to your order?",
+"block": 3
+},
+{
+"id": "en__671_55__user_turn_006",
+"trim": 1.78,
+"dur": 9.52,
+"spans": [
+[
+1.92,
+2.02
+],
+[
+2.82,
+3.62
+],
+[
+6.02,
+7.52
+]
+],
+"agent": "So you're seeing two lights on your modem. Could you tell me what colors those lights are? Typically the first light is for power and the second is usually for the internet connection. Let me know what you see, please.",
+"block": 3
+},
+{
+"id": "en__484_20__user_turn_003",
+"trim": 1.62,
+"dur": 13.88,
+"spans": [
+[
+0.98,
+1.18
+],
+[
+3.68,
+3.78
+],
+[
+10.38,
+11.88
+]
+],
+"agent": "Perfect. Now, just to confirm, you wanted the signature pepperoti pizza with extra cheese and a bottle of Italian wine, right?",
+"block": 3
+},
+{
+"id": "en__1042_52__user_turn_010",
+"trim": 2.98,
+"dur": 4.82,
+"spans": [
+[
+1.32,
+2.82
+]
+],
+"agent": "Thank you for your confirmation. I'll take care of changing your flight to the next available option to Denver. You should receive a confirmation email shortly after I finalize the change. Please hold for just a moment while I complete that for you.",
+"block": 3
+},
+{
+"id": "en__606_102__user_turn_005",
+"trim": 2.1,
+"dur": 5.3,
+"spans": [
+[
+1.8,
+3.3
+]
+],
+"agent": "Thanks for confirming that. It sounds like there may be an issue with your modem. To help troubleshoot, let's start with some basic checks. First, can you tell me if all the lights on the modem are behaving normally when it restarts? For example, are there any blinking red lights or any lights that are not on at all?",
+"block": 3
+},
+{
+"id": "en__484_20__user_turn_002",
+"trim": 1.06,
+"dur": 4.54,
+"spans": [
+[
+1.04,
+2.54
+]
+],
+"agent": "Got it. That's two thousand eight hundred and thirty seven Main Street Portland, Oregon nine seven two one. Is that right?",
+"block": 3
+},
+{
+"id": "en__1109_43__user_turn_001",
+"trim": 1.86,
+"dur": 12.94,
+"spans": [
+[
+2.14,
+2.74
+],
+[
+5.54,
+6.44
+],
+[
+9.44,
+10.94
+]
+],
+"agent": "I'm sorry to hear you're having trouble with your battery. It does sound like there might be an electrical drain if it's dying overnight. I recommend having us take a look at it to diagnose the issue. Could I get the year, make, and model of your vehicle to start?",
+"block": 3
+},
+{
+"id": "en__1069_24__user_turn_008",
+"trim": 2.58,
+"dur": 4.92,
+"spans": [
+[
+1.42,
+2.92
+]
+],
+"agent": "Sure, let me see how about tomorrow at nine AM Would that work for you?",
+"block": 3
+},
+{
+"id": "en__558_23__user_turn_003",
+"trim": 0.98,
+"dur": 5.12,
+"spans": [
+[
+1.62,
+3.12
+]
+],
+"agent": "Alright, I have your order here. You originally had two sixteen inch pizzas, one pepperoni and one veggie supreme. Do you want to double those or do you want to mix it up a bit?",
+"block": 3
+},
+{
+"id": "en__713_62__user_turn_003",
+"trim": 1.14,
+"dur": 6.86,
+"spans": [
+[
+3.36,
+4.86
+]
+],
+"agent": "Great. Thanks for confirming that. Can I have your name as it appears on the account just to verify?",
+"block": 3
+},
+{
+"id": "en__366_52__user_turn_002",
+"trim": 3.06,
+"dur": 7.24,
+"spans": [
+[
+2.24,
+2.44
+],
+[
+3.74,
+5.24
+]
+],
+"agent": "Great. Can I get your date of birth to pull up your chart?",
+"block": 3
+},
+{
+"id": "en__286_19__user_turn_005",
+"trim": 2.66,
+"dur": 27.04,
+"spans": [
+[
+2.44,
+2.74
+],
+[
+9.04,
+9.24
+],
+[
+13.54,
+13.64
+],
+[
+19.34,
+19.54
+],
+[
+20.14,
+20.44
+],
+[
+23.54,
+25.04
+]
+],
+"agent": "That it So that's nine seven three six nine three five. Thank you for confirming. Let me cancel that reservation for you. All right, your reservation has been successfully canceled. I hope everything is okay with your family. If you need to reschedule or if there's anything else I can assist you with, please let me know.",
+"block": 3
+},
+{
+"id": "en__983_24__user_turn_024",
+"trim": 0.1,
+"dur": 4.6,
+"spans": [
+[
+1.1,
+2.6
+]
+],
+"agent": "I'm David, your customer service representative. It's been a pleasure assisting you today, Rebecca. If you have any questions or need assistance in the future, don't hesitate to reach out. Have a great flight.",
+"block": 3
+},
+{
+"id": "en__558_23__user_turn_006",
+"trim": 0.42,
+"dur": 13.98,
+"spans": [
+[
+4.98,
+5.08
+],
+[
+5.68,
+5.78
+],
+[
+10.48,
+11.98
+]
+],
+"agent": "Understood. So now we've got four sixteen inch pizzas, two pepperoni and two margarita. Got it. Anything else you'd like to add or should I move?",
+"block": 3
+},
+{
+"id": "en__586_28__user_turn_001",
+"trim": 2.98,
+"dur": 10.72,
+"spans": [
+[
+1.82,
+2.12
+],
+[
+2.72,
+2.92
+],
+[
+3.52,
+3.62
+],
+[
+5.02,
+5.32
+],
+[
+6.22,
+6.42
+],
+[
+7.22,
+8.72
+]
+],
+"agent": "I understand how frustrating that can be, Sharon, I'm here to help. To look into your order status, could you please provide me with your order number?",
+"block": 3
+},
+{
+"id": "en__338_43__user_turn_003",
+"trim": 1.86,
+"dur": 6.14,
+"spans": [
+[
+2.64,
+4.14
+]
+],
+"agent": "Of course, the billing department's phone number is five twenty three four five six seven. Let me know if you need anything else.",
+"block": 3
+},
+{
+"id": "en__465_62__user_turn_011",
+"trim": 2.82,
+"dur": 5.58,
+"spans": [
+[
+2.08,
+3.58
+]
+],
+"agent": "Wonderful. I will upgrade your suite to the Deluxe Came with a city view. Just to confirm, you would like to add both champagne and chocolate covered strawberries for your anniversary. Is there a specific date you'd need these amenities to be delivered?",
+"block": 3
+},
+{
+"id": "en__447_20__user_turn_010",
+"trim": 1.94,
+"dur": 5.36,
+"spans": [
+[
+0.86,
+1.06
+],
+[
+1.86,
+3.36
+]
+],
+"agent": "Absolutely, Nancy, I will include a detailed breakdown of the costs, including any additional charges for the equipment and staff assistance in your confirmation email. If there's anything else you think of before the meeting, feel free to reach out. Thank you for choosing the Grand View Hotel, and I look forward to helping make your bosses meeting a success.",
+"block": 3
+},
+{
+"id": "en__518_36__user_turn_001",
+"trim": 3.3,
+"dur": 25.9,
+"spans": [
+[
+0.7,
+1.7
+],
+[
+2.2,
+2.9
+],
+[
+3.6,
+4.7
+],
+[
+7.5,
+8.0
+],
+[
+9.7,
+10.3
+],
+[
+14.4,
+14.8
+],
+[
+19.1,
+19.2
+],
+[
+22.4,
+23.9
+]
+],
+"agent": "Hi Robert. It's Tony here. It sounds like you're craving some pizza. The veggie delight pizza is actually known as the veggie supreme on our menu now, but it's still the same delicious pizza you love. So would you like to go ahead and order that veggie supreme?",
+"block": 3
+},
+{
+"id": "en__667_24__user_turn_008",
+"trim": 0.58,
+"dur": 5.62,
+"spans": [
+[
+2.12,
+3.62
+]
+],
+"agent": "While I can't check specific details, typically expedited shipping is available and can shorten the delivery time to one to two business days. You might want to check your order confirmation email or your account for any shipping options that can be modified. If you need help with anything else, feel free to ask.",
+"block": 3
+},
+{
+"id": "en__448_63__user_turn_003",
+"trim": 2.74,
+"dur": 11.76,
+"spans": [
+[
+0.56,
+1.56
+],
+[
+2.16,
+2.36
+],
+[
+3.16,
+5.46
+],
+[
+6.26,
+6.66
+],
+[
+7.26,
+7.46
+],
+[
+8.26,
+9.76
+]
+],
+"agent": "Thank you for confirming. Let me pull up your reservation. Can you please provide me with the new arrival and departure dates you would like to change it to?",
+"block": 3
+},
+{
+"id": "en__720_8__user_turn_011",
+"trim": 0.74,
+"dur": 4.46,
+"spans": [
+[
+0.96,
+2.46
+]
+],
+"agent": "You're welcome, William. If you need anything else, don't hesitate to ask. Have a great day.",
+"block": 3
+},
+{
+"id": "en__545_52__user_turn_001",
+"trim": 2.74,
+"dur": 5.46,
+"spans": [
+[
+0.66,
+0.96
+],
+[
+1.96,
+3.46
+]
+],
+"agent": "I totally understand how frustrating that can be. But unfortunately, I can't provide any specific instructions or tutorials for the app. However, I can definitely help you place an order right here over the phone. So let's get started. Would you like to go for pickup or delivery?",
+"block": 3
+},
+{
+"id": "en__545_52__user_turn_002",
+"trim": 5.22,
+"dur": 9.78,
+"spans": [
+[
+2.18,
+2.48
+],
+[
+6.28,
+7.78
+]
+],
+"agent": "Great choice. What would you like to order? We have our classic New York style pizzas, specialty pizzas, and sides like garlic knots and wings. What's sounding good to you?",
+"block": 3
+},
+{
+"id": "en__994_43__user_turn_002",
+"trim": 0.42,
+"dur": 4.18,
+"spans": [
+[
+0.68,
+2.18
+]
+],
+"agent": "That's confirmation R E F eight nine eight nine nine one four correct?",
+"block": 3
+},
+{
+"id": "en__375_38__user_turn_003",
+"trim": 3.94,
+"dur": 9.16,
+"spans": [
+[
+3.06,
+3.16
+],
+[
+5.66,
+7.16
+]
+],
+"agent": "I can't set up an urgent care appointment, but I recommend looking for urgent care clinics in your area. Many urgent care facilities accept walk ins, and they can evaluate your partner's situation right away. You can also use your insurance provider's website to find urgent care locations nearby, or you can search online for urgent care facilities in your area. If your partner needs immediate care, please prioritize getting to the nearest facility or calling nine hundred eleven based on their condition.",
+"block": 3
+},
+{
+"id": "en__633_9__user_turn_006",
+"trim": 0.82,
+"dur": 31.98,
+"spans": [
+[
+4.48,
+5.08
+],
+[
+7.78,
+7.98
+],
+[
+11.78,
+12.18
+],
+[
+14.98,
+15.08
+],
+[
+17.88,
+18.18
+],
+[
+23.48,
+23.68
+],
+[
+27.88,
+27.98
+],
+[
+28.48,
+29.98
+]
+],
+"agent": "I understand Nicholas. It could be tough to secure a popular item, especially during the holidays. While I can't sign you up directly, you can often subscribe to notifications on our website for restocks. However, if you want, I can help you take down your email address or phone number now, and I can make sure you're on the list for order updates. Would you like to provide your email or phone number?",
+"block": 3
+},
+{
+"id": "en__1044_96__user_turn_001",
+"trim": 1.3,
+"dur": 6.7,
+"spans": [
+[
+1.7,
+2.0
+],
+[
+3.2,
+4.7
+]
+],
+"agent": "Hi Katherine. It's great to hear from you. Let me get some details before we schedule that oil change. What year make and model is your vehicle?",
+"block": 3
+},
+{
+"id": "en__924_49__user_turn_000",
+"trim": 2.82,
+"dur": 25.38,
+"spans": [
+[
+1.18,
+2.98
+],
+[
+3.48,
+3.68
+],
+[
+5.78,
+6.08
+],
+[
+6.78,
+7.28
+],
+[
+11.48,
+11.58
+],
+[
+13.28,
+15.08
+],
+[
+19.48,
+21.08
+],
+[
+21.88,
+23.38
+]
+],
+"agent": "Hello and welcome to Curated Box Monthly. My name is Sam and I'm here to help you with anything you need regarding your subscription. What can I assist you with today?",
+"block": 3
+},
+{
+"id": "en__829_87__user_turn_004",
+"trim": 1.62,
+"dur": 19.48,
+"spans": [
+[
+0.88,
+0.98
+],
+[
+3.58,
+3.78
+],
+[
+4.98,
+7.38
+],
+[
+8.78,
+9.98
+],
+[
+11.38,
+12.98
+],
+[
+13.78,
+14.48
+],
+[
+15.28,
+15.38
+],
+[
+15.98,
+17.48
+]
+],
+"agent": "Thank you, Scott. I verified your account. Can you please tell me the exact date of the transaction and the amount you would like to dispute?",
+"block": 3
+},
+{
+"id": "en__823_75__user_turn_007",
+"trim": 2.9,
+"dur": 19.2,
+"spans": [
+[
+3.0,
+3.2
+],
+[
+4.1,
+4.3
+],
+[
+7.9,
+8.3
+],
+[
+12.5,
+12.7
+],
+[
+14.4,
+15.0
+],
+[
+15.7,
+17.2
+]
+],
+"agent": "To enroll in the cashback rewards program, you typically need to visit your nearest first community bank branch, or you can also enroll through our online banking platform. If you're doing it online, you would log into your account and navigate to the account options or rewards tab. There you'll find the option to sign up for the cashback program. Once you've enrolled, you'll start earning cash back under eligible purchases right away. If you prefer or if you have specific questions during the process, feel free to ask any bank representative at the branch or contact our customer service, and they'll be happy to assist you. Do you need any help with anything else about your account or the enrollment process?",
+"block": 3
+},
+{
+"id": "en__924_49__user_turn_008",
+"trim": 2.74,
+"dur": 5.46,
+"spans": [
+[
+1.96,
+3.46
+]
+],
+"agent": "Perfect. I'll go ahead and set up a new monthly subscription with the shipping address for your cousin and the billing information you've provided. Just to confirm, the subscription will be set to ship to one thousand six hundred thirty Valley Lane, Dallas, Texas seven five two one and the payment will be with the card ending in four eight nine. Is there anything else you'd like to add or any special requests for this order?",
+"block": 3
+},
+{
+"id": "en__460_78__user_turn_003",
+"trim": 2.66,
+"dur": 5.34,
+"spans": [
+[
+1.84,
+3.34
+]
+],
+"agent": "That sounds like a good plan, Ryan. If you need any further assistance or if there's anything else I can help with, feel free to reach out. I hope the situation improves for you soon.",
+"block": 3
+},
+{
+"id": "en__667_24__user_turn_006",
+"trim": 4.3,
+"dur": 10.7,
+"spans": [
+[
+0.3,
+0.5
+],
+[
+1.8,
+2.5
+],
+[
+3.2,
+3.5
+],
+[
+4.9,
+5.1
+],
+[
+7.2,
+8.7
+]
+],
+"agent": "Thank you for that information. The Samsung Galaxy S twenty three is currently still on discount during the flash sale. You're in luck. Is there anything else I can assist you with regarding your order?",
+"block": 3
+},
+{
+"id": "en__823_75__user_turn_003",
+"trim": 2.58,
+"dur": 5.02,
+"spans": [
+[
+1.52,
+3.02
+]
+],
+"agent": "Thank you for the clarification, Kenneth Watson. Just to confirm, the last four digits of your Social Security number are seven six five two correct?",
+"block": 3
+},
+{
+"id": "en__987_40__user_turn_007",
+"trim": 5.3,
+"dur": 14.3,
+"spans": [
+[
+1.5,
+4.7
+],
+[
+5.8,
+6.9
+],
+[
+7.7,
+8.3
+],
+[
+10.8,
+12.3
+]
+],
+"agent": "Okay, thank you for understanding. I'll go ahead and process the change for your flight from Los Angeles to New York, targeting that Thursday night at ten PM. Could you please provide me with your ticket number or any other information related to your current booking to help with this change?",
+"block": 4
+},
+{
+"id": "en__1118_47__user_turn_005",
+"trim": 1.3,
+"dur": 4.7,
+"spans": [
+[
+1.2,
+2.7
+]
+],
+"agent": "I've got your phone number as two five three three four zero four five eight. Is that correct?",
+"block": 4
+},
+{
+"id": "en__447_20__user_turn_004",
+"trim": 2.34,
+"dur": 14.36,
+"spans": [
+[
+4.36,
+4.46
+],
+[
+5.86,
+6.06
+],
+[
+6.86,
+7.26
+],
+[
+10.86,
+12.36
+]
+],
+"agent": "Just to confirm, your name is Nancy Morris. Your phone number is eight zero one four five seven three two seven zero and your email address is Nancy Morris twenty four at hotmail dot com dot Is that correct?",
+"block": 4
+},
+{
+"id": "en__1049_120__user_turn_007",
+"trim": 0.82,
+"dur": 7.88,
+"spans": [
+[
+2.78,
+3.08
+],
+[
+4.38,
+5.88
+]
+],
+"agent": "Great, I've got all your information. We'll arrange to have someone come out and help you as soon as we can.",
+"block": 4
+},
+{
+"id": "en__948_9__user_turn_007",
+"trim": 2.1,
+"dur": 17.7,
+"spans": [
+[
+6.6,
+6.8
+],
+[
+10.0,
+10.5
+],
+[
+11.7,
+11.9
+],
+[
+14.2,
+15.7
+]
+],
+"agent": "Great. Once you send those photos to support at curatedboxmonthly dot com I'll make sure to handle your replacement and explore any credit options available for you. If there's anything else you need in the meantime, just let me know.",
+"block": 4
+},
+{
+"id": "en__948_9__user_turn_000",
+"trim": 0.3,
+"dur": 36.7,
+"spans": [
+[
+0.3,
+3.3
+],
+[
+5.6,
+6.2
+],
+[
+13.2,
+13.5
+],
+[
+17.8,
+18.1
+],
+[
+19.0,
+19.4
+],
+[
+23.0,
+23.3
+],
+[
+25.1,
+25.2
+],
+[
+30.3,
+30.4
+],
+[
+33.2,
+34.7
+]
+],
+"agent": "How could",
+"block": 4
+},
+{
+"id": "en__983_24__user_turn_021",
+"trim": 0.58,
+"dur": 7.82,
+"spans": [
+[
+1.82,
+2.32
+],
+[
+3.12,
+3.32
+],
+[
+4.32,
+5.82
+]
+],
+"agent": "It's recommended that you arrive at least two hours before your flight for domestic travel, especially if you're bringing a pet. This allows time for check in, security screening, and any necessary arrangements for your cat. For international flights, arriving three hours early is advisable. This should give you plenty of time to ensure everything goes smoothly. If you have any other questions or need further assistance, just let me know.",
+"block": 4
+},
+{
+"id": "en__855_55__user_turn_005",
+"trim": 2.82,
+"dur": 18.38,
+"spans": [
+[
+2.08,
+2.28
+],
+[
+6.78,
+7.28
+],
+[
+9.78,
+10.08
+],
+[
+13.28,
+14.38
+],
+[
+14.88,
+16.38
+]
+],
+"agent": "Thank you. Jennifer. Now that I've verified your account, let's proceed. I can assist you in reporting those unauthorized transactions and freezing your card. Can you please tell me the date and amounts of the transactions you wish to dispute?",
+"block": 4
+},
+{
+"id": "en__448_63__user_turn_005",
+"trim": 12.1,
+"dur": 5.3,
+"spans": [
+[
+1.8,
+3.3
+]
+],
+"agent": "Wonderful. I'll proceed to modify your reservation to reflect the new dates. May I have your full name for the reservation?",
+"block": 4
+},
+{
+"id": "en__571_24__user_turn_017",
+"trim": 2.18,
+"dur": 4.82,
+"spans": [
+[
+1.32,
+2.82
+]
+],
+"agent": "I appreciate that, Samuel, but I can't take credit card information over the phone. You'll be able to pay when the delivery arrives. Is that all right?",
+"block": 4
+},
+{
+"id": "en__723_75__user_turn_006",
+"trim": 2.34,
+"dur": 11.36,
+"spans": [
+[
+1.56,
+2.16
+],
+[
+7.86,
+9.36
+]
+],
+"agent": "The Ultra Plan, which offers five hundred megabits per second, is priced at eighty nine dollars ninety nine cents per month. Would you like to proceed with upgrading to that plan?",
+"block": 4
+},
+{
+"id": "en__906_126__user_turn_012",
+"trim": 3.86,
+"dur": 5.54,
+"spans": [
+[
+2.04,
+3.54
+]
+],
+"agent": "Thank you for your patience. I've processed your upgrade to first class and you will receive the updated confirmation at Christine. Myers eight six at Yahoo. com shortly. Is there anything else I can assist you with today?",
+"block": 4
+},
+{
+"id": "en__608_52__user_turn_000",
+"trim": 1.06,
+"dur": 10.04,
+"spans": [
+[
+3.14,
+3.34
+],
+[
+5.94,
+6.04
+],
+[
+6.54,
+8.04
+]
+],
+"agent": "Hello, this is Jordan from Connect Wave Internet Services. How can I assist you today?",
+"block": 4
+},
+{
+"id": "en__465_62__user_turn_008",
+"trim": 1.3,
+"dur": 4.4,
+"spans": [
+[
+0.9,
+2.4
+]
+],
+"agent": "I have eight one three six three zero one zero eight nine. Is that correct?",
+"block": 4
+},
+{
+"id": "en__989_144__user_turn_020",
+"trim": 0.9,
+"dur": 7.3,
+"spans": [
+[
+3.8,
+5.3
+]
+],
+"agent": "Thank you for confirming that. I will finalize the payment for the upgrade now. You'll receive the updated confirmation in your email shortly. If there's anything else I can help you with today, just let me know.",
+"block": 4
+},
+{
+"id": "en__906_126__user_turn_013",
+"trim": 2.42,
+"dur": 4.78,
+"spans": [
+[
+1.28,
+2.78
+]
+],
+"agent": "You're welcome. Enjoy your anniversary trip and have a fantastic time in first class. If you need anything else in the future, don't hesitate to reach out. Safe Travels.",
+"block": 4
+},
+{
+"id": "en__452_3__user_turn_008",
+"trim": 2.1,
+"dur": 5.1,
+"spans": [
+[
+0.8,
+0.9
+],
+[
+1.6,
+3.1
+]
+],
+"agent": "Thank you for confirming. I have your dinner reservation for your anniversary on february fifth at seven PM under the name Barbara Cox. It includes special requests for dietary accommodations and dessert wine pairings. You will receive a confirmation email shortly at barbara dot cox one two at mail dot com dot If there's anything else you need or any additional requests, feel free to let me know. Enjoy your celebration.",
+"block": 4
+},
+{
+"id": "en__1042_52__user_turn_001",
+"trim": 1.54,
+"dur": 9.26,
+"spans": [
+[
+0.96,
+1.26
+],
+[
+5.76,
+7.26
+]
+],
+"agent": "I'm really sorry to hear about your siblings situation. I'll do my best to help you get home as soon as possible. First, could you please provide me with your confirmation number so I can look up your booking? As for insurance reimbursement",
+"block": 4
+},
+{
+"id": "en__954_24__user_turn_002",
+"trim": 2.74,
+"dur": 4.26,
+"spans": [
+[
+0.76,
+2.26
+]
+],
+"agent": "Just to confirm, that's confirmation number six seven nine three two correct?",
+"block": 4
+},
+{
+"id": "en__1066_2__user_turn_001",
+"trim": 1.54,
+"dur": 7.66,
+"spans": [
+[
+4.16,
+5.66
+]
+],
+"agent": "Hi, Sandra, congratulations on your new baby. Unfortunately, I can't pull up specific warranty details like that. However, I can tell you that our warranty typically covers parts and labor for twelve months or twelve thousand miles, whichever comes first. If you're looking for specific details on that warranty policy, I recommend checking your paperwork or giving us the vehicle information so I can guide you better. Is there anything else you would like to know?",
+"block": 4
+},
+{
+"id": "en__200_147__user_turn_002",
+"trim": 2.5,
+"dur": 8.2,
+"spans": [
+[
+4.7,
+6.2
+]
+],
+"agent": "Profeto So that's for two guests on may fifth at eight PM Can I get your phone number to complete the reservation?",
+"block": 4
+},
+{
+"id": "en__987_40__user_turn_004",
+"trim": 2.42,
+"dur": 7.38,
+"spans": [
+[
+1.98,
+2.48
+],
+[
+3.88,
+5.38
+]
+],
+"agent": "Thank you for the details. Samantha, just to clarify, you want to change your business flight to a departure on Thursday night at ten PM Let me explain the options. Since you're currently booked for a flight during your business trip, changing to a different departure time will depend on availability and possibly a fair difference. If you want, I can help with that right now. Just to confirm, which route is your business flight on?",
+"block": 4
+},
+{
+"id": "en__452_3__user_turn_001",
+"trim": 2.34,
+"dur": 27.56,
+"spans": [
+[
+3.16,
+3.46
+],
+[
+8.26,
+8.46
+],
+[
+8.76,
+9.16
+],
+[
+10.46,
+10.56
+],
+[
+12.86,
+13.66
+],
+[
+14.56,
+14.86
+],
+[
+15.96,
+16.76
+],
+[
+19.06,
+19.56
+],
+[
+21.26,
+21.66
+],
+[
+24.06,
+25.56
+]
+],
+"agent": "That sounds like a wonderful surprise. I'd be happy to help you with this. Just to confirm, you're planning to stay for your anniversary in three days, which would be february fifth. Is that correct? Could you please provide me the number of guests and any specific preferences for the dinner reservation?",
+"block": 4
+},
+{
+"id": "en__200_147__user_turn_005",
+"trim": 2.98,
+"dur": 13.62,
+"spans": [
+[
+4.82,
+5.02
+],
+[
+7.12,
+7.52
+],
+[
+10.12,
+11.62
+]
+],
+"agent": "Perfetto since it's just for two guests, I don't need anything else from you. I will send your reservation details, but if you'd like, I could convert that to a gifted card if you want to give it as a surprise to your spouse. Would you like to add that?",
+"block": 4
+},
+{
+"id": "en__839_71__user_turn_009",
+"trim": 0.9,
+"dur": 9.0,
+"spans": [
+[
+5.5,
+7.0
+]
+],
+"agent": "Yes, you have a couple of options. You can withdraw cash at any first community bank branch. Just bring a valid ID with you and you should be able to access your funds. Another option is if you have mobile banking set up, you can use your phone to generate a temporary card number for ATM access, which could work depending on the machine. Would you like more details on how to set up the mobile banking option?",
+"block": 4
+},
+{
+"id": "en__200_147__user_turn_003",
+"trim": 1.62,
+"dur": 12.18,
+"spans": [
+[
+4.48,
+5.08
+],
+[
+6.18,
+6.48
+],
+[
+7.78,
+7.98
+],
+[
+8.68,
+10.18
+]
+],
+"agent": "Thought it may eighteenth at eight PM for two guests and may I have your phone number to secure that reservation?",
+"block": 4
+},
+{
+"id": "en__989_144__user_turn_010",
+"trim": 2.26,
+"dur": 18.14,
+"spans": [
+[
+7.04,
+7.34
+],
+[
+10.84,
+11.24
+],
+[
+13.04,
+13.24
+],
+[
+14.64,
+16.14
+]
+],
+"agent": "Fantastic. I'll process the upgrade for your friend now. Can you please provide the email address you'd like me to send the updated confirmation to?",
+"block": 4
+},
+{
+"id": "en__608_52__user_turn_002",
+"trim": 0.9,
+"dur": 4.5,
+"spans": [
+[
+1.0,
+2.5
+]
+],
+"agent": "Just to confirm, that's account number AC dash one zero seven zero three zero six zero correct?",
+"block": 4
+},
+{
+"id": "en__907_96__user_turn_010",
+"trim": 1.14,
+"dur": 12.96,
+"spans": [
+[
+2.76,
+3.26
+],
+[
+6.76,
+6.96
+],
+[
+9.46,
+10.96
+]
+],
+"agent": "Thank you for confirming, Justin. I've noted your email address and will make sure you receive the confirmation about our conversation and the escalation. If you have any other questions or need further assistance in the future, please don't hesitate to reach out. Have a great day, and I hope everything gets resolved for you soon.",
+"block": 4
+},
+{
+"id": "en__571_24__user_turn_003",
+"trim": 7.38,
+"dur": 7.02,
+"spans": [
+[
+1.12,
+2.02
+],
+[
+3.52,
+5.02
+]
+],
+"agent": "Great choice so that's garlic knots and wings. How many wings would you like? They come in orders of ten for thirteen dollars.",
+"block": 4
+},
+{
+"id": "en__366_52__user_turn_015",
+"trim": 1.14,
+"dur": 6.36,
+"spans": [
+[
+2.86,
+4.36
+]
+],
+"agent": "That sounds very concerning. I recommend that you seek immediate medical attention. Can I assist you with a referral to the nearest urgent care facility or would you like to speak with",
+"block": 4
+},
+{
+"id": "en__396_82__user_turn_003",
+"trim": 2.5,
+"dur": 13.7,
+"spans": [
+[
+2.4,
+2.5
+],
+[
+8.0,
+8.8
+],
+[
+10.2,
+11.7
+]
+],
+"agent": "Wonderful, and how many guests will be staying with you? Do you have a specific room preference like a standard king or a deluxe king with a city view?",
+"block": 4
+},
+{
+"id": "en__775_50__user_turn_001",
+"trim": 1.54,
+"dur": 4.86,
+"spans": [
+[
+1.36,
+2.86
+]
+],
+"agent": "I completely understand your concerns about that charge and wanting to ensure the security of your account. Let's start by verifying your identity to address this issue properly. Could you please provide me with your full name?",
+"block": 4
+},
+{
+"id": "en__1115_49__user_turn_008",
+"trim": 1.46,
+"dur": 9.74,
+"spans": [
+[
+1.64,
+2.44
+],
+[
+4.04,
+5.64
+],
+[
+6.24,
+7.74
+]
+],
+"agent": "I understand your concerns completely, and I'll make sure to relay your request for compensation to our management team. They'll review your situation and take it into consideration. I appreciate your patience, and I'll follow up with you as soon as I have more information on that. Is there anything else I can assist you with for now?",
+"block": 4
+},
+{
+"id": "en__1084_19__user_turn_007",
+"trim": 3.22,
+"dur": 4.28,
+"spans": [
+[
+0.78,
+2.28
+]
+],
+"agent": "You're welcome. If you think of anything else or have more questions, just give me a call. I'll be in touch soon with an update on your car. Take care.",
+"block": 4
+},
+{
+"id": "en__720_8__user_turn_004",
+"trim": 1.54,
+"dur": 27.46,
+"spans": [
+[
+1.56,
+2.16
+],
+[
+3.56,
+3.66
+],
+[
+4.36,
+4.76
+],
+[
+7.26,
+7.46
+],
+[
+11.76,
+12.06
+],
+[
+13.46,
+13.56
+],
+[
+15.06,
+16.46
+],
+[
+18.46,
+19.36
+],
+[
+22.06,
+22.16
+],
+[
+23.96,
+25.46
+]
+],
+"agent": "Great, I've got your account pulled up. Can I have the name of the account holder and the service address for verification?",
+"block": 4
+},
+{
+"id": "en__1084_19__user_turn_004",
+"trim": 2.58,
+"dur": 19.12,
+"spans": [
+[
+3.42,
+3.62
+],
+[
+5.12,
+5.82
+],
+[
+6.42,
+6.62
+],
+[
+11.12,
+11.62
+],
+[
+11.92,
+12.02
+],
+[
+15.62,
+17.12
+]
+],
+"agent": "I could definitely set that up for you, Kevin, just to confirm, what's the best phone number for you to reach you at?",
+"block": 4
+},
+{
+"id": "en__1066_2__user_turn_003",
+"trim": 2.34,
+"dur": 6.16,
+"spans": [
+[
+2.66,
+4.16
+]
+],
+"agent": "Sure, common coverage details in warranties usually include parts like the engine, transmission, and drivetrain components. It often covers electrical systems, fuel systems, and sometimes air conditioning components. However, wear and tear items like brake pads, wiper blades and tires typically aren't covered. Each warranty can vary, so I highly recommend checking your specific warranty booklet for the most accurate information. If you have any particular concerns or components you'd like more information about, just let me know.",
+"block": 4
+},
+{
+"id": "en__633_9__user_turn_007",
+"trim": 1.38,
+"dur": 18.22,
+"spans": [
+[
+6.52,
+6.92
+],
+[
+14.72,
+16.22
+]
+],
+"agent": "Thank you for that information. Nicholas, let me confirm it back to you. I have your phone number as six one nine seven five seven zero one two nine. Is that correct? And your email address as NICH OL as in Larry A SN Sam dot CR T E R sixty five at iCloud dot com Did I get that right?",
+"block": 4
+},
+{
+"id": "en__1118_47__user_turn_006",
+"trim": 2.5,
+"dur": 27.8,
+"spans": [
+[
+1.6,
+1.7
+],
+[
+3.3,
+3.6
+],
+[
+4.9,
+5.4
+],
+[
+6.7,
+7.5
+],
+[
+9.6,
+9.8
+],
+[
+10.5,
+11.1
+],
+[
+12.0,
+12.6
+],
+[
+14.1,
+14.3
+],
+[
+15.6,
+16.1
+],
+[
+17.1,
+17.6
+],
+[
+19.3,
+19.6
+],
+[
+20.3,
+20.8
+],
+[
+22.8,
+23.3
+],
+[
+24.3,
+25.8
+]
+],
+"agent": "Great, now, just to confirm, we have you scheduled for five o'clock on a weekday for your two thousand one BMW with the tire issue. Is there an email address you'd like me to send the confirmation to or any other details you want me to add?",
+"block": 4
+},
+{
+"id": "en__924_49__user_turn_004",
+"trim": 1.54,
+"dur": 4.96,
+"spans": [
+[
+1.46,
+2.96
+]
+],
+"agent": "So the shipping address is one thousand six hundred and thirty Valley Lane, Dallas, Texas, seven five two zero one correct?",
+"block": 4
+},
+{
+"id": "en__529_3__user_turn_001",
+"trim": 3.06,
+"dur": 18.44,
+"spans": [
+[
+2.64,
+3.04
+],
+[
+8.74,
+9.14
+],
+[
+13.14,
+13.44
+],
+[
+14.94,
+16.44
+]
+],
+"agent": "Hi there, I totally get that last minute pizza craving. Unfortunately, we don't have seasonal items of the moment, but our specialty pizzas are always a hit. We have options like meat lovers, veggie supreme, margarita, buffalo chicken, and white pizza. Do any of those sound good for you?",
+"block": 4
+},
+{
+"id": "en__371_24__user_turn_002",
+"trim": 8.02,
+"dur": 15.08,
+"spans": [
+[
+0.88,
+1.48
+],
+[
+2.68,
+4.58
+],
+[
+5.08,
+5.18
+],
+[
+6.28,
+6.48
+],
+[
+7.88,
+8.18
+],
+[
+9.28,
+10.38
+],
+[
+11.58,
+13.08
+]
+],
+"agent": "Got it. November thirteenth, nineteen ninety. Thank you for that. Do you have your patient ID number?",
+"block": 4
+},
+{
+"id": "en__516_8__user_turn_021",
+"trim": 1.14,
+"dur": 4.86,
+"spans": [
+[
+1.36,
+2.86
+]
+],
+"agent": "You can pay the delivery driver when they arrive at your door. It's all up to you. Typically, we accept cash or card for payment. If you have any other questions, feel free to ask. Enjoy your evening, Mark.",
+"block": 4
+},
+{
+"id": "en__224_52__user_turn_000",
+"trim": 4.42,
+"dur": 13.88,
+"spans": [
+[
+4.58,
+4.78
+],
+[
+5.68,
+5.98
+],
+[
+7.38,
+7.58
+],
+[
+10.38,
+11.88
+]
+],
+"agent": "Ella Not, this is Maria How can I help you?",
+"block": 4
+},
+{
+"id": "en__576_127__user_turn_003",
+"trim": 2.74,
+"dur": 29.56,
+"spans": [
+[
+1.46,
+1.76
+],
+[
+3.16,
+3.76
+],
+[
+5.96,
+6.06
+],
+[
+8.56,
+8.86
+],
+[
+10.96,
+11.56
+],
+[
+13.96,
+14.16
+],
+[
+16.36,
+16.56
+],
+[
+17.86,
+18.06
+],
+[
+22.56,
+22.76
+],
+[
+26.06,
+27.56
+]
+],
+"agent": "Thanks for confirming Heather, let me check on your order status. Your laptop was processed and should be ready for pickup soon. You should receive an email confirmation shortly. It might take a little while to show up, so please check your spam or junk folder as well. If you have any other questions or need assistance with anything else, feel free to let me know.",
+"block": 4
+},
+{
+"id": "en__606_102__user_turn_008",
+"trim": 1.46,
+"dur": 5.54,
+"spans": [
+[
+2.04,
+3.54
+]
+],
+"agent": "Thank you for that information. I can schedule a technician for you. How about we aim for a morning slot on Monday? Would that work for you?",
+"block": 4
+},
+{
+"id": "en__529_3__user_turn_000",
+"trim": 2.18,
+"dur": 30.62,
+"spans": [
+[
+2.42,
+3.12
+],
+[
+4.22,
+4.32
+],
+[
+8.42,
+9.12
+],
+[
+12.62,
+12.92
+],
+[
+14.72,
+14.92
+],
+[
+18.22,
+18.32
+],
+[
+18.82,
+19.12
+],
+[
+20.12,
+20.32
+],
+[
+25.02,
+25.52
+],
+[
+27.12,
+28.62
+]
+],
+"agent": "up or delivery.",
+"block": 4
+},
+{
+"id": "en__465_62__user_turn_000",
+"trim": 2.42,
+"dur": 11.28,
+"spans": [
+[
+2.18,
+2.78
+],
+[
+4.88,
+4.98
+],
+[
+7.78,
+9.28
+]
+],
+"agent": "The Grand View Hotel This is James. How may I assist you today?",
+"block": 4
+},
+{
+"id": "en__287_49__user_turn_010",
+"trim": 3.38,
+"dur": 10.82,
+"spans": [
+[
+3.72,
+3.82
+],
+[
+5.52,
+6.12
+],
+[
+7.32,
+8.82
+]
+],
+"agent": "Profeto, your order is all set. We have ten servings each of the Capri salad, bronzino and fetucini alfredo ready for pickup at five PM. The order is under Robert Anderson, and I have your credit card ending in zero nine six on file to hold the reservation. Please remember to arrive about fifteen minutes early to ensure everything is ready for your event. If you have any other questions or need anything else, just let me know. Enjoy the event.",
+"block": 4
+},
+{
+"id": "en__576_127__user_turn_000",
+"trim": 1.38,
+"dur": 21.72,
+"spans": [
+[
+2.72,
+3.32
+],
+[
+7.72,
+8.12
+],
+[
+10.82,
+11.12
+],
+[
+12.52,
+13.32
+],
+[
+17.12,
+17.32
+],
+[
+18.22,
+19.72
+]
+],
+"agent": "Hi. Thank you for calling Texome Electronics. This is Alex. How can I assist you today?",
+"block": 4
+},
+{
+"id": "en__708_120__user_turn_006",
+"trim": 1.78,
+"dur": 11.02,
+"spans": [
+[
+1.82,
+2.02
+],
+[
+4.42,
+4.82
+],
+[
+7.52,
+9.02
+]
+],
+"agent": "I understand your urgency, Sandra. Unfortunately, the process for requesting an early release typically takes at least one to three business days. There's no way to expedite it beyond that due to our standard procedures. However, if you have any alternative accounts with available funds, you might consider using those to cover your deposit in the meantime. Would you like any assistance with that?",
+"block": 4
+},
+{
+"id": "en__708_120__user_turn_002",
+"trim": 1.14,
+"dur": 4.26,
+"spans": [
+[
+0.76,
+2.26
+]
+],
+"agent": "Just to confirm, that's the account ending in seven, correct?",
+"block": 4
+},
+{
+"id": "en__983_24__user_turn_016",
+"trim": 2.5,
+"dur": 7.7,
+"spans": [
+[
+1.5,
+1.9
+],
+[
+2.6,
+3.0
+],
+[
+3.4,
+3.6
+],
+[
+4.2,
+5.7
+]
+],
+"agent": "Great choices. I'll go ahead and add in flight WiFi access for around fifteen dollars to your booking. As for additional snacks and beverage upgrades, we often offer a selection of premium snacks and drinks like mixed nuts, gourmet chocolates, and extra beverage options for around ten dollars to fifteen dollars. Would you like me to include those options as well? If so, I can finalize the total for all the upgrades, including the Wi Fi and additional snacks and beverages.",
+"block": 4
+},
+{
+"id": "en__454_50__user_turn_000",
+"trim": 0.0,
+"dur": 4.2,
+"spans": [
+[
+0.7,
+2.2
+]
+],
+"agent": "The Grand View Hotel.",
+"block": 4
+},
+{
+"id": "en__452_3__user_turn_000",
+"trim": 2.58,
+"dur": 20.92,
+"spans": [
+[
+4.22,
+4.52
+],
+[
+10.02,
+10.62
+],
+[
+14.72,
+15.32
+],
+[
+17.42,
+18.92
+]
+],
+"agent": "Hello, thank you for calling the Grand View Hotel and Suites. This is James. How may I assist you today?",
+"block": 4
+},
+{
+"id": "en__454_50__user_turn_004",
+"trim": 0.98,
+"dur": 4.62,
+"spans": [
+[
+1.12,
+2.62
+]
+],
+"agent": "Just to confirm, I have your phone number as eight one three six one two four zero one and your email address as Mary Davis two atoL. com is that correct?",
+"block": 4
+},
+{
+"id": "en__489_62__user_turn_003",
+"trim": 2.34,
+"dur": 17.66,
+"spans": [
+[
+2.56,
+2.76
+],
+[
+5.36,
+5.66
+],
+[
+12.16,
+12.36
+],
+[
+14.16,
+15.66
+]
+],
+"agent": "Great choice. Two large pizzas will definitely feed four people. Would you like both large pizzas to be the veggie supreme specialty? Or do you want to mix it up with some different veggie toppings?",
+"block": 4
+},
+{
+"id": "en__782_52__user_turn_004",
+"trim": 4.34,
+"dur": 8.76,
+"spans": [
+[
+0.66,
+0.86
+],
+[
+1.96,
+2.16
+],
+[
+3.16,
+3.26
+],
+[
+4.06,
+4.16
+],
+[
+5.26,
+6.76
+]
+],
+"agent": "Thank you for confirming, David, do you have the wire confirmation number for the transfer you'd like to verify?",
+"block": 4
+},
+{
+"id": "en__350_18__user_turn_005",
+"trim": 2.18,
+"dur": 7.92,
+"spans": [
+[
+4.42,
+5.92
+]
+],
+"agent": "Thank you for confirming. Can you please provide your current phone number for any follow up regarding your appointment?",
+"block": 4
+},
+{
+"id": "en__782_52__user_turn_003",
+"trim": 1.62,
+"dur": 4.38,
+"spans": [
+[
+0.88,
+2.38
+]
+],
+"agent": "I appreciate that, David, just to confirm, that's the account ending in zero four two. Correct?",
+"block": 4
+},
+{
+"id": "en__1137_55__user_turn_001",
+"trim": 0.9,
+"dur": 8.2,
+"spans": [
+[
+1.5,
+1.6
+],
+[
+4.7,
+6.2
+]
+],
+"agent": "Hi Charles, thanks for calling. Do you happen to have your work order number from your last visit? That'll help me look up your information quickly. If you don't have it,",
+"block": 4
+},
+{
+"id": "en__848_145__user_turn_006",
+"trim": 1.86,
+"dur": 9.34,
+"spans": [
+[
+5.84,
+7.34
+]
+],
+"agent": "Thank you for the correction. So the address is shop number F for Fox Trot, shop number F one, ground floor, abundant plaza, UBU and GDN, Indonesia, postal code three hundred and twenty one. Would you also like to provide a contact phone number for the shipping?",
+"block": 4
+},
+{
+"id": "en__983_24__user_turn_019",
+"trim": 0.74,
+"dur": 10.56,
+"spans": [
+[
+2.56,
+3.06
+],
+[
+4.66,
+5.16
+],
+[
+7.06,
+8.56
+]
+],
+"agent": "Just to confirm, you're bringing a cat named Adolf who weighs around thirty three pounds. However, I should mention that our in cabin pet policy typically allows only pets up to around twenty five pounds. For a cat his size, he would need to travel in the cargo hold instead. Would you like more information on that process? Or is there anything else you'd like to update regarding your flight?",
+"block": 4
+},
+{
+"id": "en__1115_49__user_turn_000",
+"trim": 3.62,
+"dur": 20.18,
+"spans": [
+[
+0.98,
+1.08
+],
+[
+3.68,
+4.38
+],
+[
+6.38,
+8.28
+],
+[
+9.38,
+9.78
+],
+[
+11.78,
+13.38
+],
+[
+16.68,
+18.18
+]
+],
+"agent": "Hi there. This is Mike with Precision AutoCare. How can I help you today?",
+"block": 4
+},
+{
+"id": "en__401_126__user_turn_008",
+"trim": 5.62,
+"dur": 16.28,
+"spans": [
+[
+4.98,
+5.48
+],
+[
+12.78,
+14.28
+]
+],
+"agent": "You're welcome. So here's what I have. One sixteen inch veggie supreme for twenty four dollars and one order of garlic nots for five dollars. Your total is twenty nine dollars. Do you have any coupons or probo codes today?",
+"block": 4
+},
+{
+"id": "en__294_96__user_turn_003",
+"trim": 1.06,
+"dur": 5.14,
+"spans": [
+[
+1.64,
+3.14
+]
+],
+"agent": "Thank you for that. Rebecca. Just to confirm, I have your phone number as seven one three five zero four eight two five four and your email as rebecca dot bailey five four at Yahoo. com. Did I get that right?",
+"block": 4
+},
+{
+"id": "en__948_9__user_turn_003",
+"trim": 1.3,
+"dur": 20.5,
+"spans": [
+[
+4.4,
+4.5
+],
+[
+8.3,
+8.6
+],
+[
+13.6,
+13.9
+],
+[
+15.8,
+15.9
+],
+[
+17.0,
+18.5
+]
+],
+"agent": "Perfect. Now, can you describe what was wrong with the charcuterie board? This will help me understand the situation better for the replacement and any credit options we might have for you.",
+"block": 4
+},
+{
+"id": "en__671_55__user_turn_002",
+"trim": 0.98,
+"dur": 5.02,
+"spans": [
+[
+1.52,
+3.02
+]
+],
+"agent": "Just to confirm, that's account number AND DASH six two five three six zero six correct?",
+"block": 4
+},
+{
+"id": "en__368_95__user_turn_001",
+"trim": 1.78,
+"dur": 8.52,
+"spans": [
+[
+3.82,
+4.22
+],
+[
+5.02,
+6.52
+]
+],
+"agent": "Hi Brenda. I understand your concern about your daughter, and I'm here to help, just to confirm, is your daughter an existing patient with us.",
+"block": 4
+},
+{
+"id": "en__576_127__user_turn_002",
+"trim": 0.98,
+"dur": 4.62,
+"spans": [
+[
+1.12,
+2.62
+]
+],
+"agent": "Got it. That's order number seven two eight nine seven one seven correct?",
+"block": 4
+},
+{
+"id": "en__287_49__user_turn_008",
+"trim": 6.58,
+"dur": 28.02,
+"spans": [
+[
+4.02,
+5.42
+],
+[
+7.42,
+7.82
+],
+[
+9.42,
+10.02
+],
+[
+12.22,
+12.42
+],
+[
+14.52,
+16.02
+],
+[
+18.42,
+19.12
+],
+[
+21.22,
+21.92
+],
+[
+23.22,
+23.52
+],
+[
+24.52,
+26.02
+]
+],
+"agent": "Absolutely. Robert, these dishes are among their most popular and have received wonderful feedback from our guests. The Caprice Salad is fresh and flavorful. The Brazino is a delicate and beautifully prepared fish, and the fetucini Alfredo is creamy and satisfying. They all showcase the authentic Tuscan flavors we pride ourselves on. Your high profile guests will definitely enjoy these selections. Now, since you have a party of ten, I will need a credit card to hold this order for you. Would you mind providing that?",
+"block": 4
+},
+{
+"id": "en__375_38__user_turn_005",
+"trim": 1.46,
+"dur": 6.04,
+"spans": [
+[
+2.54,
+4.04
+]
+],
+"agent": "You're welcome. If you have any more questions or need further assistance, don't hesitate to ask. Take care, and I hope your partner gets the help they need quickly.",
+"block": 4
+},
+{
+"id": "en__516_8__user_turn_015",
+"trim": 0.98,
+"dur": 4.72,
+"spans": [
+[
+1.22,
+2.72
+]
+],
+"agent": "Just to confirm that's one large pepperoni pizza, one large veggie supreme pizza, a two liter diet coke, and an order of breadsticks. Is that right?",
+"block": 4
+},
+{
+"id": "en__366_52__user_turn_009",
+"trim": 2.58,
+"dur": 4.62,
+"spans": [
+[
+1.12,
+2.62
+]
+],
+"agent": "Yes, that's correct. Thank you. Now just to verify, is your insurance provider still, as you previously indicated? What's the name of your insurance carrier?",
+"block": 4
+},
+{
+"id": "en__448_63__user_turn_013",
+"trim": 4.34,
+"dur": 6.06,
+"spans": [
+[
+1.36,
+1.56
+],
+[
+2.56,
+4.06
+]
+],
+"agent": "You're very welcome. Dorothy, I'm glad I could assist you. If you have any more questions in the future, feel free to reach out. Have a wonderful day and a fantastic stay with us.",
+"block": 4
+},
+{
+"id": "en__558_23__user_turn_005",
+"trim": 0.5,
+"dur": 10.1,
+"spans": [
+[
+1.7,
+2.9
+],
+[
+6.6,
+8.1
+]
+],
+"agent": "Got it. So now we're making your order two sixteen inch pizzas, one pepperoni and one margarita. Do you want to add any sides like garlic?",
+"block": 4
+},
+{
+"id": "en__977_89__user_turn_010",
+"trim": 1.14,
+"dur": 12.36,
+"spans": [
+[
+6.06,
+6.46
+],
+[
+7.16,
+7.66
+],
+[
+8.86,
+10.36
+]
+],
+"agent": "Got it. I'll look for the closest round trip flights to Cancun for at least a week after june fifteenth. Since the original booking was for December, I'll need to process that change now. Given that your original tickets were booked in December, do you mind if I capture your contact number to send you the confirmation and any details about the new itinerary?",
+"block": 4
+},
+{
+"id": "en__374_147__user_turn_003",
+"trim": 3.3,
+"dur": 16.7,
+"spans": [
+[
+1.2,
+1.3
+],
+[
+1.8,
+1.9
+],
+[
+11.8,
+12.3
+],
+[
+13.2,
+14.7
+]
+],
+"agent": "In this situation, the best options would be for your friends to reach out to their pharmacy directly for their prescription refills. They can also use the patient portal if they have access. If they need help with setting up their patient portal or have any questions about their prescriptions, they can call our office and we can assist them with that. If you have any other questions or need assistance with something else, just let me know.",
+"block": 4
+},
+{
+"id": "en__848_145__user_turn_015",
+"trim": 1.22,
+"dur": 4.58,
+"spans": [
+[
+1.08,
+2.58
+]
+],
+"agent": "You're very welcome, Gregory, if you need any more help or have further questions in the future, feel free to reach out. Safe Travels and take care",
+"block": 4
+},
+{
+"id": "en__454_50__user_turn_007",
+"trim": 1.46,
+"dur": 7.24,
+"spans": [
+[
+3.74,
+5.24
+]
+],
+"agent": "Great, so to summarize, I have your reservation for february seventh with your early check in request noted. Your details are Mary Davis, phone number eight three six one two four email address Mary Davis two at a lot com and the credit card ending in seven four seven one. Your early check in request is subject to availability and there will be a fifty dollar fee. I will send you a confirmation email with all these details shortly. Is there anything else I can assist you with?",
+"block": 4
+},
+{
+"id": "en__396_82__user_turn_004",
+"trim": 3.22,
+"dur": 6.68,
+"spans": [
+[
+3.18,
+4.68
+]
+],
+"agent": "Great choice, so that will be a deluxe king room with a city view for two guests. Now, could you please provide your full name for the reservation?",
+"block": 4
+},
+{
+"id": "en__982_2__user_turn_006",
+"trim": 1.94,
+"dur": 10.76,
+"spans": [
+[
+1.16,
+1.46
+],
+[
+7.26,
+8.76
+]
+],
+"agent": "Great, I can note down your address. Please provide it when you're ready.",
+"block": 4
+},
+{
+"id": "en__723_75__user_turn_007",
+"trim": 2.66,
+"dur": 10.64,
+"spans": [
+[
+5.24,
+5.44
+],
+[
+7.14,
+8.64
+]
+],
+"agent": "That sounds like a great decision for the upcoming championships. I'll go ahead and upgrade your account to the ultra plan at eighty nine dollars ninety nine cents per month. Just one more thing to confirm. Since this is an upgrade, I'll need to let you know that you'll continue to be under the twelve month agreement. Is that okay with you?",
+"block": 4
+},
+{
+"id": "en__1051_40__user_turn_002",
+"trim": 1.06,
+"dur": 10.44,
+"spans": [
+[
+3.64,
+3.94
+],
+[
+5.34,
+5.44
+],
+[
+6.94,
+8.44
+]
+],
+"agent": "Got it. That's a two thousand one Chevy Corvette. Now for a vehicle with that mileage, we generally recommend an oil change, tire rotation, and a thorough inspection of the brakes, tires, and fluids. Would you like me to schedule an appointment for you? If so, can I get your phone number to reach you with any updates?",
+"block": 4
+},
+{
+"id": "en__607_38__user_turn_000",
+"trim": 1.78,
+"dur": 9.72,
+"spans": [
+[
+4.92,
+5.22
+],
+[
+6.22,
+7.72
+]
+],
+"agent": "Connect Wave Support. This is Jordan. How can I help you today?",
+"block": 4
+},
+{
+"id": "en__269_149__user_turn_005",
+"trim": 2.9,
+"dur": 28.0,
+"spans": [
+[
+4.8,
+5.3
+],
+[
+12.0,
+12.1
+],
+[
+14.7,
+14.8
+],
+[
+16.7,
+17.4
+],
+[
+18.6,
+19.1
+],
+[
+24.5,
+26.0
+]
+],
+"agent": "Perfetto I've updated your reservation to Shirley Cooper. If there's anything else you need or any other requests, feel free to let me know. Enjoy your dinner this Saturday.",
+"block": 4
+},
+{
+"id": "en__397_4__user_turn_002",
+"trim": 2.74,
+"dur": 4.76,
+"spans": [
+[
+1.26,
+2.76
+]
+],
+"agent": "Just to confirm, that's confirmation number five seven nine seven nine four eight, correct?",
+"block": 4
+},
+{
+"id": "en__1118_47__user_turn_004",
+"trim": 2.1,
+"dur": 9.9,
+"spans": [
+[
+3.1,
+3.5
+],
+[
+4.6,
+4.8
+],
+[
+6.4,
+7.9
+]
+],
+"agent": "Five o'clock works perfectly. I'll go ahead and schedule that for you. Now, could I get your phone number so I can confirm your appointment and keep you updated?",
+"block": 4
+},
+{
+"id": "en__451_96__user_turn_012",
+"trim": 0.26,
+"dur": 5.24,
+"spans": [
+[
+1.74,
+3.24
+]
+],
+"agent": "You're very welcome, Larry. I appreciate your understanding and I look forward to speaking with you soon. Have a great day.",
+"block": 4
+},
+{
+"id": "en__907_96__user_turn_006",
+"trim": 2.42,
+"dur": 9.28,
+"spans": [
+[
+1.18,
+1.28
+],
+[
+5.78,
+7.28
+]
+],
+"agent": "Just to confirm, that's six two eight five seven two two four two two correct?",
+"block": 4
+},
+{
+"id": "en__580_144__user_turn_004",
+"trim": 2.26,
+"dur": 5.74,
+"spans": [
+[
+2.24,
+3.74
+]
+],
+"agent": "Thanks for confirming that. Since the item is unopened, you're within our return policy of thirty days. You can return it without any restocking fee. You'll need to bring the speaker system and a copy of your receipt to the store, or if you prefer to ship it back, I can provide you with a return shipping label. Which option would you like to go with?",
+"block": 4
+},
+{
+"id": "en__633_9__user_turn_002",
+"trim": 1.22,
+"dur": 17.18,
+"spans": [
+[
+5.98,
+6.48
+],
+[
+11.98,
+12.28
+],
+[
+13.18,
+13.38
+],
+[
+13.68,
+15.18
+]
+],
+"agent": "We don't typically offer pre orders for consoles like the Xbox three hundred and sixty. However, we do have newer options available, such as the Xbox Series X and Series S. These consoles feature more advanced graphics, faster loading times, and access to the latest games which could make for an even better gift. If you're interested, I can provide more information about those two models or help you check their availability. Just let me know.",
+"block": 4
+},
+{
+"id": "en__219_75__user_turn_005",
+"trim": 2.74,
+"dur": 6.36,
+"spans": [
+[
+1.86,
+2.16
+],
+[
+2.86,
+4.36
+]
+],
+"agent": "Perfect. So that's for Tuesday next week at six PM. How many people will be in your party?",
+"block": 4
+},
+{
+"id": "en__215_67__user_turn_006",
+"trim": 1.3,
+"dur": 13.2,
+"spans": [
+[
+9.7,
+11.2
+]
+],
+"agent": "Bella SMO I've rescheduled your reservation for this Friday at seven PM. You'll receive a confirmation shortly. Please remember our cancellation policy, just in case. Is there anything else I can assist you with tonight?",
+"block": 4
+},
+{
+"id": "en__283_127__user_turn_002",
+"trim": 1.38,
+"dur": 13.72,
+"spans": [
+[
+3.02,
+3.72
+],
+[
+5.52,
+6.12
+],
+[
+7.12,
+7.52
+],
+[
+8.02,
+8.42
+],
+[
+10.22,
+11.72
+]
+],
+"agent": "Great choice Rebecca So that's for february seventeenth, twenty twenty six at eight PM for seven people Now may I have your phone number please?",
+"block": 4
+},
+{
+"id": "en__553_18__user_turn_003",
+"trim": 0.98,
+"dur": 4.72,
+"spans": [
+[
+1.22,
+2.72
+]
+],
+"agent": "Great, now, for the new order, how many garlic breads would you like? They come in a pack of six for five dollars and how",
+"block": 4
+},
+{
+"id": "en__775_50__user_turn_002",
+"trim": 1.06,
+"dur": 5.24,
+"spans": [
+[
+1.74,
+3.24
+]
+],
+"agent": "Thank you. Benjamin Stewart. Now could you provide me with the last four digits of your social security number or your account number, please?",
+"block": 4
+},
+{
+"id": "en__983_24__user_turn_013",
+"trim": 3.38,
+"dur": 10.02,
+"spans": [
+[
+3.22,
+4.22
+],
+[
+5.22,
+5.92
+],
+[
+6.52,
+8.02
+]
+],
+"agent": "Thank you for confirming. Rebecca, I will process the upgrade to first class using the credit card details you provided. Please hold on a moment while I finalize this. Just to let you know, you will receive an updated confirmation email once the upgrade is processed successfully. Is there anything else I can assist you with today?",
+"block": 4
+},
+{
+"id": "en__371_24__user_turn_000",
+"trim": 4.82,
+"dur": 20.28,
+"spans": [
+[
+4.68,
+5.28
+],
+[
+8.48,
+8.58
+],
+[
+10.78,
+11.68
+],
+[
+12.58,
+13.28
+],
+[
+14.48,
+15.88
+],
+[
+16.78,
+18.28
+]
+],
+"agent": "Westide Family Medical This is Rachel How can I help you today?",
+"block": 4
+}
+]
