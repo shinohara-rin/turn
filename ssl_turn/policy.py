@@ -24,7 +24,7 @@ reaches `int_th` between a + int_from and a + int_dur (and before the vocalisati
 (if `int_fallback`) at a + int_dur when the vocalisation lasts that long.
 
 Defaults are the TB dev operating points selected with r019_asr_bgaug (see RESULTS.md,
-"Commit policy"): EOT (track eot_q) at FP budget 0.08 with median latency <= 0.5 s, INT
+"Commit policy"): EOT (track eot_q) at FP budget 0.08, INT
 (track int_ft, the fine head's floor-taking probability) at budget 0.10.
 """
 from dataclasses import dataclass, replace
@@ -47,11 +47,11 @@ class Policy:
     confirm: float | None = 2.5
     eot_th: float | None = 0.8   # None: rules only
     read_from: float = 0.16
-    mw_model: float = 0.32
+    mw_model: float = 0.48
     # INT
     int_th: float | None = 0.1   # None: duration rule only (default track: int_ft, low-valued)
     int_from: float = 0.16
-    int_dur: float = 0.8
+    int_dur: float = 1.0
     int_fallback: bool = True
 
     def but(self, **kw):
@@ -61,7 +61,10 @@ class Policy:
 def speech_segments(p, vad_th, min_gap, hop=HOP_S):
     """[(start_s, end_s)] of speech in one channel's VAD track, short gaps merged.
 
-    Merging delays when an offset is known by up to `min_gap`; every policy wait is longer."""
+    A streaming system cannot tell a short gap from an offset until `min_gap` of silence has
+    passed, so a vocalisation (a, b) counts as ongoing at any t <= b + min_gap. Rules below test
+    durations against that bound, never against b itself (b - a would use the future: whether
+    the current silence will end in a resumption)."""
     on = np.asarray(p) > vad_th
     d = np.diff(np.r_[0, on.astype(np.int8), 0])
     out = []
@@ -95,7 +98,7 @@ def eot_events(own, other, duration_s, P, score=None, fps=FPS):
         for a, b in own[k + 1:]:
             if a - t > horizon:
                 break
-            if b - a >= P.resume_min:
+            if a + P.resume_min <= b + P.min_gap:  # still ongoing resume_min after it restarted
                 cancel = a + P.resume_min
                 break
         triggers = [t + P.deadline]
@@ -106,7 +109,7 @@ def eot_events(own, other, duration_s, P, score=None, fps=FPS):
             if a > t + P.deadline:
                 break
             tt = max(a + P.other_dur, earliest)
-            if b - a >= P.other_dur and tt <= b + P.min_gap:
+            if tt <= b + P.min_gap:  # o started at a and is still ongoing at tt
                 triggers.append(tt)
                 break
         if P.eot_th is not None:
@@ -127,8 +130,8 @@ def int_events(own, P, score=None, fps=FPS):
     for a, b in own:
         t = None
         if P.int_th is not None:
-            t = first_above(score, a + P.int_from, min(b + 1 / fps, a + P.int_dur), P.int_th, fps)
-        if t is None and P.int_fallback and b - a >= P.int_dur:
+            t = first_above(score, a + P.int_from, min(b + P.min_gap, a + P.int_dur), P.int_th, fps)
+        if t is None and P.int_fallback and a + P.int_dur <= b + P.min_gap:
             t = a + P.int_dur
         if t is not None:
             events.append(round(t, 3))

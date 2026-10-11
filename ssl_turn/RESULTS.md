@@ -633,35 +633,43 @@ on the other 19, mean over 200 splits.
 | TB dev | dev R / FP / p50 | held-out R / FP (FP p95) |
 |---|---|---|
 | EOT, r019 `eot_q` with the old rule (`@r0.5+rc1.0`) | 0.930 / 0.077 / 320 ms | |
-| EOT, VAD rules only, budget 0.08 | 0.978 / 0.078 / 620 ms | 0.976 / 0.085 (0.119) |
-| **EOT, rules + `eot_q`, budget 0.08, p50 ≤ 500 ms (default)** | **0.977 / 0.078 / 493 ms** | 0.971 / 0.095 (0.137) |
-| EOT, rules + `eot_q`, budget 0.10, p50 ≤ 400 ms | 0.978 / 0.098 / 373 ms | 0.978 / 0.116 (0.157) |
+| EOT, VAD rules only, budget 0.10 (none reaches FP ≤ 0.08) | 0.984 / 0.091 / 616 ms | 0.983 / 0.100 (0.133) |
+| **EOT, rules + `eot_q`, budget 0.08 (default, bgaug_s1)** | **0.975 / 0.069 / 534 ms** | 0.978 / 0.088 (0.128) |
+| EOT, rules + `eot_q`, budget 0.10, p50 ≤ 400 ms | 0.981 / 0.100 / 372 ms | 0.979 / 0.113 (0.159) |
 | INT, r019 `int_nobc` with the old rule | 0.974 / 0.047 / 663 ms | |
-| INT, duration rule only (fire 0.7 s into a vocalisation), budget 0.10 | 0.983 / 0.088 / 819 ms | 0.980 / 0.089 (0.119) |
-| INT, rules + `int_nobc`, budget 0.05 | 0.991 / 0.048 / 829 ms | 0.978 / 0.051 (0.069) |
-| INT, rules + `int_ft`, budget 0.05, p50 ≤ 500 ms | 0.983 / 0.044 / 487 ms | 0.960 / 0.050 (0.073) |
-| **INT, rules + `int_ft`, budget 0.10 (default)** | **0.997 / 0.094 / 435 ms** | 0.991 / 0.098 (0.132) |
+| INT, duration rule only (fire 1.0 s into a vocalisation), budget 0.10 | 0.986 / 0.099 / 916 ms | 0.979 / 0.088 (0.115) |
+| INT, rules + `int_ft`, budget 0.05 | 0.986 / 0.046 / 554 ms | 0.981 / 0.050 (0.073) |
+| **INT, rules + `int_ft`, budget 0.10 (default, bgaug_s1)** | **0.997 / 0.093 / 434 ms** | 0.991 / 0.097 (0.133) |
 | turn-1-mini (their README, dev) | EOT 0.973 / 0.080 / 603; INT 0.986 / 0.041 / 562 | EOT 0.969 / 0.087 |
 
+Numbers are after the causality fix below (2026-10-11); the first version scored slightly
+higher on EOT FP because of it.
+
+- **Causality fix (PR #12 review):** merged speech segments let rules test a vocalisation's
+  full length (b − a), which depends on whether a silence shorter than `min_gap` later ends in
+  a resumption. Rules now treat a vocalisation as ongoing until `min_gap` of silence has been
+  observed (t ≤ b + min_gap), as a streaming system must. `test_policy` truncates inside short
+  gaps and fails on the old code. The fix costs rules-only EOT its FP ≤ 0.08 point and moves
+  the selected settings (`mw_model` 0.48, `int_dur` 1.0).
 - **EOT is a commit-policy problem, not an encoder problem.** VAD rules alone beat every model
-  we trained (0.978 vs 0.930-0.939). The levers: one candidate per pause; cancel only on a
+  we trained (0.984 vs 0.930-0.939). The levers: one candidate per pause; cancel only on a
   resumption lasting ≥ 0.3-0.5 s, so a short "yeah" does not cancel; fire once the other
   speaker has talked 0.2-0.3 s; a second, "confirmation" event 2.5 s after the offset.
   Without the confirmation event, EOT drops to about 0.95-0.96. It is legal under the scorer:
   a second fire inside a matched window or an unlabeled region costs nothing.
-- **The model's EOT value is latency:** about 125 ms earlier at the same recall (493 vs 620
-  ms), more if FP is allowed to approach 0.10.
+- **The model's EOT value is precision and latency:** with `eot_q` the policy reaches FP ≤ 0.08
+  (rules alone cannot) and fires ~100 ms earlier (520 vs 616 ms at budget 0.10).
 - **INT: the score matters more than the model.** `int_ft` (the fine head's floor-taking
   probability) separates interruptions from backchannels at onset better than `int_nobc`
   (vocalisation-level AUC 0.80 vs 0.73 at onset + 0.24 s, 0.84 vs 0.79 at + 0.32 s), so it
-  fires ~400 ms earlier at the same recall. turn-1-mini's onset head reports AUC 0.92 at
+  fires ~400 ms earlier at the same recall (measured before the causality fix). turn-1-mini's onset head reports AUC 0.92 at
   0.2 s, so a dedicated onset classifier is the next INT step.
 - Everything is tuned on TB dev (18 settings for turn-1-mini, a similar grid here). The
   held-out column is the fair number. Defaults use budget 0.08 for EOT for margin to the 0.15
   test limit; INT held-out FP p95 at budget 0.10 is 0.132.
 - Fresh VAD on Modal (`vad.py`, causal one-sided resampler) and the older offline-resampled
-  Silero probs give the same operating points (EOT 0.977 / 0.078, INT 0.991 / 0.046 at the
-  earlier `int_nobc` setting).
+  Silero probs give the same operating points (checked before the fix: EOT 0.977 / 0.078,
+  INT 0.991 / 0.046 at the earlier `int_nobc` setting).
 
 ### Follow-up: a dedicated onset classifier for INT (`pipeline/onset.py`, negative)
 
@@ -677,7 +685,7 @@ on an L4.
 | onset MLP, 2-seed mean | 0.80 / 0.85 / 0.88 |
 | geometric mean of both | 0.81 / 0.86 / 0.89 |
 
-Through the policy (TB dev, FP budget 0.05): `int_ft` s1 0.983 / 0.043 / 534 ms, onset MLP
+Through the policy (TB dev, FP budget 0.05; before the causality fix): `int_ft` s1 0.983 / 0.043 / 534 ms, onset MLP
 0.988 / 0.046 / 613 ms, combined 0.986 / 0.043 / 501 ms; at 0.10 all reach R ≥ 0.997 at
 p50 385-470 ms. The separate head adds nothing the floor model's fine head did not already
 have: the limit is the features or the ~600 otoSpeech floor-taking examples, not the head.

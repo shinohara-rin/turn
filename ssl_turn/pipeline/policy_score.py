@@ -77,7 +77,9 @@ def evaluate(run='', model='', eot_var='eot_q', int_var='int_ft', overrides=None
     cids, gold, vad, eot, intr = load_inputs(run, model, eot_var, int_var, int_run, int_model)
     P = Policy().but(**(overrides or {}))
     if not model:
-        P = P.but(eot_th=None, int_th=None)
+        P = P.but(eot_th=None)
+    if not (int_model or model):
+        P = P.but(int_th=None)
     return {t: summarize(per_conv(t, P, cids, gold, vad, eot, intr)) for t in ('eot', 'int')}
 
 

@@ -45,7 +45,7 @@ class TestEOT(unittest.TestCase):
     def test_long_resumption_cancels_short_one_does_not(self):
         P = RULES.but(resume_min=0.5, deadline=2.5, confirm=None)
         self.assertEqual(pol.eot_events([(0.0, 2.0), (3.0, 6.0)], [], 10.0, P)[0], 6.0 + 2.5)  # cancelled at 3.5
-        ev = pol.eot_events([(0.0, 2.0), (3.0, 3.3)], [], 10.0, P)  # a 0.3 s "yeah" does not cancel
+        ev = pol.eot_events([(0.0, 2.0), (3.0, 3.2)], [], 10.0, P)  # a 0.2 s "yeah" does not cancel
         self.assertIn(4.5, ev)
 
     def test_confirmation_skipped_when_cancelled(self):
@@ -71,6 +71,12 @@ class TestINT(unittest.TestCase):
         P = RULES.but(int_dur=0.9)
         self.assertEqual(pol.int_events([(1.0, 1.5), (3.0, 5.0)], P), [3.9])
 
+    def test_fallback_counts_an_unfinished_gap_as_ongoing(self):
+        # at 1.8 s the speaker has been silent 0.1 s since 1.7 s: not yet an offset
+        P = RULES.but(int_dur=0.8, min_gap=0.2)
+        self.assertEqual(pol.int_events([(1.0, 1.7)], P), [1.8])
+        self.assertEqual(pol.int_events([(1.0, 1.5)], P), [])
+
     def test_model_trigger_and_window(self):
         score = np.zeros(125, np.float32)
         score[int(3.3 * 12.5)] = 0.8                      # frame 41 ends at 3.36
@@ -80,6 +86,26 @@ class TestINT(unittest.TestCase):
 
 
 class TestCausality(unittest.TestCase):
+    def test_truncation_inside_short_gaps(self):
+        # speech and silence runs at VAD resolution, many gaps shorter than min_gap
+        rng = np.random.default_rng(1)
+        runs = []
+        while sum(runs) < int(120 / pol.HOP_S):
+            runs.append(int(rng.integers(1, 12)))
+        vad = np.concatenate([np.full(n, float(i % 2 == 0), np.float32) for i, n in enumerate(runs)])
+        vad = np.stack([vad, np.roll(vad, 57)], 1)[:int(120 / pol.HOP_S)]
+        intr = rng.random((int(120 * 12.5), 2)).astype(np.float32)
+        eot = rng.random((int(120 * 12.5), 2)).astype(np.float32)
+        for P in (Policy(), RULES):  # random scores fire early; rules exercise the duration paths
+            full = pol.conversation_events(vad, 120.0, P, eot, intr)
+            for k in range(100, len(vad), 5):
+                cut = k * pol.HOP_S
+                part = pol.conversation_events(vad[:k], cut, P, eot[:int(cut * 12.5)], intr[:int(cut * 12.5)])
+                for task in ('eot', 'int'):
+                    for s in (1, 2):
+                        self.assertEqual([t for t in full[task][s] if t < cut - 1e-6],
+                                         [t for t in part[task][s] if t < cut - 1e-6], (task, s, cut))
+
     def test_truncation_keeps_earlier_events(self):
         rng = np.random.default_rng(0)
         T = int(300 / pol.HOP_S)
