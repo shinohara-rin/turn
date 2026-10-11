@@ -66,6 +66,43 @@ times are interpolated, so frame alignment there is approximate; pauses are exac
   already right when the commit comes. Interruptions mid-turn should stay with the LLM, gated
   high, not with a turn head.
 
+## Speculation: hit rate and stale-draft detection (`suff_spec.py`, `suff_rescore.py`)
+
+Rin's follow-up: speculative drafting makes sense, so how well does it work, and can we tell live
+whether the current draft is still right? Every candidate's draft was judged against the full turn,
+so keeping the draft from candidate j until the commit is a hit when its score is >= 8. The final
+pause always yields a fresh full draft; speculation only matters when the LLM is slower than the
+EOT delay, so these are hit rates for the last draft started before the speaker's final pause.
+
+| redraft at | turns with a draft point before the final pause | hit rate there | lead before turn end (median) | drafts per turn |
+| --- | ---: | ---: | ---: | ---: |
+| VAD pauses only | 36% | 54% | 5.6 s | 1.7 |
+| pauses + clause boundaries | 80% | 65% | 1.5 s | 5.6 |
+
+So with clause-level redrafting about half of all turns (80% x 65%) have a correct reply ready
+before the speaker's final pause.
+
+"Is the current draft final?" at 10.8k candidates with a previous draft (base rate 0.47):
+
+| causal signal | AUC |
+| --- | ---: |
+| words so far | 0.602 |
+| word overlap of consecutive drafts | 0.532 |
+| LLM similarity of consecutive drafts (0-10, $0.05) | 0.576 |
+| re-scoring: log-prob change of the previous draft under the new prefix (Qwen2.5-1.5B, L4, 4k items) | 0.507 |
+| all combined, 5-fold grouped logistic | 0.624 |
+
+A draft that stopped changing is final 54-56% of the time vs 42-46% otherwise. Neither stability
+nor re-scoring tells us whether the cached draft will survive, matching the earlier result: what
+the speaker says next is not predictable from what came before in this data.
+
+Practical consequence: redraft at every clause boundary (cheap with a prefilled cache), always
+start a fresh draft at the final pause onset, and treat an older draft as a ~65% guess. Don't
+verify it; use it where being wrong is cheap (prefetching tools or retrieval, warming TTS, a
+lead-in or backchannel) and speak the fresh draft once it is ready.
+
+Cost: sim $0.05 (gateway), re-scoring ~$0.05 (Modal L4).
+
 ## Reproduce
 
 ```bash
@@ -78,4 +115,8 @@ python ../sufficiency/suff_stats.py suff_dev.json comp_dev.json
 modal run ../sufficiency/suff_feats.py --labels suff_dev.json --out suff_feats.npz
 python ../sufficiency/suff_probe.py suff_dev.json suff_feats.npz
 python ../sufficiency/suff_gate.py ann.json suff_dev.json             # ~$0.02
+cd ../sufficiency
+python suff_spec.py suff_dev.json --make-sim sim.json                 # ~$0.05
+modal run suff_rescore.py --ann ann.json --labels suff_dev.json --out rescore.json
+python suff_spec.py suff_dev.json --sim sim.json --rescore rescore.json
 ```
