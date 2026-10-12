@@ -249,3 +249,36 @@ def slot_activity_from_segments(segments, frames, slots=2, frame_s=FRAME_S):
     for start, end, spk in segments:
         a[(centers >= start) & (centers < end), labels.index(spk)] = 1
     return a
+
+
+def pause_targets(floor, floor_w, act):
+    """Per-speaker yield-vs-hold target over that speaker's own pauses (the latency head).
+
+    A pause of c starts at the first frame after a CLAIM frame of c where c no longer claims, and
+    runs until c claims again. Every frame of it gets the same target: 1 - p(HELD_c) at the pause's
+    first frame, i.e. whether the gold floor says c yielded (OPEN or taken) rather than held. The
+    target is fixed at onset, so silence length is never part of the label; train.py weights frames
+    by `yld_t` (frames since the offset) to emphasize the decision at pause onset.
+
+    floor [T, 4] soft, floor_w [T], act [T, 2] -> yld [T, 2] float32, yld_w [T, 2] float32 (floor_w
+    inside pauses, 0 elsewhere), yld_t [T, 2] float32 (frames since the offset; 1e4 outside pauses).
+    """
+    T = len(act)
+    yld = np.zeros((T, 2), np.float32)
+    yld_w = np.zeros((T, 2), np.float32)
+    yld_t = np.full((T, 2), 1e4, np.float32)
+    claim = np.asarray(act) == A['CLAIM']
+    for c in (0, 1):
+        i = 1
+        while i < T:
+            if claim[i, c] or not claim[i - 1, c]:
+                i += 1
+                continue
+            j = i
+            while j < T and not claim[j, c]:
+                j += 1
+            yld[i:j, c] = 1.0 - floor[i, c]
+            yld_w[i:j, c] = floor_w[i:j]
+            yld_t[i:j, c] = np.arange(j - i)
+            i = j
+    return dict(yld=yld, yld_w=yld_w, yld_t=yld_t)

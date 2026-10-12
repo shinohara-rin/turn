@@ -168,3 +168,22 @@ class Exclusions(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_pause_targets():
+    import numpy as np
+    from labels import A, F, pause_targets
+    T = 12
+    act = np.full((T, 2), A['SILENT'])
+    act[0:3, 0] = A['CLAIM']   # c0 talks, pauses (hold), talks again, then yields
+    act[5:7, 0] = A['CLAIM']
+    act[9:12, 1] = A['CLAIM']
+    floor = np.zeros((T, 4), np.float32)
+    floor[:9, F['HELD_0']] = 1
+    floor[7:9] = 0
+    floor[7:9, F['OPEN']] = 1
+    floor[9:, F['HELD_1']] = 1
+    out = pause_targets(floor, np.ones(T, np.float32), act)
+    assert out['yld'][3:5, 0].tolist() == [0, 0] and out['yld_w'][3:5, 0].tolist() == [1, 1]
+    assert out['yld'][7:12, 0].tolist() == [1] * 5 and out['yld_t'][7:12, 0].tolist() == [0, 1, 2, 3, 4]
+    assert out['yld_w'][:3, 0].sum() == 0 and out['yld_w'][:, 1].sum() == 0  # c1 never paused after a claim

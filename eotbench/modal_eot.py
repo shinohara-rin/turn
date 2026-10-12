@@ -40,15 +40,19 @@ def build_head(cfg):
     assert cfg.get('feats') == 'asr' and not cfg.get('taps') and not cfg.get('enroll') and not cfg.get('tune'), cfg
     return m.TurnModel(tap_layers=0, final_dim=1024, dim=cfg.get('dim', 256), heads=cfg.get('heads', 4),
                        layers=cfg.get('layers', 4), window_s=cfg.get('window_s', 20.0),
-                       dropout=cfg.get('dropout', 0.1))
+                       dropout=cfg.get('dropout', 0.1), comp=bool(cfg.get('comp')), yld=bool(cfg.get('yld')))
 
 
-def variants(floor, future, silent):
+def variants(floor, future, silent, yld=None):
     """Channel-0 (user) EOT scores, as score.score_variants: floor/future [T, 4] / [T, H, 4]
-    over (HELD_0, HELD_1, OPEN, CONTESTED); silent [T] = user p(SILENT)."""
+    over (HELD_0, HELD_1, OPEN, CONTESTED); silent [T] = user p(SILENT); yld [T] = user p(pause yields)."""
     released = floor[:, 2] + floor[:, 1]            # user no longer holds: OPEN or held by the agent
     released04 = future[:, 0, 2] + future[:, 0, 1]
-    return {'eot': released, 'eot_q': released * silent, 'eot_f04_q': released04 * silent}
+    out = {'eot': released, 'eot_q': released * silent, 'eot_f04_q': released04 * silent}
+    if yld is not None:
+        import numpy as np
+        out.update(yld=yld, yld_q=yld * silent, yld_eq=np.sqrt(yld * released) * silent)
+    return out
 
 
 @app.function(image=image, volumes=VOLUMES, gpu='L4', cpu=4, memory=16384, timeout=3600)
@@ -93,7 +97,8 @@ def score(run, models, language='en'):
             floor = o['floor'][0].float().softmax(-1).cpu().numpy()             # [T, 4]
             future = o['future'][0].float().softmax(-1).cpu().numpy()           # [T, H, 4]
             silent = o['act'][0].float().softmax(-1)[:, 0, 0].cpu().numpy()     # [T] user p(SILENT)
-            for v, track in variants(floor, future, silent).items():
+            yld = o['yld'][0, :, 0].float().sigmoid().cpu().numpy() if 'yld' in o else None
+            for v, track in variants(floor, future, silent, yld).items():
                 out[f'{name}/{v}/{rid}'] = np.clip(track, 0, 1).astype(np.float16)
     buf = io.BytesIO()
     np.savez_compressed(buf, **out)
