@@ -13,7 +13,7 @@ timings = sys.argv[5] if len(sys.argv) > 5 else "fish"
 out.mkdir(parents=True, exist_ok=True)
 tr = Transcriber(asr, device="cpu")
 for n, p in enumerate(sorted(Path(scripts).glob("*.json"))):
-    tts = FishTTS(bank, timings=timings, emotion_tags=os.environ.get("TAGS", "1") == "1")
+    tts = FishTTS(bank, timings=timings, emotion_tags=os.environ.get("TAGS", "1") == "1", compare=True)
     script = parse(json.loads(p.read_text()))
     res = process(script, tts, conversation_id=str(900000 + n), seed=n + int(os.environ.get("SEED0", "0")), transcriber=tr)
     r = res.rendered

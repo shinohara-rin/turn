@@ -18,8 +18,9 @@ on anyway).
 Word timings come from the API's own alignment
 (/v1/tts/stream/with-timestamp), mapped onto the script words; if that
 fails (text normalization changed the words), MMS_FA forced alignment as
-for IndexTTS. `timings="mms"` forces MMS_FA, and every call keeps both in
-`self.log` so the two can be compared.
+for IndexTTS. `timings="mms"` forces MMS_FA. With `compare=True` every
+call also runs MMS_FA and keeps the audio and both timings in `self.log`
+(tools/fish_timing.py); otherwise the log keeps only the text and timings.
 
 Auth: the agent proxy injects the key for api.fish.audio; elsewhere set
 FISH_API_KEY.
@@ -52,8 +53,8 @@ class FishTTS:
     def __init__(self, bank: str, *, model: str = "s2.1-pro-free", pass_mode: str = "floor", pass_words: int = 60,
                  history: bool = True, history_max_s: float = 8.0, emotion_tags: bool = True,
                  timings: str = "fish", latency: str = "normal", temperature: float = 0.7, top_p: float = 0.7,
-                 retry_below: float | None = 2.9, speed: bool = False, asr_device: str = "cpu"):
-        from turnsynth.align import Aligner
+                 retry_below: float | None = 2.9, speed: bool = False, compare: bool = False,
+                 asr_device: str = "cpu"):
         from turnsynth.voicebank import load_bank
 
         self.bank = load_bank(bank)
@@ -66,10 +67,11 @@ class FishTTS:
         self.timings = timings
         self.use_speed = speed
         self.retry_below = retry_below
-        self.aligner = Aligner(device="cpu")
+        self.compare = compare
+        self._aligner = None
         self.asr_device = asr_device
         self._refs: dict[str, tuple[bytes, str]] = {}
-        self.log: list[dict] = []  # per call: text, fish and MMS_FA word times, seconds of audio, wall time
+        self.log: list[dict] = []  # per call: text, word times, seconds of audio, wall time (+ audio, MMS_FA if compare)
 
     def voices(self, gender: str, language: str = "en") -> list[str]:
         names = [k for k, v in self.bank.items() if v.get("language", "en") == language]
@@ -95,14 +97,25 @@ class FishTTS:
         t0 = time.time()
         audio, segs = self._call(body)
         wall = time.time() - t0
-        fish = map_segments(words, segs, language)
-        mms = self.aligner(audio, self.sample_rate, words, language) if len(audio) else []
-        self.log.append({"text": body["text"], "voice": voice, "language": language, "seconds": len(audio) / self.sample_rate,
-                         "wall": wall, "segments": segs,
-                         "fish": None if fish is None else [(w.start, w.end) for w in fish],
-                         "mms": [(w.start, w.end) for w in mms], "audio": audio})
+        fish = map_segments(words, segs, language) if self.timings == "fish" or self.compare else None
+        mms = self._align(audio, words, language) if (self.compare or fish is None) else None
+        rec = {"text": body["text"], "voice": voice, "language": language, "seconds": len(audio) / self.sample_rate,
+               "wall": wall, "fish": None if fish is None else [(w.start, w.end) for w in fish]}
+        if self.compare:
+            rec.update(segments=segs, mms=[(w.start, w.end) for w in mms], audio=audio)
+        self.log.append(rec)
         use = fish if (self.timings == "fish" and fish is not None) else mms
         return Speech(audio, self.sample_rate, use)
+
+    def _align(self, audio: np.ndarray, words: list[str], language: str) -> list[Word]:
+        """MMS_FA forced alignment, loaded on first use."""
+        if not len(audio):
+            return []
+        if self._aligner is None:
+            from turnsynth.align import Aligner
+
+            self._aligner = Aligner(device="cpu")
+        return self._aligner(audio, self.sample_rate, words, language)
 
     def _tag(self, emotion: dict[str, float] | None) -> str:
         if not emotion:
@@ -182,15 +195,18 @@ def _chars(text: str) -> str:
 
 
 def map_segments(words: list[str], segs: list[dict], language: str = "en",
-                 min_matched: float = 0.9) -> list[Word] | None:
+                 min_matched: float = 0.9, min_word: float = 0.5) -> list[Word] | None:
     """Times for the script words from Fish's alignment segments.
 
     Segments are words for English and runs of characters for ja/zh, so both
     sides are flattened to alphanumeric characters, matched with difflib,
     and each script word spans from its first to its last matched character
-    (a character's time is interpolated inside its segment). Words with no
-    match are filled from their neighbours. None if under `min_matched` of
-    the script characters matched (the API normalized the text too far).
+    (a character's time is interpolated inside its segment). None (so the
+    caller falls back to forced alignment) if under `min_matched` of the
+    script characters matched (the API normalized the text too far), or if
+    any spoken word has under `min_word` of its characters matched: a word
+    the model skipped must not get a time filled in from its neighbours.
+    Punctuation-only words take no time, as in align._fill.
     """
     from turnsynth.align import _fill
 
@@ -222,6 +238,9 @@ def map_segments(words: list[str], segs: list[dict], language: str = "en",
     out: list[Word | None] = []
     for k, w in enumerate(words):
         idx = hit.get(k)
+        n = len(_chars(w))
+        if n and len(idx or ()) < min_word * n:
+            return None
         out.append(Word(w, times[idx[0]][0], times[idx[-1]][1]) if idx else None)
     duration = max(s["end"] for s in segs)
     return _fill(words, out, duration)

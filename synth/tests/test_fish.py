@@ -25,3 +25,9 @@ def test_map_segments_cjk_splits_a_segment_by_characters():
 def test_map_segments_gives_up_when_text_was_normalized_away():
     assert map_segments(["it", "costs", "15", "dollars"], [seg("it", 0, .1), seg("costs", .1, .3),
                         seg("fifteen", .3, .6), seg("dollars", .6, .9)]) is None
+
+
+def test_map_segments_rejects_a_skipped_word():
+    words = ["one"] * 11
+    segs = [seg("one", 0.3 * i, 0.3 * i + 0.25) for i in range(10)]
+    assert map_segments(words, segs) is None
