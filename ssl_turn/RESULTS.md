@@ -672,3 +672,20 @@ Through the policy (TB dev, FP budget 0.05; before the causality fix): `int_ft` 
 0.988 / 0.046 / 613 ms, combined 0.986 / 0.043 / 501 ms; at 0.10 all reach R ≥ 0.997 at
 p50 385-470 ms. The separate head adds nothing the floor model's fine head did not already
 have: the limit is the features or the ~600 otoSpeech floor-taking examples, not the head.
+
+## Silence-driven EOT, semantics probes, backchannels, pause-warp r020 (2026-10-11)
+
+Details in [`semantics/README.md`](semantics/README.md).
+- On eot-bench, r019's EOT score climbs with silence on both ends and holds (end 0.25 -> 0.76,
+  hold 0.05 -> 0.41 from 0.1 to 1.5 s), while LiveKit v1 decides within 100 ms (AUC 0.96).
+- Pause-onset probes (CV on eot-bench): FastConformer features 0.91 AUC at 100 ms vs r019's
+  0.85; the RNNT decoder state (0.62) and a text EOU model on true words (0.76) add nothing on
+  top. The lever is the head's objective and data, not a text branch.
+- Backchannel INT fires are lexical (multi-word reactions), not an otoSpeech speaker overfit:
+  TB dev 11-14% vs oto dev 26% of backchannels.
+- r020 pause-warp augmentation (stretch holds, cut yield gaps; `pausewarp.py`): neutral on TB dev,
+  oto dev and eot-bench at 5-10% cutoff, better only at 2%. The hold ramp barely flattens.
+- r021/r022 completion head (Rin's "complete vs timeout" split; LLM labels on 24k oto pauses,
+  `semantics/complete_labels.py`): with onset-only targets (r022) the score is flat over silence and
+  keeps hesitations low (~0.35 at 1.5 s vs r019 0.43), but ends reach only ~0.56, so it is weak as an
+  EOT trigger (TB dev 0.58-0.71 alone; eot-bench 836-902 ms @5%). eot_q of the same models unchanged.

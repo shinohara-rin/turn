@@ -23,6 +23,7 @@ FEAT_DIR = 'feats'   # 'feats' (Cat), 'feats_mtd' (MOSS-Transcribe-Diarize, 4096
 NO_TAP_FEATS = {'mtd': ('feats_mtd', 4096), 'asr': ('feats_asr', 1024)}  # config feats -> (dir, dim); no taps
 FUSE_MTD = False     # Cat columns + MTD 4096-d appended (config feats='cat+mtd')
 WARM = 0             # context-only frames before each training crop (encoder-tuning runs: CatTop window)
+COMP = False         # completion target dir under WORK (configs with comp: true or a dir name), or False
 CAT_DIR = f'{WORK}/models/cat'
 _CAT = None
 
@@ -35,21 +36,24 @@ def columns(taps):
     return np.concatenate(cols)
 
 
-def load_split(split, cids, device, cols=None, workers=16, labeled=None):
+def load_split(split, cids, device, cols=None, workers=16, labeled=None, feat_dir=None, label_dir='labels'):
     """Read per-conversation features with parallel threads (volume reads are I/O bound)
     straight into one preallocated GPU tensor; peak VRAM is the final size, not 2x.
-    Labels are read for oto by default, and for tbdev only when asked (labeled=True)."""
+    Labels are read for oto by default, and for tbdev only when asked (labeled=True).
+    feat_dir / label_dir override the feature and label directories (pausewarp.py copies)."""
+    import os
     import numpy as np
     import torch
     from concurrent.futures import ThreadPoolExecutor
     labeled = split == 'oto' if labeled is None else labeled
+    FEAT_DIR = feat_dir or globals()['FEAT_DIR']
 
     def length(cid):
         T = np.load(f'{WORK}/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r').shape[0]
         if FUSE_MTD:
             T = min(T, np.load(f'{WORK}/feats_mtd/{split}/{cid}.npy', mmap_mode='r').shape[0])
         if labeled:
-            with np.load(f'{WORK}/labels/{split}/{cid}.npz') as z:
+            with np.load(f'{WORK}/{label_dir}/{split}/{cid}.npz') as z:
                 T = min(T, len(z['floor']))
         return T
 
@@ -57,10 +61,18 @@ def load_split(split, cids, device, cols=None, workers=16, labeled=None):
         f = np.load(f'{WORK}/{FEAT_DIR}/{split}/{cid}.npy', mmap_mode='r')
         lab = None
         if labeled:
-            z = np.load(f'{WORK}/labels/{split}/{cid}.npz')
+            z = np.load(f'{WORK}/{label_dir}/{split}/{cid}.npz')
             lab = {k: z[k][:T] for k in ('floor', 'floor_w', 'act', 'act_w', 'future', 'future_w', 'activity')}
             if 'fine' in z.files:
                 lab['fine'], lab['fine_w'] = z['fine'][:T], z['act_w'][:T]
+            if COMP:  # completion targets (comp_targets.py); conversations without them get zero weight
+                path = f'{WORK}/{COMP}/{split}/{cid}.npz'
+                if label_dir == 'labels' and os.path.exists(path):
+                    with np.load(path) as zc:
+                        lab['comp'], lab['comp_w'] = zc['comp'][:T], zc['comp_w'][:T]
+                else:
+                    lab['comp'] = np.zeros((T, 2), np.float32)
+                    lab['comp_w'] = np.zeros((T, 2), np.float32)
         x = np.ascontiguousarray(f[:T]) if cols is None else np.ascontiguousarray(f[:T][..., cols])
         if FUSE_MTD:  # append the 4096-d MOSS-Transcribe-Diarize features after the Cat columns
             g = np.load(f'{WORK}/feats_mtd/{split}/{cid}.npy', mmap_mode='r')
@@ -167,7 +179,7 @@ def infer_all(models, configs, splits, dev, enrolls=None):
                         with torch.autocast('cuda', dtype=torch.bfloat16):
                             o = run_net(net, cfg, Xs[lo:min(b, s + 1000)][None].to(dev), enroll=e)
                         outs.append({k: v[0, s - lo:].float() for k, v in o.items()
-                                     if k in ('floor', 'future', 'act', 'fine')})
+                                     if k in ('floor', 'future', 'act', 'fine', 'comp')})
                 floor = torch.cat([o['floor'] for o in outs]).softmax(-1)
                 future = torch.cat([o['future'] for o in outs]).softmax(-1)
                 silent = torch.cat([o['act'] for o in outs]).softmax(-1)[..., 0]  # [T, 2] p(SILENT)
@@ -175,6 +187,9 @@ def infer_all(models, configs, splits, dev, enrolls=None):
                 out[f'{name}/{split}/{cid}/silent'] = silent.cpu().numpy().astype(np.float16)
                 if 'fine' in outs[0]:  # [T, 2, len(FINE)] fine-label posteriors
                     out[f'{name}/{split}/{cid}/fine'] = torch.cat([o['fine'] for o in outs]).softmax(-1) \
+                        .cpu().numpy().astype(np.float16)
+                if 'comp' in outs[0]:  # [T, 2] p(speaker has semantically finished)
+                    out[f'{name}/{split}/{cid}/comp'] = torch.cat([o['comp'] for o in outs]).sigmoid() \
                         .cpu().numpy().astype(np.float16)
     return out
 
@@ -258,7 +273,8 @@ def build_head(cfg):
                        dim=cfg.get('dim', 256), heads=cfg.get('heads', 4), layers=cfg.get('layers', 4),
                        window_s=cfg.get('window_s', 20.0), dropout=cfg.get('dropout', 0.1),
                        enroll_dim=(192 if cfg.get('enroll') == 'ecapa' else
-                                   (len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0))
+                                   (len(cfg.get('taps') or []) * TAP_DIM + final_dim) if cfg.get('enroll') else 0),
+                       comp=bool(cfg.get('comp')))
 
 
 @app.function(image=gpu_image, volumes=VOLUMES, gpu='A100', cpu=4, memory=16384, timeout=5400)
@@ -295,7 +311,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     train_ids = [c for c in split['train'] if c in have][:n_train]
     if extra:  # labeled data-scaling ablation: gate-free cross-partition conversations
         train_ids += [c for c in json.load(open(f'{WORK}/extra_no_gate.json')) if c in have]
-    global LOADED, FEAT_DIR, FUSE_MTD, WARM
+    global LOADED, FEAT_DIR, FUSE_MTD, WARM, COMP
+    comp_dirs = {c['comp'] if isinstance(c['comp'], str) else 'labels_comp' for c in configs.values() if c.get('comp')}
+    assert len(comp_dirs) <= 1, 'models in one run share batches, so they must share comp targets'
+    COMP = comp_dirs.pop() if comp_dirs else False  # completion target dir, e.g. labels_comp
     setup_path()
     import cat_top
     WARM = cat_top.WINDOW if any(c.get('tune') for c in configs.values()) else 0
@@ -343,6 +362,20 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         reps += [1] * len(extra_ids)
         del Xe
         print(f'extra {extra_split}: {len(extra_ids)} conversations, {offe[-1]} frames', flush=True)
+    n_orig = len(off) - 1  # main + extra-split conversations; warped copies follow
+    warp_p = max(c.get('warp_aug', 0.0) for c in configs.values())
+    if warp_p > 0:  # pause-warped copies (pausewarp.py): crops drawn from them with probability warp_p
+        assert mtd == 'asr' and not tb_train, 'warp_aug needs feats asr and no TB-dev training'
+        assert len({c.get('warp_aug', 0.0) for c in configs.values()}) == 1, \
+            'models in one run share batches, so they must share warp_aug'
+        warp_ids = [c for c in train_ids if os.path.exists(f'{WORK}/feats_asr_warp/oto/{c}.npy')]
+        Xw, offw, labw = load_split('oto', warp_ids, feats_on, cols, feat_dir='feats_asr_warp', label_dir='labels_warp')
+        X = torch.cat([X, Xw])
+        del Xw
+        off = off + [off[-1] + o for o in offw[1:]]
+        lab = lab + labw
+        reps += [1] * len(warp_ids)
+        print(f'pause-warped copies: {len(warp_ids)} conversations, {offw[-1]} frames', flush=True)
     Y = stack_labels(lab, dev)
     if dev_ids:
         Xd, offd, labd = load_split('oto', dev_ids, feats_on, cols)
@@ -358,7 +391,10 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         else:
             assert LOADED == [15, 23, 31] and not mtd, 'feats_aug holds taps 15/23/31 + final only'
             aug_dir, near = f'{WORK}/feats_aug/oto', any(c.get('near_aug') for c in configs.values())
-        Xa = X.clone()  # frames an augmented file lacks (if any) stay clean
+        # frames an augmented file lacks stay clean. That includes every pause-warped copy (warp_aug):
+        # there are no bg-augmented warped features, so a warped crop is always clean and the effective
+        # bg_aug rate is about bg_aug * (1 - warp_aug) (r020: 0.25).
+        Xa = X.clone()
         n_near = 0
         for cid, a, b in zip(train_ids, off[:-1], off[1:]):
             # near_aug: conversations that have a near-talker copy (bgmix.encode_aug style='near') use it
@@ -418,12 +454,13 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
 
     # Valid crop starts: within one conversation.
     # Valid crop starts (first labelled frame): WARM context frames before it, all in one conversation.
-    starts = torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r)
-                        for a, b, r in list(zip(off[:-1], off[1:], reps))[:n_main] if b - a > crop + WARM])
-    starts_x = (torch.cat([torch.arange(a + WARM, b - crop, device=dev)
-                           for a, b in list(zip(off[:-1], off[1:]))[n_main:] if b - a > crop + WARM])
-                if extra_ids else None)
+    def crop_starts(lo, hi, rep=True):
+        return torch.cat([torch.arange(a + WARM, b - crop, device=dev).repeat(r if rep else 1)
+                          for a, b, r in zip(off[lo:hi], off[lo + 1:hi + 1], reps[lo:hi]) if b - a > crop + WARM])
+    starts = crop_starts(0, n_main)
+    starts_x = crop_starts(n_main, n_orig, rep=False) if extra_ids else None
     n_x = int(round(batch * extra_frac)) if extra_ids else 0
+    starts_w = crop_starts(n_orig, len(off) - 1) if warp_p > 0 else None  # pause-warped oto copies
     models, opts, scheds = {}, {}, {}
     for name, cfg in configs.items():
         net = build_model(cfg).to(dev)
@@ -456,7 +493,7 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
         """Channel-swap augmentation on rows in `mask`: features, acts, floor holders, VAP bits."""
         xb = torch.where(mask[:, None, None, None], xb.flip(2), xb)
         out = dict(yb)
-        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w') if k in yb]:
+        for k in [k for k in ('act', 'act_w', 'activity', 'fine', 'fine_w', 'comp', 'comp_w') if k in yb]:
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k].flip(-1), yb[k])
         for k in ('floor', 'future'):
             out[k] = torch.where(mask.view(-1, *[1] * (yb[k].dim() - 1)), yb[k][..., SWAP], yb[k])
@@ -504,6 +541,9 @@ def train(run, configs, n_train=32, steps=1500, batch=64, crop=375, eval_every=2
     tstep = time.time()
     for step in range(1, steps + 1):
         idx = starts[torch.randint(len(starts), (batch - n_x,), device=dev)]
+        if starts_w is not None:  # main-split rows only
+            idx = torch.where(torch.rand(batch - n_x, device=dev) < warp_p,
+                              starts_w[torch.randint(len(starts_w), (batch - n_x,), device=dev)], idx)
         if n_x:
             idx = torch.cat([idx, starts_x[torch.randint(len(starts_x), (n_x,), device=dev)]])
         row_x = torch.arange(batch, device=dev) >= batch - n_x  # rows drawn from the extra split
