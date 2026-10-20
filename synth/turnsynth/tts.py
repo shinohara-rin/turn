@@ -13,6 +13,8 @@ Backends:
   fish    Fish Audio S2 over the hosted API (fish.py): zero-shot from the
           same bank, whole-turn passes, word timings from the API.
   dummy   Shaped noise bursts per word. No model; for tests.
+  duration Noise bursts timed by a syllable-rate duration model (duration.py):
+          text-only timelines for tapes and grounding checks.
 """
 
 import itertools
@@ -345,4 +347,8 @@ def make_tts(name: str, **kwargs) -> TTS:
         from turnsynth.fish import FishTTS
 
         return FishTTS(**kwargs)
+    if name == "duration":
+        from turnsynth.duration import DurationTTS
+
+        return DurationTTS(**kwargs)
     raise ValueError(f"unknown TTS backend {name!r}")
