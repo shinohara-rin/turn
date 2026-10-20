@@ -147,13 +147,15 @@ class Run:
         if line.kind == "backchannel":
             # At the end of a phrase, or a little later if the agent doesn't end one.
             w = next((w for w in heard if w.end >= due and w.text[-1] in ",.;:?!"), None)
-            w = w or next((w for w in heard if w.end >= due + 2.0), None)
+            w = w or next((w for w in heard if w.end >= due + 0.8), None)
             onset = w.end + 0.15 if w else None
         else:
             w = next((w for w in heard if w.end >= due), None)
             onset = self.g.reaction(False, w) if w else None
         if onset is None:
             return
+        if self.state != "speaking" and w is heard[-1]:
+            return  # the answer ended on that word: a line now wouldn't be over the agent's speech
         words = self._say(line.text, max(onset, self.user[-1].end + 0.05 if self.user else onset))
         self.lines.append({"kind": line.kind, "text": line.text, "onset": words[0].start, "end": words[-1].end,
                            "after_word": w.text})
@@ -248,8 +250,11 @@ class Run:
         if t >= self.limit:
             return True
         if len(self.lines) < len(self.sc.lines):
-            started = self.turn_start is not None
-            return t > (self.opening["end"] + 8.0 if not started else self.turn_start + 12.0)
+            if self.turn_start is None:
+                return t > self.opening["end"] + 8.0
+            # An answer that ended before the line was due leaves nothing for the line to go over.
+            ended = self.state == "silent" and all(w.end < t for w in self.words if not w.bc)
+            return ended or t > self.turn_start + 12.0
         end = max([self.opening["end"]] + [x["end"] for x in self.lines])
         answered = [w for w in self.words if not w.bc and w.said and w.start > end]
         talked = sum(w.end - w.start for w in answered)

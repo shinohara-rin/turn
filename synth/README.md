@@ -374,6 +374,19 @@ python -m turnsynth.pilot examples/pilot/scenarios.json --agent rules --out out/
 On CPU, use `-lm none` so the repacked weights aren't kept twice, and `--ctx-checkpoints 0`
 (the default 32 SWA checkpoints took 5 GB).
 
+First run (2026-10-20), Gemma 4 12B QAT Q4_0 zero-shot against the rules baseline, both on the
+same simulated pipeline:
+
+- Gemma never took the floor in a mid-utterance pause (0 of 6).
+- It answered 23 of 24 turn ends, but its median from the user's last word to its audio was
+  2.77 s. The rules baseline took 1.55 s, and the pipeline's floor is about 1.2 s.
+- It resumed after every user backchannel that landed on its speech (4 of 4).
+- It stopped for every barge-in and answered it (6 of 6, median 1.65 s).
+- It never backchannelled.
+
+So zero-shot gets the decisions but not the timing. Every tape is in the project's research notes
+(duplex-text-llm/pilot).
+
 ## Results so far
 
 Two hand-written scripts in `examples/scripts/` (one Casual, one
