@@ -1,0 +1,25 @@
+{
+ "conversation_type": "Task-Oriented",
+ "scenario": "A user asks a voice assistant to help pick a film for tonight. The assistant knows both plots; the user doesn't want spoilers.",
+ "agent": "B",
+ "speakers": {
+  "A": {"name": "Sam", "gender": "female", "summary": "A user picking a film for tonight.",
+        "facts": {"u_choice": "torn between Interstellar and Inception", "u_two_hours": "only has two hours tonight"}},
+  "B": {"name": "Assistant", "gender": "male", "summary": "A voice assistant.",
+        "facts": {"plot_wormhole": "Interstellar's crew travels through a wormhole near Saturn",
+                  "plot_blackhole": "Interstellar has long black hole sequences"}}
+ },
+ "turns": [
+  {"id": 1, "speaker": "A", "type": "turn", "text": "So um, I want to watch something tonight, <pause 0.5> and I'm stuck between Interstellar and Inception.",
+   "reveals": {"u_choice": "between Interstellar and Inception"}},
+  {"id": 2, "speaker": "B", "type": "backchannel", "kind": "continuer", "text": "mm-hm", "host": 1, "after": "something tonight,"},
+  {"id": 3, "speaker": "B", "type": "turn", "text": "Both are great, but since you only have two hours, Inception is the safer pick. Interstellar follows a crew who fly through a wormhole near Saturn, and the black hole scenes are stunning.",
+   "uses": ["u_choice", "u_two_hours"], "reveals": {"plot_wormhole": "through a wormhole", "plot_blackhole": "the black hole scenes"}},
+  {"id": 4, "speaker": "A", "type": "interruption", "floor_taking": true, "stance": "competitive", "text": "Wait wait, no spoilers please!",
+   "host": 3, "after": "near Saturn,", "responds_to": "through a wormhole"},
+  {"id": 5, "speaker": "B", "type": "turn", "text": "Sorry! No more plot. Have you seen Inception before, or would it be new to you?"},
+  {"id": 6, "speaker": "A", "type": "interruption", "floor_taking": true, "stance": "cooperative", "text": "Yes!",
+   "host": 5, "after": "Have you seen", "responds_to": "Inception"},
+  {"id": 7, "speaker": "A", "type": "turn", "text": "Okay, <pause 0.4> but is the black hole part scary? I don't love scary stuff.", "uses": ["plot_blackhole"]}
+ ]
+}

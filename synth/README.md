@@ -324,6 +324,78 @@ Pipeline numbers for the Fish renders: WER 2.4% (casual), 5.9%
 at about real time (one sequential call at a time, 2-5 s per line), with no
 GPU. Samples: `synth-samples/fishaudio/` in the project files.
 
+## Grounded tapes for a full-duplex text LLM (2026-10-20)
+
+Data for a DuplexCascade-style model (arXiv 2603.09180): a text LLM that, every 640 ms cell, reads
+what the agent's ASR and VAD delivered and writes the agent's action and next few words. A script
+written in one pass sees every line; the two speakers in it must not. Three additions keep a script
+honest about that before it becomes training data:
+
+- **Timing without audio.** `--tts duration` (`duration.py`) times words from syllables over an
+  articulation rate, with phrase-final lengthening and punctuation pauses, so a script places and
+  checks in milliseconds.
+- **Causality** (`ground.py`, `render(ground=Grounding())`). A line that depends on the other speaker's
+  words (`responds_to`, and for the agent its `after` anchor) starts no earlier than its speaker
+  could have perceived them and reacted. People recognize a word partway in and react about 200 ms
+  later; the agent gets a word only once its ASR commits it, decides only at cell boundaries and is
+  heard `tts_lead` later. A barge-in stops the agent by its pipeline's rule: a hard cut 150 ms after
+  the user's onset (Frankenvoice) or at the next cell after its ASR delivers the words (DuplexCascade).
+  Every move is logged (`Rendered.moves`).
+- **Theory of mind.** Speakers declare private `facts`; lines declare the facts they `uses` and the
+  words that `reveals` one. `leaks()` reports every line that uses a fact its speaker can't know yet,
+  with a reason: `never_said`, `not_yet_said`, `not_yet_heard`, `cut_off`, `spoken_over`.
+
+`examples/ground/interstellar.json` exercises all of it: the agent's "you only have two hours" leaks a
+fact the user never said, and the user's later question about "the black hole part" leaks words the
+hard cut stopped before they were said (under DuplexCascade's slower stop they are said, but over the
+user's own barge-in).
+
+`tape.py` turns a rendered script into the agent's cells (`cells()`): user words as its ASR commits
+them, a VAD flag, the agent's state (silent, speaking, cut off) and action. History is what was heard:
+words the agent sent but never got to say are taken off the tape, and `[cut]` marks where its voice
+stopped. `micro_turn()` renders a cell as DuplexCascade's control tokens in Gemma 4's turn markers.
+
+### Zero-shot pilot
+
+`pilot.py` runs an untrained model in that loop before anything is trained: the tape so far as the
+prompt, and per cell a GBNF grammar that admits only the actions its state allows and only as many
+words as its TTS queue has room for. The user is a scripted person (an opening turn, then a
+backchannel or barge-in timed off the agent's audio as they hear it), and the agent's pipeline
+(ASR delay, VAD, hard cut, word timings) is simulated in virtual time. `examples/pilot/scenarios.json`
+has 24 probes in Full-Duplex-Bench's four categories: pause handling, turn end, user backchannel,
+user interruption.
+
+```bash
+llama-server -m gemma-4-12b-it-qat-q4_0.gguf -c 4096 -np 1 --swa-full --ctx-checkpoints 0 --port 8090
+python -m turnsynth.pilot examples/pilot/scenarios.json --agent llama --url http://127.0.0.1:8090 --out out/pilot
+python -m turnsynth.pilot examples/pilot/scenarios.json --agent rules --out out/pilot-rules   # baseline
+```
+
+On CPU, use `-lm none` so the repacked weights aren't kept twice, and `--ctx-checkpoints 0`
+(the default 32 SWA checkpoints took 5 GB).
+
+First run (2026-10-20), Gemma 4 12B QAT Q4_0 zero-shot against the rules baseline, both on the
+same simulated pipeline:
+
+- Gemma never took the floor in a mid-utterance pause (0 of 6).
+- It answered 23 of 24 turn ends, but its median from the user's last word to its audio was
+  2.77 s. The rules baseline took 1.55 s, and the pipeline's floor is about 1.2 s.
+- It resumed after every user backchannel that landed on its speech (4 of 4).
+- It stopped for every barge-in and answered it (6 of 6, median 1.65 s).
+- It never backchannelled.
+
+So zero-shot gets the decisions but not the timing. Every tape is in the project's research notes
+(duplex-text-llm/pilot).
+
+Prompting didn't fix the wait: instructions against dead air left the median at 2.77 s, and an
+example tape that answers sooner added two stalls. Gemma does rank the turn end right, just late:
+its P(respond) on successive silent cells after a question goes about 0.08, 0.27, 0.89, and greedy
+waits for the third. `--respond-bias 2.2` adds 2.2 to the `" respond"` logit in silent cells, so
+greedy responds once P(respond) passes about 0.1. That took the median to 1.99 s with no pause
+cut-ins and 24 of 24 answered. `--no-periods` drops periods from the user's words on the tape, as
+the live demo does because its ASR ends every final with one. With it the bias run took 2.13 s, again
+with no cut-ins, and 3.0 starts answering mid-sentence pauses.
+
 ## Results so far
 
 Two hand-written scripts in `examples/scripts/` (one Casual, one
@@ -412,6 +484,10 @@ landed, word by word, for dense training targets) and `render_report.jsonl`
 | `turnsynth/judge.py` | ASR + LLM judge (annotator b), lexical fallback |
 | `turnsynth/export.py` | TurnBench parquet writer |
 | `turnsynth/stats.py` | corpus stats through `turnbench.gold` |
+| `turnsynth/duration.py` | text-only duration model as a TTS backend (`--tts duration`) |
+| `turnsynth/ground.py` | causality bounds, the agent's stop rule, belief-leak check |
+| `turnsynth/tape.py` | the agent's cell tape: readable lines and DuplexCascade micro-turns |
+| `turnsynth/pilot.py` | closed-loop zero-shot pilot: grammar-constrained LLM agent vs a scripted user |
 
 ## Not done yet
 

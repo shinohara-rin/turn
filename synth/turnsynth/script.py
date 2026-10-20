@@ -27,6 +27,15 @@ eight axes) and `"speed"` (rate relative to the speaker's usual pace, which
 `speakers[X]["pace"]` sets), so the TTS is told how a line is said instead of
 guessing from its words.
 
+Grounding declarations are optional too (see ground.py). `after` says where an
+item starts; `"responds_to"` quotes the other speaker's words whose content it
+needs, which may come later than `after` (the generator sees the whole
+dialogue, the speaker doesn't). For a turn it quotes the other speaker's last
+floor item. `speakers[X]["facts"]` ({id: gloss}) is what X alone knows at the
+start; `"reveals"` ({fact: quote of this item's words}) and `"uses"` ([fact])
+say which facts an item conveys and depends on. A script-level `"agent"`
+names the speaker that is a cascade voice agent rather than a person.
+
 `<pause X>` inside a turn marks a within-turn pause of X seconds: the EOT
 hard negatives. The filter rejects scripts with structured reason codes, as in
 MultiTalk §2.1.2, so prompt iterations can be tied to failure-rate deltas.
@@ -64,6 +73,11 @@ class Item:
     after: str | None = None  # quoted host words before the onset; resolved to after_word
     emotion: dict[str, float] | None = None  # optional, for emotion-controllable TTS
     speed: float | None = None  # optional speaking rate relative to the speaker's own pace (1.0 = usual)
+    responds_to: str | None = None  # quoted words of the other speaker this item needs to have heard
+    responds_item: int | None = None  # ... resolved: the item they are in
+    responds_word: int | None = None  # ... and its words up to the end of the quote
+    reveals: dict[str, str] = field(default_factory=dict)  # fact id -> quoted words of this item carrying it
+    uses: list[str] = field(default_factory=list)  # fact ids this item depends on
 
     @property
     def chunks(self) -> list[tuple[str, float | None]]:
@@ -105,9 +119,14 @@ class Script:
     items: list[Item]
     meta: dict = field(default_factory=dict)
     language: str = "en"  # en | ja | zh; ja/zh text is space-segmented into words (see lang.py)
+    agent: str | None = None  # the speaker that is a cascade voice agent, if any (ground.py)
 
     def item(self, item_id: int) -> Item:
         return self._by_id[item_id]
+
+    def facts(self, speaker: str) -> dict[str, str]:
+        """What `speaker` alone knows at the start: {fact id: gloss}."""
+        return dict(self.speakers[speaker].get("facts") or {})
 
     def __post_init__(self) -> None:
         self._by_id = {item.id: item for item in self.items}
@@ -131,9 +150,15 @@ class Script:
                 d["emotion"] = it.emotion
             if it.speed is not None:
                 d["speed"] = it.speed
+            if it.responds_to:
+                d["responds_to"] = it.responds_to
+            if it.reveals:
+                d["reveals"] = it.reveals
+            if it.uses:
+                d["uses"] = it.uses
             return d
 
-        return {
+        out = {
             "language": self.language,
             "conversation_type": self.conversation_type,
             "scenario": self.scenario,
@@ -141,6 +166,9 @@ class Script:
             "turns": [item_json(it) for it in self.items],
             "meta": self.meta,
         }
+        if self.agent:
+            out["agent"] = self.agent
+        return out
 
 
 class ScriptError(ValueError):
@@ -169,6 +197,9 @@ def parse(obj: dict) -> Script:
                 after=None if raw.get("after") is None else str(raw["after"]),
                 emotion=None if not raw.get("emotion") else {str(k): float(v) for k, v in raw["emotion"].items()},
                 speed=None if raw.get("speed") is None else float(raw["speed"]),
+                responds_to=str(raw["responds_to"]) if raw.get("responds_to") else None,
+                reveals={str(k): str(v) for k, v in (raw.get("reveals") or {}).items()},
+                uses=[str(f) for f in raw.get("uses") or []],
             )
             items.append(item)
         script = Script(
@@ -178,12 +209,18 @@ def parse(obj: dict) -> Script:
             items=items,
             meta=dict(obj.get("meta", {})),
             language=L.check(str(obj.get("language", "en"))),
+            agent=str(obj["agent"]) if obj.get("agent") else None,
         )
-    except (KeyError, TypeError, ValueError) as e:
+        for info in script.speakers.values():
+            if not isinstance(info.get("facts") or {}, dict):
+                raise TypeError("speaker facts must be {id: gloss}")
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
         raise ScriptError("schema", repr(e)) from e
 
     if set(script.speakers) != set(SPEAKERS):
         raise ScriptError("schema", f"speakers must be exactly {SPEAKERS}")
+    if script.agent is not None and script.agent not in SPEAKERS:
+        raise ScriptError("schema", f"agent must be one of {SPEAKERS}")
     for spk, info in script.speakers.items():
         try:
             ok = SPEED_RANGE[0] <= pace(info) <= SPEED_RANGE[1]
@@ -228,6 +265,17 @@ def parse(obj: dict) -> Script:
         for chunk, pause in it.chunks:
             if pause is not None and not 0.1 <= pause <= 5.0:
                 raise ScriptError("schema", f"item {it.id}: pause {pause} out of range")
+        if it.responds_to:
+            # An overlay reacts to its host; a turn to the other speaker's latest floor item.
+            target = seen.get(it.host) if it.type != "turn" else \
+                next((s for s in reversed(seen.values()) if s.is_floor and s.speaker != it.speaker), None)
+            it.responds_item = target.id if target else None
+            it.responds_word = resolve_after(target.words, it.responds_to, script.language) if target else None
+            if it.responds_word is None:
+                raise ScriptError("anchor", f"item {it.id}: 'responds_to' {it.responds_to!r} is not in the words it answers")
+        for fact, quote in it.reveals.items():
+            if not fact or resolve_after(it.words, quote, script.language) is None:
+                raise ScriptError("fact", f"item {it.id}: reveals {fact!r} with {quote!r}, which is not in its text")
         seen[it.id] = it
         if it.is_floor:
             last_floor = it

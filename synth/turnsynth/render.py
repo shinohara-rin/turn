@@ -16,6 +16,11 @@ placement is sampled from the calibrated timing model in config.py:
 The output carries both channels and, per placed item, its realized word
 timings and intended fine label. That is the generator's annotation; the
 annotators in annotate.py map it onto VAD segments.
+
+With `ground` (ground.py), no item starts before its speaker could have
+perceived what it depends on (moved items are logged in `Rendered.moves`), and
+a barge-in on the cascade agent cuts it by the agent's stop rule rather than
+a person's yield.
 """
 
 from dataclasses import dataclass, field
@@ -24,6 +29,7 @@ import numpy as np
 
 from turnsynth import lang as L
 from turnsynth.config import TYPES, Timing
+from turnsynth.ground import Grounding, Move, onset_bound
 from turnsynth.script import EMOTIONS, Item, Script, pace
 from turnsynth.tts import TTS, Context, Speech, Word
 
@@ -37,6 +43,7 @@ class Placed:
     start: float
     cut: bool = False
     dropped: str | None = None  # reason if not rendered
+    uncut: list[Word] | None = None  # local word timings before a cut: what the speaker meant to say
 
     @property
     def end(self) -> float:
@@ -65,6 +72,7 @@ class Rendered:
     placed: list[Placed]
     voices: dict[str, str]
     speaker_index: dict[str, int] = field(default_factory=lambda: {"A": 1, "B": 2})
+    moves: list[Move] = field(default_factory=list)  # causality moves, with `ground`
 
     @property
     def duration(self) -> float:
@@ -409,17 +417,29 @@ def synthesize_by_speaker(tts: TTS, script: Script, voices: dict[str, str], timi
 
 
 def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
-           timing: Timing | None = None, bleed_db: float | None = None) -> Rendered:
+           timing: Timing | None = None, bleed_db: float | None = None,
+           ground: Grounding | None = None) -> Rendered:
     timing = timing or Timing()
     rng = np.random.default_rng(seed)
     ctype = TYPES[script.conversation_type]
     voices = assign_voices(tts, script, rng)
     placed: dict[int, Placed] = {}
     busy: dict[str, list[tuple[float, float]]] = {"A": [], "B": []}
+    moves: list[Move] = []
 
     def is_free(spk: str, start: float, end: float) -> bool:
         g = timing.min_same_channel_gap
         return all(end + g <= s or start >= e + g for s, e in busy[spk])
+
+    def bounded(item: Item, start: float, anchor=None) -> float:
+        """`start`, or later if the item depends on words its speaker can't have perceived by then."""
+        if ground is None:
+            return start
+        t, needs = onset_bound(ground, script, item, placed, anchor)
+        if t > start + 1e-6:
+            moves.append(Move(item.id, start, t, needs))
+            return t
+        return start
 
     if getattr(tts, "speaker_pass", False):
         speeches = synthesize_by_speaker(tts, script, voices, timing, rng)
@@ -443,19 +463,27 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
             # React, but leave the host room to talk on for yield_min, or it is no barge-in.
             start = max(anchor, min(anchor + timing.reaction(rng, "interruption"),
                                     host.speech_end - timing.yield_min - 0.05))
+            start = bounded(item, start, (host, item.after_word))
         elif prev.item.speaker == item.speaker:
-            start = prev.speech_end + timing.pause(rng)
+            start = bounded(item, prev.speech_end + timing.pause(rng))
         else:
             fto = timing.fto(rng, ctype)
             if prev.item.type == "interruption" and prev.item.host is not None \
                     and script.item(prev.item.host).speaker == item.speaker:
                 fto = max(fto, 0.0)  # someone who was just cut off lets the interrupter finish
             start = max(prev.speech_end + fto, prev.start + 0.3, _earliest_reply(prev, timing))
+            # The agent can't project a turn end: it answers once it has the other speaker's last word.
+            start = bounded(item, start, (prev, len(prev.speech.words)) if script.agent == item.speaker else None)
         start = max(start, channel_end + timing.min_same_channel_gap)
         p = Placed(item, speech, start)
         if item.type == "interruption" and prev is not None:
-            _cut_host(prev, p.start, p.start + timing.yield_delay(rng), p.start + speech.duration, busy,
-                      timing.yield_min, timing.min_talk_after_yield)
+            if ground is not None and script.agent == prev.item.speaker and p.words:
+                # The agent stops by its pipeline's rule, as soon as it can, not after a person's talk-on,
+                # and if that rule is slow it talks on over a short barge-in.
+                _stop_agent(prev, ground.agent_stop(p.start, p.words[0]), busy, ground.recognize_at)
+            else:
+                _cut_host(prev, p.start, p.start + timing.yield_delay(rng), p.start + speech.duration, busy,
+                          timing.yield_min, timing.min_talk_after_yield)
         placed[item.id] = p
         busy[item.speaker].append((p.start, p.end))
         prev = p
@@ -477,18 +505,25 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
         # A backchannel answers a phrase end: move a mid-phrase anchor to the next one.
         first = _phrase_end(host.speech.words, item.after_word) if item.type == "backchannel" else item.after_word
         # Try the anchor word, then the next two word boundaries if the channel is busy.
+        late = False
         for k in range(first, min(first + 3, len(host.speech.words))):
-            start = host.word_end(k) + timing.reaction(rng, item.type)
+            scripted = host.word_end(k) + timing.reaction(rng, item.type)
+            lo, needs = onset_bound(ground, script, item, placed, (host, k)) if ground else (0.0, None)
+            start = max(scripted, lo)
             # A backchannel may trail just past the host's last word; a failed
             # attempt must end while the host is still talking, or it would
             # have taken the floor after all.
             limit = host.speech_end + 0.3 if item.type == "backchannel" else host.speech_end - 0.2
+            late = late or (lo > scripted and lo + speech.duration > limit)
             if start + speech.duration <= limit and is_free(item.speaker, start, start + speech.duration):
                 p.start = start
                 busy[item.speaker].append((p.start, p.end))
+                if lo > scripted + 1e-6:
+                    moves.append(Move(item.id, scripted, lo, needs))
                 break
         else:
-            p.dropped = "no_room"
+            # Too late: by the time its speaker could react, there was no room left for it.
+            p.dropped = "too_late" if late else "no_room"
 
     # Mix.
     sr = tts.sample_rate
@@ -512,7 +547,8 @@ def render(script: Script, tts: TTS, *, conversation_id: str, seed: int = 0,
             channels[k] *= 0.99 / peak
     order = {it.id: i for i, it in enumerate(script.items)}
     return Rendered(conversation_id, script, channels, sr,
-                    sorted(placed.values(), key=lambda p: order[p.item.id]), voices)
+                    sorted(placed.values(), key=lambda p: order[p.item.id]), voices,
+                    moves=sorted(moves, key=lambda m: m.start))
 
 
 def _earliest_reply(prev: Placed, timing: Timing) -> float:
@@ -564,8 +600,25 @@ def _cut_host(host: Placed, onset: float, cut_time: float, interrupter_end: floa
             break
     if at is None:
         return  # host finishes on its own: the scripted interruption did not happen
+    _truncate(host, _cut(host.speech, at), busy)
+
+
+def _stop_agent(host: Placed, stop: float, busy: dict[str, list[tuple[float, float]]], recognize_at: float) -> None:
+    """Stop the agent's voice at `stop`, mid-word if need be: a TTS stops when told, unlike a person.
+
+    A word it stopped in counts as said once most of it was out (Grounding.recognize_at).
+    """
+    at, words = stop - host.start, host.speech.words
+    if not words or at >= words[-1].end:
+        return  # it had finished by then
+    cut = _cut(host.speech, at)
+    _truncate(host, Speech(cut.audio, cut.sample_rate, [w for w in words if w.start + recognize_at * (w.end - w.start) <= at]), busy)
+
+
+def _truncate(host: Placed, speech: Speech, busy: dict[str, list[tuple[float, float]]]) -> None:
     old_end = host.end
-    host.speech = _cut(host.speech, at)
+    host.uncut = host.uncut or list(host.speech.words)
+    host.speech = speech
     host.cut = True
     spans = busy[host.item.speaker]
     for i, (s, e) in enumerate(spans):

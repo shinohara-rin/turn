@@ -1,0 +1,29 @@
+[
+ {"id": "turn-cook", "probe": "turn_end", "user": "what's a good way to learn to cook on a budget?"},
+ {"id": "turn-egg", "probe": "turn_end", "user": "can you remind me how long I should boil an egg for a runny yolk?"},
+ {"id": "turn-puppy", "probe": "turn_end", "user": "I need a name for my new puppy, she's a little golden retriever."},
+ {"id": "turn-berlin", "probe": "turn_end", "user": "do you know if it gets cold in Berlin in March?"},
+ {"id": "turn-latte-nopunct", "probe": "turn_end", "user": "so what's the difference between a latte and a flat white"},
+ {"id": "turn-octopus", "probe": "turn_end", "user": "okay, tell me a fun fact about octopuses."},
+
+ {"id": "pause-lisbon", "probe": "pause", "user": "so I'm trying to figure out, <pause 1.6> whether I should take the train or fly to Lisbon."},
+ {"id": "pause-sister", "probe": "pause", "user": "my sister's birthday is next week and <pause 2.0> I have no idea what to get her."},
+ {"id": "pause-workout", "probe": "pause", "user": "I was wondering if, um, <pause 1.8> you could help me plan a workout for this week."},
+ {"id": "pause-book", "probe": "pause", "user": "what would be a good, <pause 1.5> uh, <pause 1.0> a good book for a long flight?"},
+ {"id": "pause-rent", "probe": "pause", "user": "the thing is, my landlord wants to raise the rent by <pause 2.2> about two hundred a month, is that even legal?"},
+ {"id": "pause-home", "probe": "pause", "user": "I think the best thing for me would be <pause 1.7> something I can do from home."},
+
+ {"id": "bc-sourdough", "probe": "backchannel", "user": "how do I get my sourdough starter going again?", "lines": [{"kind": "backchannel", "text": "mhm", "after_s": 1.5}]},
+ {"id": "bc-hiking", "probe": "backchannel", "user": "what should I pack for a weekend of hiking?", "lines": [{"kind": "backchannel", "text": "yeah", "after_s": 1.8}]},
+ {"id": "bc-interest", "probe": "backchannel", "user": "how does compound interest work?", "lines": [{"kind": "backchannel", "text": "okay", "after_s": 1.5}]},
+ {"id": "bc-sleep", "probe": "backchannel", "user": "what's the best way to fall asleep faster?", "lines": [{"kind": "backchannel", "text": "right", "after_s": 2.0}]},
+ {"id": "bc-castiron", "probe": "backchannel", "user": "how do I clean a cast iron pan?", "lines": [{"kind": "backchannel", "text": "uh-huh", "after_s": 1.5}]},
+ {"id": "bc-heatpump", "probe": "backchannel", "user": "can you explain how a heat pump works?", "lines": [{"kind": "backchannel", "text": "mhm, yeah", "after_s": 1.8}]},
+
+ {"id": "int-vegetarian", "probe": "interruption", "user": "can you suggest a dinner recipe for tonight?", "lines": [{"kind": "interruption", "text": "wait, sorry, it needs to be vegetarian.", "after_s": 1.8}]},
+ {"id": "int-car", "probe": "interruption", "user": "what's the fastest way to get from Paris to Amsterdam?", "lines": [{"kind": "interruption", "text": "hold on, what about by car?", "after_s": 2.0}]},
+ {"id": "int-dad", "probe": "interruption", "user": "how many calories should I eat a day?", "lines": [{"kind": "interruption", "text": "actually, I'm asking for my dad, he's seventy.", "after_s": 1.5}]},
+ {"id": "int-repeat", "probe": "interruption", "user": "tell me about the history of the Eiffel Tower.", "lines": [{"kind": "interruption", "text": "sorry, can you say that again? I missed it.", "after_s": 2.0}]},
+ {"id": "int-tablet", "probe": "interruption", "user": "what's a good gift for a ten year old?", "lines": [{"kind": "interruption", "text": "no, no, she already has a tablet.", "after_s": 2.2}]},
+ {"id": "int-router", "probe": "interruption", "user": "how do I reset my router?", "lines": [{"kind": "interruption", "text": "wait, which button do you mean?", "after_s": 1.6}]}
+]

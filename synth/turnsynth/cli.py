@@ -149,7 +149,7 @@ def main(argv=None) -> None:
 
     r = sub.add_parser("render", help="TTS + annotate + export TurnBench parquet")
     r.add_argument("scripts", help="a script JSON or a directory of them")
-    r.add_argument("--tts", default="kokoro", choices=["kokoro", "indextts", "fish", "dummy"])
+    r.add_argument("--tts", default="kokoro", choices=["kokoro", "indextts", "fish", "dummy", "duration"])
     r.add_argument("--index-model-dir", default="checkpoints/IndexTTS-2.5", help="IndexTTS weights (with config.yaml)")
     r.add_argument("--index-version", default="2.5", choices=["2.5", "2"])
     r.add_argument("--voice-bank", default="voices", help="directory with voices.json (turnsynth voices); several comma-separated, e.g. one per language")
