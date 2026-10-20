@@ -393,8 +393,8 @@ its P(respond) on successive silent cells after a question goes about 0.08, 0.27
 waits for the third. `--respond-bias 2.2` adds 2.2 to the `" respond"` logit in silent cells, so
 greedy responds once P(respond) passes about 0.1. That took the median to 1.99 s with no pause
 cut-ins and 24 of 24 answered. `--no-periods` drops periods from the user's words on the tape, as
-the live demo does because its ASR ends every final with one. There the bias predicts 2.14 s, and
-3.0 starts answering mid-sentence pauses.
+the live demo does because its ASR ends every final with one. With it the bias run took 2.13 s, again
+with no cut-ins, and 3.0 starts answering mid-sentence pauses.
 
 ## Results so far
 
