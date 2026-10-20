@@ -118,3 +118,10 @@ def test_grammar_and_parse():
     d = parse_action(' respond "It is, from"')
     assert d.action == "respond" and d.words == ["It", "is,", "from"]
     assert parse_action(" finish").words == []
+
+
+def test_tape_without_periods():
+    assert [T.no_periods(w) for w in ["if.", "U.S.", "3.5", "...", "now?"]] == ["if", "US", "3.5", "", "now?"]
+    cell = T.Cell(1.28, ["is", "it", "open."], False, "silent", "listen")
+    assert T.line(cell, periods=False) == '  1.28 | user: "is it open" (silent) | agent (silent): listen'
+    assert T.line(T.Cell(1.92, ["..."], True), periods=False).startswith("  1.92 | user: (talking)")

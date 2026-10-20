@@ -387,6 +387,15 @@ same simulated pipeline:
 So zero-shot gets the decisions but not the timing. Every tape is in the project's research notes
 (duplex-text-llm/pilot).
 
+Prompting didn't fix the wait: instructions against dead air left the median at 2.77 s, and an
+example tape that answers sooner added two stalls. Gemma does rank the turn end right, just late:
+its P(respond) on successive silent cells after a question goes about 0.08, 0.27, 0.89, and greedy
+waits for the third. `--respond-bias 2.2` adds 2.2 to the `" respond"` logit in silent cells, so
+greedy responds once P(respond) passes about 0.1. That took the median to 1.99 s with no pause
+cut-ins and 24 of 24 answered. `--no-periods` drops periods from the user's words on the tape, as
+the live demo does because its ASR ends every final with one. There the bias predicts 2.14 s, and
+3.0 starts answering mid-sentence pauses.
+
 ## Results so far
 
 Two hand-written scripts in `examples/scripts/` (one Casual, one

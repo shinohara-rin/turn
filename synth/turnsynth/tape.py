@@ -15,6 +15,7 @@ format (arXiv 2603.09180) in Gemma 4's turn markers, for training, with `<|voice
 the VAD heard but the ASR committed nothing in.
 """
 
+import re
 from dataclasses import dataclass, field
 
 from turnsynth.ground import Grounding
@@ -45,8 +46,14 @@ class Cell:
         return self.say + self.unsaid
 
 
-def user_text(cell: Cell) -> str:
-    words = f'"{" ".join(cell.user)}" ' if cell.user else ""
+def no_periods(word: str) -> str:
+    """A user word without its periods ("if." -> "if", "U.S." -> "US"); a decimal point between digits stays."""
+    return re.sub(r"\.(?!\d)|(?<!\d)\.", "", word)
+
+
+def user_text(cell: Cell, periods: bool = True) -> str:
+    user = cell.user if periods else [w for w in map(no_periods, cell.user) if w]
+    words = f'"{" ".join(user)}" ' if user else ""
     return f"{words}({'talking' if cell.voice else 'silent'})"
 
 
@@ -56,13 +63,13 @@ def agent_text(cell: Cell) -> str:
     return cell.action + (f' "{" ".join(words)}"' if words else "")
 
 
-def prefix(cell: Cell) -> str:
+def prefix(cell: Cell, periods: bool = True) -> str:
     """A line up to the agent's action: what the agent has in front of it when it decides."""
-    return f"{cell.t:6.2f} | user: {user_text(cell)} | agent ({STATE_TEXT[cell.state]}):"
+    return f"{cell.t:6.2f} | user: {user_text(cell, periods)} | agent ({STATE_TEXT[cell.state]}):"
 
 
-def line(cell: Cell) -> str:
-    return f"{prefix(cell)} {agent_text(cell)}"
+def line(cell: Cell, periods: bool = True) -> str:
+    return f"{prefix(cell, periods)} {agent_text(cell)}"
 
 
 CONTROL = {

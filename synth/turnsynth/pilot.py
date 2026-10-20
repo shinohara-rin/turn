@@ -76,6 +76,8 @@ class Decision:
     words: list[str]
     ms: float = 0.0  # model time
     forced: bool = False  # no call: the grammar left one choice
+    allowed: list[str] = field(default_factory=list)  # what the grammar let it choose from
+    max_words: int = 0
 
 
 class Run:
@@ -229,6 +231,7 @@ class Run:
             t0 = time.time()
             d = self.agent.decide(self, allowed, max(n, 1))
             d.ms = (time.time() - t0) * 1000
+            d.allowed, d.max_words = allowed, max(n, 1)
         self.decisions.append(d)
         cell.action, cell.say = d.action, list(d.words)
         k = len(self.cells) - 1
@@ -267,8 +270,8 @@ class Run:
             t += self.g.cell
         return self
 
-    def tape(self, until: int | None = None) -> list[str]:
-        return [T.line(c) for c in self.cells[:until]]
+    def tape(self, until: int | None = None, periods: bool = True) -> list[str]:
+        return [T.line(c, periods) for c in self.cells[:until]]
 
 
 # --- agents -----------------------------------------------------------------------------------
@@ -296,6 +299,15 @@ Take turns like a person:
 - If a brief acknowledgement cut you off, resume from where you were cut. If the user is taking the floor (a question, a correction, "wait"), listen until they finish, then respond to what they said.
 - Talk like a person on the phone: one or two short sentences, no lists."""
 
+# The same, with the turn-end rules rewritten against dead air (the base prompt's agent waits ~2 extra cells).
+SYSTEM_EAGER = SYSTEM[:SYSTEM.index("Take turns like a person:")] + """Take turns like a person, without dead air:
+- The speech recognizer is about half a second behind the user. When a line brings the end of a question or a complete sentence, the user has usually stopped already, even if that line still says (talking).
+- So respond in that cell, or at the latest in the next one. Every cell you wait is 0.64 s of silence the user sits through, and people find a second of silence after a question slow.
+- Don't start while a sentence is plainly unfinished: it ends in "and", "um", "the" or a comma, or more words are still coming. Wait for the rest.
+- If a brief acknowledgement cut you off, resume from where you were cut. If the user is taking the floor (a question, a correction, "wait"), listen until they finish, then respond to what they said just as promptly.
+- Talk like a person on the phone: one or two short sentences, no lists."""
+PROMPTS = {"base": SYSTEM, "eager": SYSTEM_EAGER}
+
 EXAMPLE = Scenario("example", "example",
                    "hey, do you know if the pharmacy on Main Street is, um, <pause 2.4> open on Sundays?",
                    [Line("backchannel", "yeah", 1.0), Line("interruption", "oh wait, I meant the one on Oak Street.", 1.2)],
@@ -311,8 +323,9 @@ class Rules:
     backchannel, and says the scenario's `replies` in order.
     """
 
-    def __init__(self):
+    def __init__(self, eager: bool = False):
         self.reply, self.pos, self.base, self.bc_at = -1, 0, 0, -1
+        self.eager = eager  # take the floor on the cell final punctuation arrives in, VAD or not
 
     def plan(self, run: Run) -> list[str]:
         r = run.sc.replies or ["Sure, so the short answer is that it depends, but I can walk you through it."]
@@ -326,7 +339,7 @@ class Rules:
             if c.voice or c.user:
                 break
             quiet += 1
-        done = bool(heard) and heard[-1][-1] in ".?!" and not cells[-1].voice
+        done = bool(heard) and heard[-1][-1] in ".?!" and (self.eager and bool(cells[-1].user) or not cells[-1].voice)
         if run.state == "speaking":
             plan = self.plan(run)
             words = plan[self.pos:self.pos + n]
@@ -384,9 +397,9 @@ def grammar(allowed: list[str], n: int) -> str:
     ])
 
 
-def example_tape() -> str:
-    run = Run(EXAMPLE, Rules(), Grounding(), DurationTTS()).run()
-    return "\n".join(run.tape())
+def example_tape(eager: bool = False, periods: bool = True) -> str:
+    run = Run(EXAMPLE, Rules(eager), Grounding(), DurationTTS()).run()
+    return "\n".join(run.tape(periods=periods))
 
 
 def parse_action(text: str) -> Decision:
@@ -405,27 +418,44 @@ class LlamaCpp:
     first line it edits).
     """
 
-    def __init__(self, url: str, temperature: float = 0.0, example: str | None = None):
-        self.url, self.temperature = url.rstrip("/"), temperature
-        ex = example if example is not None else example_tape()
-        self.head = (f"<|turn>system\n{SYSTEM}<turn|>\n<|turn>user\nAn example tape from another call:\n\n{ex}\n\n"
+    def __init__(self, url: str, temperature: float = 0.0, example: str | None = None, system: str = SYSTEM,
+                 respond_bias: float = 0.0, periods: bool = True):
+        self.url, self.temperature, self.periods = url.rstrip("/"), temperature, periods
+        # Added to " respond"'s logit while the agent is silent. Greedy then responds once
+        # P(respond) / P(listen) > exp(-bias): 2.2 responds at about P = 0.1.
+        self.respond_bias, self._respond_token = respond_bias, None
+        ex = example if example is not None else example_tape(periods=periods)
+        self.head = (f"<|turn>system\n{system}<turn|>\n<|turn>user\nAn example tape from another call:\n\n{ex}\n\n"
                      "Now the live call. Continue the tape with the agent's action on each new line.<turn|>\n"
                      "<|turn>model\n<|channel>thought\n<channel|>")
         self.calls = []
 
     def prompt(self, run: Run) -> str:
-        return self.head + "".join(l + "\n" for l in run.tape(-1)) + T.prefix(run.cells[-1])
+        return self.head + "".join(l + "\n" for l in run.tape(-1, self.periods)) + T.prefix(run.cells[-1], self.periods)
 
     def decide(self, run: Run, allowed: list[str], n: int) -> Decision:
         body = {"prompt": self.prompt(run), "grammar": grammar(allowed, n), "n_predict": 64,
                 "temperature": self.temperature, "cache_prompt": True, "stop": ["\n"]}
-        req = urllib.request.Request(self.url + "/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
-        r = json.load(urllib.request.urlopen(req, timeout=600))
+        if self.respond_bias and run.cells[-1].state == "silent":
+            body["logit_bias"] = [[self.respond_token(), self.respond_bias]]
+        r = self._post("/completion", body)
         self.calls.append(r.get("timings", {}))
         d = parse_action(r["content"])
         if d.action not in allowed:
             raise ValueError(f"grammar let through {d.action!r}")
         return d
+
+    def respond_token(self) -> int:
+        if self._respond_token is None:
+            ids = self._post("/tokenize", {"content": " respond"})["tokens"]
+            if len(ids) != 1:
+                raise ValueError(f'" respond" is {len(ids)} tokens for this model')
+            self._respond_token = ids[0]
+        return self._respond_token
+
+    def _post(self, path: str, body: dict) -> dict:
+        req = urllib.request.Request(self.url + path, json.dumps(body).encode(), {"Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(req, timeout=600))
 
 
 # --- scoring ----------------------------------------------------------------------------------
@@ -510,6 +540,13 @@ def main(argv=None) -> None:
     ap.add_argument("--agent", choices=["rules", "llama"], default="rules")
     ap.add_argument("--url", default="http://127.0.0.1:8090")
     ap.add_argument("--stop", choices=["hard_cut", "cell"], default="hard_cut")
+    ap.add_argument("--prompt", choices=sorted(PROMPTS), default="base", help="the system prompt")
+    ap.add_argument("--example", choices=["base", "eager"], default="base",
+                    help="the example tape's agent: waits for a silent cell, or answers when final punctuation arrives")
+    ap.add_argument("--respond-bias", type=float, default=0.0,
+                    help="logit bias on respond in silent cells; 2.2 responds once P(respond) passes about 0.1")
+    ap.add_argument("--no-periods", action="store_true",
+                    help="drop periods from the user's words on the tape, as the live demo does (its ASR ends every final with one)")
     ap.add_argument("--only", help="comma-separated scenario ids")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
@@ -522,15 +559,23 @@ def main(argv=None) -> None:
     ground = Grounding(stop=args.stop)
     scores = []
     for sc in scenarios:
-        agent = Rules() if args.agent == "rules" else LlamaCpp(args.url)
+        agent = Rules(args.example == "eager") if args.agent == "rules" else \
+            LlamaCpp(args.url, example=example_tape(args.example == "eager", not args.no_periods), system=PROMPTS[args.prompt],
+                     respond_bias=args.respond_bias, periods=not args.no_periods)
         run = Run(sc, agent, ground, DurationTTS()).run()
         s = score(run)
         scores.append(s)
-        (out / f"{sc.id}.tape.txt").write_text("\n".join(run.tape()) + "\n")
+        (out / f"{sc.id}.tape.txt").write_text("\n".join(run.tape(periods=not args.no_periods)) + "\n")
+        # What the model wrote per cell, before cuts took unsaid words off the tape.
+        (out / f"{sc.id}.cells.jsonl").write_text("".join(json.dumps({
+            "t": c.t, "user": c.user, "voice": c.voice, "state": c.state, "action": c.action, "sent": c.sent,
+            "unsaid": c.unsaid, "cut": c.cut, "allowed": d.allowed, "max_words": d.max_words, "forced": d.forced,
+            "ms": round(d.ms)}) + "\n" for c, d in zip(run.cells, run.decisions)))
         print(json.dumps(s), flush=True)
     (out / "scores.jsonl").write_text("".join(json.dumps(s) + "\n" for s in scores))
     summ = summary(scores)
-    (out / "summary.json").write_text(json.dumps({"agent": args.agent, "stop": args.stop, "ground": asdict(ground), **summ}, indent=1))
+    (out / "summary.json").write_text(json.dumps({"agent": args.agent, "stop": args.stop, "prompt": args.prompt, "example": args.example,
+                                                   "respond_bias": args.respond_bias, "periods": not args.no_periods, "ground": asdict(ground), **summ}, indent=1))
     print(json.dumps(summ, indent=1))
 
 
